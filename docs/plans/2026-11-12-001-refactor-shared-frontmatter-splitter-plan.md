@@ -386,7 +386,7 @@ What each site does with the three outcomes, after both PRs:
 
 **Verification:** `check-wiki-private-presence.ts` keeps a 100% mutation score. Immediately before the second PR is pushed, the strict gate runs over the then-current `data` and `main` commits and blocks no page. The two commits are recorded in the PR.
 
-- [ ] **Unit 5: The other six private sites and the dependency edges**
+- [x] **Unit 5: The other six private sites and the dependency edges**
 
 **Goal:** Move solutions search, learnings harvest, pattern synthesis, improvement metrics and the two plan-status sites onto the splitter.
 

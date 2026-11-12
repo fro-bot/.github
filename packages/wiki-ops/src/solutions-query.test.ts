@@ -1082,3 +1082,360 @@ describe('docs/solutions corpus', () => {
     }).not.toThrow()
   })
 })
+
+// ---------------------------------------------------------------------------
+// Frontmatter: the shared block rule
+// ---------------------------------------------------------------------------
+
+describe('assembleSolutionsContext: the block rule', () => {
+  const DOC_PATH = 'docs/solutions/best-practices/doc.md'
+
+  /** Reads one document with an event that matches the token `docs`, which the path and a `Docs` title both carry. */
+  function readDoc(content: string) {
+    const warnings: string[] = []
+    const result = assembleSolutionsContext({
+      files: {[DOC_PATH]: content},
+      event: {eventName: 'issues', title: 'docs', body: ''},
+      privateNames: [],
+      now: new Date('2026-06-22'),
+      warn: line => warnings.push(line),
+    })
+    return {warnings, excerpt: result.excerpt, selectedPaths: result.selectedPaths}
+  }
+
+  const UNCLOSED_WARNING = `solutions-query: skipped 1 doc on malformed frontmatter (path: ${DOC_PATH}): unclosed-frontmatter\n`
+
+  it('reads a CRLF document: the title and tags come from the block', () => {
+    const {excerpt} = readDoc(
+      '---\r\ntitle: Docs CRLF title\r\nmodule: m\r\ntags:\r\n  - alpha\r\n---\r\nBody text\r\n',
+    )
+    expect(excerpt).toContain('## Docs CRLF title\n')
+    expect(excerpt).toContain('\n\nBody text\n')
+  })
+
+  it.each([
+    ['an unclosed block', '---\ntitle: Docs unclosed\nBody text with no close\n'],
+    ['a file that is only ---', '---'],
+    ['a file that is --- and a line ending', '---\n'],
+    ['an unclosed CRLF block', '---\r\ntitle: Docs unclosed\r\n'],
+  ])('skips %s with the warning and the fixed reason unclosed-frontmatter, with no position', (_label, content) => {
+    const {warnings, selectedPaths} = readDoc(content)
+    expect(selectedPaths).toEqual([])
+    expect(warnings).toEqual([UNCLOSED_WARNING])
+  })
+
+  it('keeps the closed vocabulary for every kind of skipped document', () => {
+    const vocabulary =
+      /^solutions-query: skipped 1 doc on malformed frontmatter \(path: [^)]+\): (?:[A-Z_]+ at line (?:\d+|\?)|ReferenceError|unclosed-frontmatter)\n$/u
+    const contents = [
+      '---\ntitle: [unclosed bracket\n---\nBody',
+      '---\ntitle: *acme-private-repo\n---\nBody',
+      '---\ntitle: Docs\nBody with acme-private-repo and no close',
+      '---',
+      '---\ntitle: T\n----\n---\nBody',
+    ]
+    for (const content of contents) {
+      const {warnings} = readDoc(content)
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toMatch(vocabulary)
+      expect(warnings[0]).not.toContain('acme-private-repo')
+    }
+  })
+
+  it('reads an empty block as an empty mapping, and the lines after it as the body', () => {
+    expect(readDoc('---\n---\nBody text\n').excerpt).toContain(`## ${DOC_PATH}\n`)
+    expect(readDoc('---\n---\ntitle: Docs hidden\n---\nBody text\n').excerpt).toContain(`## ${DOC_PATH}\n`)
+  })
+
+  it('reads a ---x: y line as a key of the block, so the keys after it count', () => {
+    const {excerpt} = readDoc('---\ntype: x\n---x: y\ntitle: Docs after\n---\nBody text')
+    expect(excerpt).toContain('## Docs after\n')
+  })
+
+  it.each(['----', '--- text'])('skips the document with the YAML warning when a %s line is inside the block', line => {
+    const {warnings} = readDoc(`---\ntitle: Docs\n${line}\n---\nBody text`)
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(/malformed frontmatter \(path: .+\): [A-Z_]+ at line \d+\n$/u)
+  })
+
+  it('closes a block at --- followed by spaces or tabs, and leaves no whitespace at the start of the body', () => {
+    for (const close of ['---  ', '---\t', '--- \t ']) {
+      const {excerpt, warnings} = readDoc(`---\ntitle: Docs close\n${close}\nBody text\n`)
+      expect(warnings).toEqual([])
+      expect(excerpt).toContain('## Docs close\n')
+      expect(excerpt).toContain('\n\nBody text\n')
+    }
+  })
+
+  it.each([
+    ['null', '---\nnull\n---\nBody text'],
+    ['only comments', '---\n# nothing\n---\nBody text'],
+    ['only ...', '---\n...\n---\nBody text'],
+    ['a list', '---\n- a\n---\nBody text'],
+  ])('gives a block that is %s no metadata, and skips nothing', (_label, content) => {
+    const {warnings, excerpt} = readDoc(content)
+    expect(warnings).toEqual([])
+    expect(excerpt).toContain(`## ${DOC_PATH}\n`)
+  })
+
+  it('reads a mapping that ends with ..., and treats ... between two keys as invalid YAML', () => {
+    expect(readDoc('---\ntitle: Docs done\n...\n---\nBody text').excerpt).toContain('## Docs done\n')
+    const {warnings} = readDoc('---\ntitle: Docs\n...\nmodule: m\n---\nBody text')
+    expect(warnings).toHaveLength(1)
+    expect(warnings[0]).toMatch(/malformed frontmatter/u)
+  })
+})
+// ---------------------------------------------------------------------------
+// Differential corpus: seeded ingredients, a renderer, and the result the block rule states for them
+// ---------------------------------------------------------------------------
+
+type Opener = 'exact' | 'trailing-space' | 'bom' | 'blank-first' | 'none'
+type Closer = 'plain' | 'spaces' | 'tab' | 'missing'
+type Shape = 'mapping' | 'empty' | 'blank' | 'comment' | 'list' | 'scalar' | 'null' | 'bad-yaml'
+type Extra = 'none' | 'dash-x' | 'dash-four' | 'dash-text'
+type BodyKind = 'empty' | 'prose' | 'dashes'
+type Outcome = 'fields' | 'empty' | 'bad-yaml' | 'unclosed'
+
+interface Ingredients {
+  readonly opener: Opener
+  readonly closer: Closer
+  readonly shape: Shape
+  readonly extra: Extra
+  readonly extraBefore: boolean
+  readonly eol: 'lf' | 'crlf' | 'mixed'
+  readonly body: BodyKind
+  readonly finalNewline: boolean
+}
+
+/** Mulberry32: a small seeded generator, so a failing case reproduces. */
+function seededRandom(seed: number): () => number {
+  let state = seed
+  return () => {
+    state = Math.trunc(state + 0x6d2b79f5)
+    let t = Math.imul(state ^ (state >>> 15), 1 | state)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function drawIngredients(random: () => number): Ingredients {
+  const pick = <T>(choices: readonly T[]): T => choices[Math.floor(random() * choices.length)] as T
+  const closer = pick(['plain', 'plain', 'spaces', 'tab', 'missing'] as const)
+  return {
+    opener: pick(['exact', 'exact', 'exact', 'exact', 'trailing-space', 'bom', 'blank-first', 'none'] as const),
+    closer,
+    shape: pick([
+      'mapping',
+      'mapping',
+      'mapping',
+      'empty',
+      'blank',
+      'comment',
+      'list',
+      'scalar',
+      'null',
+      'bad-yaml',
+    ] as const),
+    extra: pick(['none', 'none', 'none', 'dash-x', 'dash-four', 'dash-text'] as const),
+    extraBefore: random() < 0.5,
+    eol: pick(['lf', 'lf', 'crlf', 'mixed'] as const),
+    // A body with a --- line closes a block that was left open, so an unclosed case never carries one.
+    body: closer === 'missing' ? pick(['empty', 'prose'] as const) : pick(['empty', 'prose', 'dashes'] as const),
+    finalNewline: random() < 0.5,
+  }
+}
+
+/** The text of a document made of `ingredients`, with `fieldLines` as the mapping's own lines. */
+function renderCase(ingredients: Ingredients, fieldLines: readonly string[]): string {
+  const extraLine = {none: undefined, 'dash-x': '---x: y', 'dash-four': '----', 'dash-text': '--- text'}[
+    ingredients.extra
+  ]
+  const blockLines: string[] = []
+  if (ingredients.shape === 'mapping') {
+    if (extraLine !== undefined && ingredients.extraBefore) blockLines.push(extraLine)
+    blockLines.push(...fieldLines)
+    if (extraLine !== undefined && !ingredients.extraBefore) blockLines.push(extraLine)
+  } else {
+    const fixed = {
+      empty: [],
+      blank: [''],
+      comment: ['# nothing here'],
+      list: ['- a', '- b'],
+      scalar: ['just text'],
+      null: ['null'],
+      'bad-yaml': ['key: [unclosed', 'other: {'],
+    }
+    blockLines.push(...fixed[ingredients.shape])
+  }
+  const lines: string[] = []
+  if (ingredients.opener === 'blank-first') lines.push('', '---')
+  else if (ingredients.opener === 'none') lines.push('Prose first.')
+  else lines.push({exact: '---', 'trailing-space': '--- ', bom: '\uFEFF---'}[ingredients.opener])
+  lines.push(...blockLines)
+  if (ingredients.closer !== 'missing') lines.push({plain: '---', spaces: '---  ', tab: '---\t'}[ingredients.closer])
+  lines.push(...{empty: [], prose: ['Some prose.'], dashes: ['Intro.', '---', 'more', '---']}[ingredients.body])
+  let content = ''
+  for (const [index, line] of lines.entries()) {
+    const crlf = ingredients.eol === 'crlf' || (ingredients.eol === 'mixed' && index % 2 === 1)
+    const last = index === lines.length - 1
+    content += last && !ingredients.finalNewline ? line : line + (crlf ? '\r\n' : '\n')
+  }
+  return content
+}
+
+/** What the block rule says reading `ingredients` gives, stated from the ingredients and never from the text. */
+function expectedOutcome(ingredients: Ingredients): Outcome {
+  if (ingredients.opener !== 'exact') return 'empty'
+  if (ingredients.closer === 'missing') return 'unclosed'
+  if (ingredients.shape === 'bad-yaml') return 'bad-yaml'
+  if (ingredients.shape !== 'mapping') return 'empty'
+  return ingredients.extra === 'dash-four' || ingredients.extra === 'dash-text' ? 'bad-yaml' : 'fields'
+}
+
+/**
+ * Whether `ingredients` hold a condition the splitter changed: an unclosed block, a line starting with `---` that
+ * is not a close, an empty block, and (for a reader that took LF only) a CRLF line ending. Everywhere else the
+ * old reader and the new one must agree.
+ */
+function holdsChangedCondition(ingredients: Ingredients, readerWasLfOnly: boolean): boolean {
+  if (ingredients.opener !== 'exact') return false
+  return (
+    ingredients.closer === 'missing' ||
+    ingredients.extra !== 'none' ||
+    ingredients.shape === 'empty' ||
+    (readerWasLfOnly && ingredients.eol !== 'lf')
+  )
+}
+
+function drawCorpus(count: number, fieldLines: readonly string[], lfOnly: boolean, seed = 20261112) {
+  const random = seededRandom(seed)
+  return Array.from({length: count}, () => {
+    const drawn = drawIngredients(random)
+    const ingredients: Ingredients = lfOnly ? {...drawn, eol: 'lf'} : drawn
+    return {ingredients, content: renderCase(ingredients, fieldLines)}
+  })
+}
+
+interface DifferentialReport {
+  readonly mismatches: string[]
+  readonly outcomes: Record<Outcome, number>
+  readonly changed: number
+  readonly unchanged: number
+}
+
+/**
+ * Reads a seeded corpus with `read`. Every case must give the result `expectedFor` states for its outcome. A case
+ * that holds no changed condition must also give what `oldRead`, the frozen reader the splitter replaced, gives.
+ */
+function runDifferential<T>(params: {
+  readonly fieldLines: readonly string[]
+  readonly readerWasLfOnly: boolean
+  readonly lfOnly?: boolean
+  readonly read: (content: string) => T
+  readonly oldRead: (content: string) => T
+  readonly expectedFor: (outcome: Outcome, ingredients: Ingredients) => T
+}): DifferentialReport {
+  const mismatches: string[] = []
+  const outcomes: Record<Outcome, number> = {fields: 0, empty: 0, 'bad-yaml': 0, unclosed: 0}
+  let changed = 0
+  for (const {ingredients, content} of drawCorpus(3000, params.fieldLines, params.lfOnly ?? false)) {
+    const outcome = expectedOutcome(ingredients)
+    outcomes[outcome] += 1
+    const actual = JSON.stringify(params.read(content))
+    if (actual !== JSON.stringify(params.expectedFor(outcome, ingredients))) {
+      mismatches.push(`stated ${outcome}: ${JSON.stringify(content)} gave ${actual}`)
+    }
+    if (holdsChangedCondition(ingredients, params.readerWasLfOnly)) {
+      changed += 1
+    } else if (actual !== JSON.stringify(params.oldRead(content))) {
+      mismatches.push(`old reader: ${JSON.stringify(content)} gave ${actual}`)
+    }
+  }
+  return {mismatches, outcomes, changed, unchanged: 3000 - changed}
+}
+
+/** The corpus reaches every outcome and both kinds of case in volume. */
+function expectCorpusVolume(report: DifferentialReport): void {
+  expect(report.outcomes.fields).toBeGreaterThan(100)
+  expect(report.outcomes.empty).toBeGreaterThan(100)
+  expect(report.outcomes['bad-yaml']).toBeGreaterThan(100)
+  expect(report.outcomes.unclosed).toBeGreaterThan(100)
+  expect(report.changed).toBeGreaterThan(100)
+  expect(report.unchanged).toBeGreaterThan(100)
+}
+
+interface SolutionsRead {
+  skipped: 'yaml' | 'unclosed' | null
+  title: string | null
+}
+
+function oldSolutionsRead(content: string): SolutionsRead {
+  const docPath = 'docs/solutions/best-practices/doc.md'
+  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  if (match?.[1] === undefined) return {skipped: null, title: docPath}
+  let parsed: unknown
+  try {
+    parsed = parse(match[1])
+  } catch {
+    return {skipped: 'yaml', title: null}
+  }
+  const title =
+    typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)
+      ? (parsed as {title?: unknown}).title
+      : undefined
+  return {skipped: null, title: typeof title === 'string' ? title : docPath}
+}
+
+describe('assembleSolutionsContext against the regex reader it replaced, over a seeded corpus', () => {
+  const docPath = 'docs/solutions/best-practices/doc.md'
+  const read = (content: string): SolutionsRead => {
+    const warnings: string[] = []
+    const result = assembleSolutionsContext({
+      files: {[docPath]: content},
+      event: {eventName: 'issues', title: 'docs', body: ''},
+      privateNames: [],
+      now: new Date('2026-06-22'),
+      warn: line => warnings.push(line),
+    })
+    const titleLine = result.excerpt.split('\n').find(line => line.startsWith('## '))
+    let skipped: SolutionsRead['skipped'] = null
+    if (warnings.length > 0)
+      skipped = warnings.some(line => line.endsWith('unclosed-frontmatter\n')) ? 'unclosed' : 'yaml'
+    return {skipped, title: titleLine === undefined ? null : titleLine.slice(3)}
+  }
+  const expectedFor = (outcome: Outcome): SolutionsRead => {
+    if (outcome === 'fields') return {skipped: null, title: 'Docs title'}
+    if (outcome === 'empty') return {skipped: null, title: docPath}
+    return {skipped: outcome === 'unclosed' ? 'unclosed' : 'yaml', title: null}
+  }
+  const fieldLines = ['title: Docs title']
+
+  it('agrees with the old reader outside the changed conditions and with the stated result inside them', () => {
+    const report = runDifferential({fieldLines, readerWasLfOnly: true, read, oldRead: oldSolutionsRead, expectedFor})
+    expect(report.mismatches).toEqual([])
+    expectCorpusVolume(report)
+  })
+
+  it('test of the test: a reader that kept the old boundaries fails the differential', () => {
+    const report = runDifferential({
+      fieldLines,
+      readerWasLfOnly: true,
+      read: oldSolutionsRead,
+      oldRead: oldSolutionsRead,
+      expectedFor,
+    })
+    expect(report.mismatches.length).toBeGreaterThan(0)
+  })
+
+  it('test of the test: a wrong stated result fails the differential', () => {
+    const wrong = (outcome: Outcome) => expectedFor(outcome === 'unclosed' ? 'empty' : outcome)
+    const report = runDifferential({
+      fieldLines,
+      readerWasLfOnly: true,
+      read,
+      oldRead: oldSolutionsRead,
+      expectedFor: wrong,
+    })
+    expect(report.mismatches.length).toBeGreaterThan(0)
+  })
+})

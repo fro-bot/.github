@@ -926,6 +926,21 @@ describe('package layout (real tree)', () => {
     expect(input.packages.some(facts => facts.dir === 'wiki-write-core')).toBe(true)
   })
 
+  it.each(['knowledge', 'privacy', 'reports', 'status-truth', 'wiki-ops'])(
+    'declares the published package as a production dependency of %s, in the manifest and in the lock',
+    dir => {
+      const facts = input.packages.find(candidate => candidate.dir === dir)
+      const manifest = isRecord(facts?.manifest) ? facts.manifest : {}
+      expect(stringMap(manifest.dependencies)['@fro.bot/wiki-write-core']).toBe('workspace:*')
+      expect(stringMap(manifest.devDependencies)).not.toHaveProperty(['@fro.bot/wiki-write-core'])
+      const workspaces = isRecord(input.lockWorkspaces) ? input.lockWorkspaces : {}
+      const entry = isRecord(workspaces[`packages/${dir}`]) ? workspaces[`packages/${dir}`] : {}
+      expect(stringMap(isRecord(entry) ? entry.dependencies : undefined)['@fro.bot/wiki-write-core']).toBe(
+        'workspace:*',
+      )
+    },
+  )
+
   it('reads the lock workspaces for every private package', () => {
     const workspaces = isRecord(input.lockWorkspaces) ? input.lockWorkspaces : {}
     for (const facts of privatePackages) {

@@ -25,6 +25,7 @@ import {
   logDiffHasSecret,
   redactLogDiffSecrets,
 } from '@fro-bot/privacy/capture-learnings-privacy'
+import {splitFrontmatterBlock} from '@fro.bot/wiki-write-core/frontmatter'
 import {parse} from 'yaml'
 
 // ---------------------------------------------------------------------------
@@ -755,28 +756,28 @@ function computeOverlapScore(candidateTokens: Set<string>, doc: SolutionDoc): nu
 }
 
 // ---------------------------------------------------------------------------
-// Frontmatter parser (replicated from solutions-query.ts — not exported there)
+// Frontmatter parser (the block comes from the shared splitter; the reaction to a bad block is this site's own)
 // ---------------------------------------------------------------------------
 
 function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) {
+  const split = splitFrontmatterBlock(content)
+  if (split.kind === 'none') {
     return {frontmatter: {}, body: content.trim()}
   }
-
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    return {frontmatter: {}, body: content.trim()}
+  if (split.kind === 'malformed') {
+    // A block that is opened and never closed is skipped like invalid YAML: the caller catches it silently.
+    throw new Error('unclosed frontmatter')
   }
 
-  const parsed: unknown = parse(frontmatterText)
+  // Only a block with no lines is an empty mapping.
+  const parsed: unknown = split.text === '' && split.textEnding === '' ? {} : parse(split.text)
   return {
     frontmatter: isRecord(parsed) ? parsed : {},
-    body: content.slice(match[0].length).trim(),
+    body: split.body.trim(),
   }
 }
 
-function collectSolutionDocs(files: Record<string, string>): SolutionDoc[] {
+export function collectSolutionDocs(files: Record<string, string>): SolutionDoc[] {
   const docs: SolutionDoc[] = []
 
   for (const [path, content] of Object.entries(files)) {

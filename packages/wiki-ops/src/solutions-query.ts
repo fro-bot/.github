@@ -5,6 +5,7 @@ import process from 'node:process'
 import {isRecord} from '@fro-bot/core/guards'
 import {formatJsonLine} from '@fro-bot/core/json'
 import {writeGithubOutputs} from '@fro-bot/core/output'
+import {splitFrontmatterBlock} from '@fro.bot/wiki-write-core/frontmatter'
 import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
 import {parse, YAMLParseError} from 'yaml'
 import {validateQuery} from './wiki-context-expand.ts'
@@ -140,6 +141,12 @@ function collectDocs(
 
     try {
       const parsed = splitFrontmatter(content)
+      if (parsed === undefined) {
+        // An opened block that is never closed. The reason is fixed, with no position: it runs before the privacy
+        // scan, so it carries nothing from the document.
+        warn(`solutions-query: skipped 1 doc on malformed frontmatter (path: ${path}): unclosed-frontmatter\n`)
+        continue
+      }
       frontmatter = parsed.frontmatter
       body = parsed.body
     } catch (error) {
@@ -184,21 +191,24 @@ function collectDocs(
   return docs
 }
 
-function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) {
+/**
+ * Splits a solution doc into its frontmatter mapping and body. A document with no block keeps its whole text as the
+ * body, and `undefined` means a block that is opened and never closed. Only a block with no lines is an empty
+ * mapping; any other block that does not parse to a mapping gives no metadata, and invalid YAML throws.
+ */
+function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} | undefined {
+  const split = splitFrontmatterBlock(content)
+  if (split.kind === 'none') {
     return {frontmatter: {}, body: content.trim()}
   }
-
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    return {frontmatter: {}, body: content.trim()}
+  if (split.kind === 'malformed') {
+    return undefined
   }
 
-  const parsed: unknown = parse(frontmatterText)
+  const parsed: unknown = split.text === '' && split.textEnding === '' ? {} : parse(split.text)
   return {
     frontmatter: isRecord(parsed) ? parsed : {},
-    body: content.slice(match[0].length).trim(),
+    body: split.body.trim(),
   }
 }
 

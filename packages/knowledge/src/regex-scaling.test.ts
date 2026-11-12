@@ -196,15 +196,16 @@ describe('the solution-doc frontmatter and title tokens scale linearly', {timeou
       name: 'a frontmatter fence with no close',
       make: (size: number) => `---\n${repeat('a\n')(size)}`,
       reaches: input => {
-        // No close fence: the doc has no frontmatter, so the title falls back to the file stem.
-        expect(collect(input).sources.map(source => source.title)).toEqual(['a'])
+        // No close fence: the block is never closed, so the doc counts as invalid and is excluded.
+        expect(collect(input)).toEqual({sources: [], invalidCount: 1})
       },
     },
     {
       name: 'a frontmatter fence and repeated fence-like lines',
       make: (size: number) => `---\n${repeat('\n---x')(size)}`,
       reaches: input => {
-        expect(collect(input).sources.map(source => source.title)).toEqual(['a'])
+        // A ---x line is content of the block, so the block is still never closed.
+        expect(collect(input)).toEqual({sources: [], invalidCount: 1})
       },
     },
     {

@@ -8,6 +8,7 @@
 
 import {isRecord} from '@fro-bot/core/guards'
 import {SOLUTION_SUBDIRS} from '@fro-bot/wiki-ops/solution-docs-paths'
+import {splitFrontmatterBlock} from '@fro.bot/wiki-write-core/frontmatter'
 import {parse} from 'yaml'
 
 // ---------------------------------------------------------------------------
@@ -330,18 +331,20 @@ export function tokenizeTitle(title: string): string[] {
 }
 
 function splitFrontmatter(content: string): {frontmatter: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) {
+  const split = splitFrontmatterBlock(content)
+  if (split.kind === 'none') {
     return {frontmatter: {}, body: content.trim()}
   }
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    return {frontmatter: {}, body: content.trim()}
+  if (split.kind === 'malformed') {
+    // A block that is opened and never closed counts as invalid, like invalid YAML: the caller catches it.
+    throw new Error('unclosed frontmatter')
   }
-  const parsed: unknown = parse(frontmatterText)
+
+  // Only a block with no lines is an empty mapping.
+  const parsed: unknown = split.text === '' && split.textEnding === '' ? {} : parse(split.text)
   return {
     frontmatter: isRecord(parsed) ? parsed : {},
-    body: content.slice(match[0].length).trim(),
+    body: split.body.trim(),
   }
 }
 
