@@ -155,7 +155,7 @@ jobs:
       # a credential.
       - name: 🤖 Author proposal bodies
         id: agent
-        uses: fro-bot/agent@c2329e889b4dfaf1eca9a9fffcc2f752a2bd462d # v0.140.0
+        uses: fro-bot/agent@53e767e62f32451f8a8acef469813dfcd2bba44c # v0.140.1
         env:
           TASK_PROMPT: |
             You are authoring learning-proposal bodies. Each body distills a reusable
