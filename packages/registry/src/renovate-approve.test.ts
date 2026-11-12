@@ -67,7 +67,10 @@ interface PrSpec {
   ref?: string
   labels?: readonly string[]
   author?: unknown
-  headRepoId?: number | null
+  /** The head repository id; `null` is a deleted fork, and any other value is passed through to make it unreadable. */
+  headRepoId?: unknown
+  /** Replaces the `head.repo` object whole, to make it unreadable. */
+  rawHeadRepo?: unknown
   baseRepoId?: number
   state?: string
   base?: string
@@ -236,7 +239,7 @@ function world(scenario: Scenario = {}) {
     head: {
       sha: spec.head ?? sha(spec.number),
       ref: spec.ref ?? 'renovate/left-pad-9.x',
-      repo: spec.headRepoId === null ? null : {id: spec.headRepoId ?? 1},
+      repo: 'rawHeadRepo' in spec ? spec.rawHeadRepo : spec.headRepoId === null ? null : {id: spec.headRepoId ?? 1},
     },
     draft: 'draft' in spec ? spec.draft : false,
     base: 'rawBase' in spec ? spec.rawBase : {ref: spec.base ?? 'main', repo: {id: spec.baseRepoId ?? 1}},
@@ -936,6 +939,8 @@ describe('sweep: who is a candidate (AE5, AE10)', () => {
     ['a branch that starts with renovate- but not renovate/', {ref: 'renovate-x'}],
     ['a PR from a fork', {headRepoId: 2}],
     ['a PR whose head repository is gone', {headRepoId: null}],
+    ['a PR whose head repository id is not a number', {headRepoId: '1', rawBase: {ref: 'main', repo: {id: '1'}}}],
+    ['a PR whose head repository has no id', {rawHeadRepo: {}, rawBase: {ref: 'main', repo: {}}}],
     ['a person on a renovate/ branch', {author: {id: 1234, type: 'User'}}],
     ['a bot that is not the App', {author: {id: 29_139_614, type: 'Bot'}}],
     ['a user that has the App id but not the type', {author: {id: APP.id, type: 'User'}}],
@@ -1028,6 +1033,44 @@ describe('sweep: it yields to open pull requests by people', () => {
     expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
     expect(w.named('approve')).toHaveLength(1)
     expect(outcomes(await DRY(world({prs: [pr(7), person(3, overrides)]})))).toEqual({7: 'would-approve'})
+  })
+
+  it.each([
+    ['a non-draft user PR from a fork', {headRepoId: 2}],
+    ['a user PR from a deleted fork', {headRepoId: null}],
+    ['a user PR whose head repository is not an object', {rawHeadRepo: undefined}],
+    ['a user PR whose head repository has no id', {rawHeadRepo: {}}],
+    ['a user PR whose head repository id is a string', {headRepoId: '1'}],
+    [
+      'a user PR whose head repository id is a string on both sides',
+      {headRepoId: '1', rawBase: {ref: 'main', repo: {id: '1'}}},
+    ],
+    ['a user PR whose base repository has no id', {rawBase: {ref: 'main', repo: {}}}],
+    ['a user PR with no base repository', {rawBase: {ref: 'main'}}],
+    ['a user PR with no repository id on either side', {rawHeadRepo: {}, rawBase: {ref: 'main', repo: {}}}],
+    [
+      'a fork PR whose other fields cannot be read',
+      {headRepoId: 2, draft: undefined, author: null, rawBase: {repo: {id: 1}}},
+    ],
+    ['a deleted-fork PR whose other fields cannot be read', {headRepoId: null, draft: undefined, author: {id: 1}}],
+  ] as const)('does not yield to %s: the head repository must be this one', async (_name, overrides) => {
+    const w = world({prs: [pr(7), person(3, overrides)]})
+    expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+    expect(w.named('approve')).toHaveLength(1)
+    expect(outcomes(await DRY(world({prs: [pr(7), person(3, overrides)]})))).toEqual({7: 'would-approve'})
+  })
+
+  it('yields to a user PR from a branch in this repository, however the ids are numbered', async () => {
+    const w = world({
+      prs: [pr(7), person(3, {headRepoId: 4_000_000_000, rawBase: {ref: 'main', repo: {id: 4_000_000_000}}})],
+    })
+    expect(outcomes(await LIVE(w))).toEqual({7: 'yielded'})
+  })
+
+  it('yields to a same-repository PR even when a fork PR with a lower number is open', async () => {
+    const w = world({prs: [pr(7), person(2, {headRepoId: 2}), person(5)]})
+    const result = await LIVE(w)
+    expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(5)})
   })
 
   it.each([
@@ -1213,6 +1256,27 @@ describe('sweep: it yields to open pull requests by people', () => {
       expect(outcomes(result)).toEqual({1: 'yielded', 2: 'yielded'})
       expect(w.named('get')).toHaveLength(1)
       expect(w.named('list')).toHaveLength(2)
+    })
+
+    it('ignores a fork PR that appeared since the first list', async () => {
+      const w: World = world({
+        prs: [pr(7)],
+        onGet: (_spec, call) => {
+          if (call === 1) w.prs.push(person(3, {headRepoId: 2}))
+        },
+      })
+      expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+      expect(w.named('list')).toHaveLength(2)
+    })
+
+    it('ignores a PR from a deleted fork that appeared since the first list', async () => {
+      const w: World = world({
+        prs: [pr(7)],
+        onGet: (_spec, call) => {
+          if (call === 1) w.prs.push(person(3, {headRepoId: null}))
+        },
+      })
+      expect(outcomes(await DRY(w))).toEqual({7: 'would-approve'})
     })
 
     it('lets the approval through when the PR that appeared is a draft', async () => {
