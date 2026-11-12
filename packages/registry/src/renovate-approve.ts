@@ -14,6 +14,18 @@
  *   `.github/settings.yml`. A list that is unreadable, empty or short stops the sweep with exit 1.
  * - Each PR is judged once, from scratch: behind `main` (measured), the required checks on its head, an
  *   approval already given on that head. A PR whose checks are pending or failed waits for the next sweep.
+ * - The sweep yields to people. Each approval lets auto-merge land a commit on `main`, which puts every open PR
+ *   behind it, so while the open list holds a non-draft PR against `main`, from a branch in this repository,
+ *   whose author is not a `Bot` (the API `user.type`), a candidate that is otherwise ready ends as `yielded`,
+ *   naming the lowest such PR number, and no approval is sent: security updates included. A PR whose head
+ *   branch is not in this repository (a fork, a deleted fork, or a head or base repository id that is missing or
+ *   not a number) never counts, whatever its other fields say: an outsider controls that. For a same-repository
+ *   PR, a `user.type`, `draft` or base that cannot be read counts as one to yield to. The check sits after a
+ *   candidate's own stops (`held`, `foreign-commit`, `config-change`, `behind`, `checks-failed`,
+ *   `checks-pending`, `already-approved`, `changes-requested`), so those still show; it is made from the list
+ *   the sweep already read, in a dry run too, and a yielding sweep exits 0. Right before an approval the open
+ *   list is read once more and a PR that appeared since yields the same way; an approval already given is not
+ *   withdrawn.
  * - One approval per sweep, lowest PR number first; the others that are ready are `deferred`. The slot is used
  *   once a request is sent that may have been recorded (a definite client-error refusal frees it), and in a
  *   dry run by the first `would-approve`.
@@ -89,6 +101,7 @@ export type OutcomeCode =
   | 'checks-pending'
   | 'already-approved'
   | 'deferred'
+  | 'yielded'
   | 'head-moved'
   | 'no-longer-qualifies'
   | 'protection-changed'
@@ -196,13 +209,25 @@ function isApp(user: unknown): boolean {
   return Reflect.get(candidate, 'type') === app.appType && Reflect.get(candidate, 'id') === app.appId
 }
 
+/**
+ * Whether a PR's head branch lives in this repository: the head repository id is a number and is the base's.
+ * A fork, a deleted fork (`head.repo` is `null`) and a missing or non-numeric id on either side are all `false`.
+ */
+function inThisRepository(pull: unknown): boolean {
+  // `Object()` makes a primitive, `null` or `undefined` safe to read.
+  const object = new Object(pull)
+  const headId: unknown = Reflect.get(new Object(Reflect.get(new Object(Reflect.get(object, 'head')), 'repo')), 'id')
+  const baseId: unknown = Reflect.get(new Object(Reflect.get(new Object(Reflect.get(object, 'base')), 'repo')), 'id')
+  return typeof headId === 'number' && headId === baseId
+}
+
 function viewOf(data: PullData): PullView {
   return {
     number: data.number,
     open: data.state === 'open',
     baseIsMain: data.base.ref === 'main',
     byApp: isApp(data.user),
-    sameRepository: data.head.repo !== null && data.head.repo.id === data.base.repo.id,
+    sameRepository: inThisRepository(data),
     renovateBranch: data.head.ref.startsWith('renovate/'),
     headSha: data.head.sha,
     labels: data.labels.map(label => label.name),
@@ -289,7 +314,9 @@ function fileOf(entry: unknown): {readonly filename: string; readonly previous: 
 type Compared = 'capped' | 'malformed' | {readonly behind: boolean; readonly foreign: boolean; readonly config: boolean}
 
 /** Fixed text for each outcome that has none of its own. */
-function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'checks-pending' | 'error'>, string>> {
+function details(): Readonly<
+  Record<Exclude<OutcomeCode, 'checks-failed' | 'checks-pending' | 'error' | 'yielded'>, string>
+> {
   return {
     held: 'carries hold-merge',
     'foreign-commit': 'a commit is not authored by the App and signed by GitHub',
@@ -308,6 +335,36 @@ function details(): Readonly<Record<Exclude<OutcomeCode, 'checks-failed' | 'chec
     'changes-requested': 'fro-bot requested changes on this head',
     'approval-refused': 'GitHub refused the approval request; no review was created',
   }
+}
+
+/** The text of a `yielded` row: the lowest number of the PR yielded to, and how to release it. Never a title. */
+function yieldDetail(number: number): string {
+  return `an open PR by a user account (#${String(number)}) comes first; merge, close or draft it to release the sweep`
+}
+
+/**
+ * Whether an open PR is one the sweep yields to: from a branch in this repository, not by a `Bot`, not a draft
+ * and against `main`. A fork PR never counts, whatever its other fields say: an outsider controls whether one
+ * is open, and a deleted fork is not this repository either. For a same-repository PR a `user.type`, `draft` or
+ * base ref that cannot be read counts, so doubt never lets an approval through.
+ */
+function isYieldTarget(entry: unknown): boolean {
+  if (!inThisRepository(entry)) return false
+  // `Object()` makes a primitive, `null` or `undefined` safe to read.
+  const pull = new Object(entry)
+  const type: unknown = Reflect.get(new Object(Reflect.get(pull, 'user')), 'type')
+  const draft: unknown = Reflect.get(pull, 'draft')
+  const ref: unknown = Reflect.get(new Object(Reflect.get(pull, 'base')), 'ref')
+  if (typeof type !== 'string') return true
+  if (type === identity().appType) return false
+  if (typeof draft !== 'boolean' || typeof ref !== 'string') return true
+  return !draft && ref === 'main'
+}
+
+/** The lowest number among the PRs the sweep yields to, or `null` when there is none. */
+function lowestYield(items: readonly PullData[]): number | null {
+  const numbers = items.filter(isYieldTarget).map(item => item.number)
+  return numbers.length === 0 ? null : Math.min(...numbers)
 }
 
 /** The fixed reasons a PR ends as `error`. */
@@ -399,9 +456,9 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
   if (initial.kind === 'short') return {exitCode: 1, live, stop: 'REQUIRED_SHORT', rows: []}
   const required = initial.checks
 
-  let listed: {readonly items: readonly PullData[]; readonly capped: boolean}
-  try {
-    listed = await readList(
+  /** The open PRs against `main`, read to the end. */
+  const readOpen = async () =>
+    readList<PullData>(
       async page =>
         (
           await read(async signal =>
@@ -417,6 +474,10 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
           )
         ).data,
     )
+
+  let listed: {readonly items: readonly PullData[]; readonly capped: boolean}
+  try {
+    listed = await readOpen()
   } catch (error: unknown) {
     if (error instanceof DeadlineError) throw error
     return {exitCode: 1, live, stop: 'CANDIDATES_UNREADABLE', rows: []}
@@ -430,6 +491,8 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
 
   const reasons = errorDetails()
   const texts = details()
+  // The PR the sweep yields to, if any. It starts from the list above and the re-check before an approval can set it.
+  let yielding = lowestYield(listed.items)
 
   /**
    * Compares the current `main` with one head SHA, which gives the commits and the changed files of exactly
@@ -577,6 +640,17 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       return null
     }
 
+    /**
+     * The open list once more, right before an approval: the row that stops it when a PR to yield to has
+     * appeared, an `error` when the list is cut off, or `null`. A read that fails throws, which ends this PR as `error`.
+     */
+    const recheck = async (armed: boolean): Promise<Row | null> => {
+      const relisted = await readOpen()
+      if (relisted.capped) return row('error', reasons.capped, armed)
+      yielding = lowestYield(relisted.items)
+      return yielding === null ? null : row('yielded', yieldDetail(yielding), armed)
+    }
+
     if (pull.labels.includes('hold-merge')) return fixed('held')
 
     const stop = stopFor(await compareHead(head), pull.armed)
@@ -595,6 +669,7 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     if (standing === 'approved') return fixed('already-approved')
     if (standing === 'changes-requested') return fixed('changes-requested')
 
+    if (yielding !== null) return row('yielded', yieldDetail(yielding))
     if (slotUsed) return fixed('deferred')
 
     // The fresh read: the PR, the commits and files of the pinned head against the current `main`, the required
@@ -612,12 +687,16 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     if (!sameChecks(required, again.checks)) return fixed('protection-changed', fresh.armed)
 
     if (!live) {
+      const arrived = await recheck(fresh.armed)
+      if (arrived !== null) return arrived
       slotUsed = true
       return fixed('would-approve', fresh.armed)
     }
     const mode = await readSwitch()
     if (mode === 'unreadable') return row('error', reasons.switch, fresh.armed)
     if (mode !== 'on') return fixed('switch-off', fresh.armed)
+    const arrived = await recheck(fresh.armed)
+    if (arrived !== null) return arrived
 
     slotUsed = true
     const sent = fresh.armed ? 'approved' : 'approved-not-armed'
