@@ -45,6 +45,28 @@ The package exports `GATE_CONTRACT_VERSION` and `GATE_SOURCE_TREE_HASH` from its
 
 `WikiLintFindingKind` includes `correction-eroded` for a blocking active-correction failure and `correction-needs-reconfirmation` for an advisory lifecycle or formatting-only change. Both retain the existing `{kind, path, message, target?}` runtime shape and fingerprint derivation. Consumers with exhaustive matches must handle both kinds.
 
+A page that opens a frontmatter block and never closes it is reported as `invalid-frontmatter`; it was reported as `missing-frontmatter` while the block was read as no block. Wiki repair counts such a page as out of scope, as it does for any `invalid-frontmatter` finding.
+
+## Frontmatter block
+
+`splitFrontmatterBlock(content)` (exported from the root entry and from `@fro.bot/wiki-write-core/frontmatter`) finds the YAML frontmatter block at the start of a document. It does not parse YAML. The root entry already exports the wiki page reader as `splitFrontmatter`, so the splitter has another name.
+
+- The block opens only when the content starts with a line that is exactly `---`. A trailing space, a byte-order mark or a blank line before it means there is no block.
+- A line ending is LF or CRLF; a lone CR is part of its line.
+- The block closes at the first later line that is `---` followed only by spaces or tabs. `---x`, `----` and `--- text` are content of the block.
+- The result is `{kind: 'none'}`, `{kind: 'malformed'}` (opened and never closed, which includes a file that is only `---`) or `{kind: 'block', opening, text, textEnding, closing, body}`. A block carries the pieces that put the document back: `opening + text + textEnding + closing + body` is the original content. `text` is what a YAML parser reads (it is `''` for an empty block); `textEnding` is the line ending of the last line of `text`, or `''` for a block with no lines; `closing` is the closing line with its spaces, tabs and line ending. A caller that rewrites a line of `text` rebuilds the file from the result alone and keeps every other byte.
+- The scan visits each line once, so its running time grows linearly with the content, an unclosed block included.
+
+The package's own readers (`parseFrontmatterDocument`, `splitFrontmatter`, the ingest's page parser and the repo-page move) all use it. Each keeps its error texts and its body handling. An empty block is an empty mapping for the document reader and the ingest parser; a block that parses to `null` (whitespace, comments, `null`, `...`) is not a mapping and gets each reader's rule for a non-mapping. The wiki page reader reports an unclosed block as `Invalid frontmatter: missing closing --- delimiter`.
+
+## Target page sources
+
+When the ingest writes the page of the `repo:` target and that page lists no sources (no `sources` key, or an empty list), the page lists `{url, accessed}` with the target's `https://github.com/<owner>/<name>` URL and the date of the ingest's timestamp. When the page on the branch already has an entry for the target, its whole `sources` list is carried over as it is, so a repeat write changes nothing, a repeat after a migration included. The stamp applies only when the owner and name are plain GitHub names (ASCII letters, digits, `.`, `_` and `-`, not `.` or `..`); for any other target the page is written without one. A page that lists any source is never changed, and neither is a `sources` value that is not a list. When the ingest migrates a page to the target's slug by a trusted node ID, the merged page also gains the target's URL if no entry matches it, and keeps its other entries. No other repo page in the write is stamped, and a write whose target is a page path (the dashboard's case) is never stamped. Whether an entry matches the target uses the privacy gate's URL rule: `https`, host `github.com`, no port, owner and name equal without case, any path after them.
+
+## Gate contract version
+
+`GATE_CONTRACT_VERSION` stays at 1 for the splitter and the reader changes. A bump makes every dashboard save fail until the dashboard ships a release that carries the same version, and the changes here do not need that: no page on `data` changes meaning, the dashboard already has a message for both lint finding kinds, and the dashboard writes with its own installed copy of this package. `dist/gate-contract.json` still changes, because its `sourceTreeHash` follows the source.
+
 ## Releasing
 
 A merge to `main` that changes `packages/wiki-write-core/` releases the package through `.github/workflows/release-wiki-write-core.yaml`. Versions are the `wiki-write-core-v<version>` tags (for example `wiki-write-core-v0.1.1`), and each tag has a GitHub release.

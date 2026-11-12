@@ -270,6 +270,31 @@ describe('planWikiRepairs', () => {
     expect(plan.counts.repaired).toBeGreaterThan(0)
   })
 
+  it('counts a page with an unclosed frontmatter block as out of scope and does not rewrite it', () => {
+    const files = buildCleanFiles()
+    const path = 'knowledge/wiki/repos/fro-bot--widget.md'
+    const originalContent = [
+      '---',
+      'type: repo',
+      'title: Fro Bot Widget',
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      '',
+      'No close.',
+      '',
+    ].join('\n')
+    files[path] = originalContent
+
+    const baseline = lintWikiSnapshot({files}).deterministicFindings
+    expect(baseline.some(f => f.kind === 'invalid-frontmatter' && f.path === path)).toBe(true)
+    expect(baseline.some(f => f.kind === 'missing-frontmatter' && f.path === path)).toBe(false)
+
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    expect(plan.repairedFiles[path]).toBe(originalContent)
+    expect(plan.counts.outOfScope).toBeGreaterThan(0)
+  })
+
   it('leaves a missing title without an H1 untouched and out-of-scope (AE2)', () => {
     const files = buildCleanFiles()
     const path = 'knowledge/wiki/repos/fro-bot--widget.md'

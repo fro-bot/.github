@@ -14,6 +14,7 @@
  * - `log.md` history and `knowledge/wiki/README.md` are never rewritten.
  */
 
+import {splitFrontmatterBlock, type FrontmatterBlockSplit} from './frontmatter-block.ts'
 import {parseFrontmatterDocument, renderFrontmatterDocument, type FrontmatterDocument} from './frontmatter.ts'
 import {parseRelatedFlow} from './line-scanners.ts'
 import {appendLogEntry, rebuildWikiIndex, validateWikilinks, WikiIngestError} from './wiki-ingest.ts'
@@ -405,13 +406,13 @@ function repairRelated(content: string, oldSlug: string, newSlug: string): strin
 
 /**
  * Edit only the `related:` lines of the frontmatter text, so the rest of the page keeps its bytes.
- * Returns `undefined` for a layout it does not recognize; the caller then re-renders structurally.
+ * Returns `undefined` for a layout it does not recognize, and for a block with a CRLF line ending anywhere in it,
+ * the closing line included, which the edit would otherwise leave half rewritten; the caller then re-renders structurally.
  */
 function editRelatedText(content: string, oldSlug: string, newSlug: string): string | undefined {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  const frontmatter = match?.[1]
-  if (frontmatter === undefined) return undefined
-  const lines = frontmatter.split('\n')
+  const split = splitFrontmatterBlock(content)
+  if (split.kind !== 'block' || hasCrlf(split)) return undefined
+  const lines = split.text.split('\n')
 
   const flowIndex = lines.findIndex(line => parseRelatedFlow(line) !== undefined)
   if (flowIndex !== -1) {
@@ -419,7 +420,7 @@ function editRelatedText(content: string, oldSlug: string, newSlug: string): str
     const items = inner.split(',').map(item => item.trim())
     const mapped = dedupe(items.map(item => (stripQuotes(item) === oldSlug ? swapQuoted(item, newSlug) : item)))
     lines[flowIndex] = `related: [${mapped.join(', ')}]`
-    return replaceFrontmatter(content, frontmatter, lines.join('\n'))
+    return rebuild(split, lines.join('\n'))
   }
 
   const keyIndex = lines.findIndex(line => RELATED_BLOCK_KEY.test(line))
@@ -437,7 +438,7 @@ function editRelatedText(content: string, oldSlug: string, newSlug: string): str
     kept.push(item.value === oldSlug ? `${item.prefix}${item.quote}${newSlug}${item.quote}${item.suffix}` : line)
   }
   lines.splice(keyIndex + 1, cursor - keyIndex - 1, ...kept)
-  return replaceFrontmatter(content, frontmatter, lines.join('\n'))
+  return rebuild(split, lines.join('\n'))
 }
 
 interface BlockItem {
@@ -466,9 +467,21 @@ function parseBlockItem(line: string): BlockItem | undefined {
   return {prefix, quote: quoted ? (first ?? '') : '', value: quoted ? raw.slice(1, -1) : raw, suffix}
 }
 
-function replaceFrontmatter(content: string, original: string, next: string): string {
-  const start = '---\n'.length
-  return `${content.slice(0, start)}${next}${content.slice(start + original.length)}`
+type FrontmatterBlock = Extract<FrontmatterBlockSplit, {readonly kind: 'block'}>
+
+/** Whether the opening line, the block text, the line before the close or the closing line ends with CRLF. */
+function hasCrlf(block: FrontmatterBlock): boolean {
+  return (
+    block.opening.endsWith('\r\n') ||
+    block.textEnding === '\r\n' ||
+    block.text.includes('\r\n') ||
+    block.closing.endsWith('\r\n')
+  )
+}
+
+/** The page with the block text replaced and every other byte of it kept. */
+function rebuild(block: FrontmatterBlock, text: string): string {
+  return block.opening + text + block.textEnding + block.closing + block.body
 }
 
 function readRelated(content: string): unknown[] {

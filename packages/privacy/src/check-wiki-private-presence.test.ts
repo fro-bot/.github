@@ -2,6 +2,7 @@ import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 
 import {resolve} from 'node:path'
 import process from 'node:process'
+import {buildWikiIngestChanges} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import {beforeEach, describe, expect, it, vi} from 'vitest'
 import {
@@ -1697,6 +1698,125 @@ describe('present-sources key is authoritative regardless of content — no subs
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
+  })
+})
+
+describe('a page the ingest wrote for its target', () => {
+  const PATH = 'knowledge/wiki/repos/acme--widget.md'
+  const publicSlugMap = new Map([
+    ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
+  ])
+
+  function ingestTarget(frontmatter: string[]): string {
+    const result = buildWikiIngestChanges({
+      existingFiles: {'knowledge/index.md': '# Wiki Index\n', 'knowledge/log.md': '# Wiki Log\n'},
+      operation: 'survey',
+      target: 'repo:acme/widget',
+      summary: 'Surveyed the repository.',
+      timestamp: new Date('2026-11-12T00:00:00.000Z'),
+      sources: [],
+      targetNodeId: 'R_widget',
+      pages: [
+        {
+          path: PATH,
+          content: [
+            '---',
+            'type: repo',
+            'title: acme/widget',
+            'created: 2026-11-12',
+            'updated: 2026-11-12',
+            ...frontmatter,
+            '---',
+            '',
+            'Body.',
+            '',
+          ].join('\n'),
+        },
+      ],
+    })
+    return result.files[PATH] ?? ''
+  }
+
+  it('passes the gate when the page listed no sources, because the ingest listed the target', () => {
+    const leaks = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', ingestTarget([]))],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+    expect(leaks).toStrictEqual([])
+  })
+
+  it('passes the gate for the page a node-ID migration produced, which lists the old URL and the target', () => {
+    const oldPath = 'knowledge/wiki/repos/acme--old-widget.md'
+    const result = buildWikiIngestChanges({
+      existingFiles: {
+        'knowledge/index.md': '# Wiki Index\n',
+        'knowledge/log.md': '# Wiki Log\n',
+        [oldPath]: [
+          '---',
+          'type: repo',
+          'title: acme/old-widget',
+          'created: 2026-10-01',
+          'updated: 2026-10-01',
+          'node_id: R_widget',
+          'sources:',
+          '  - url: https://github.com/acme/old-widget',
+          '    accessed: 2026-10-01',
+          '---',
+          '',
+          'Old notes.',
+          '',
+        ].join('\n'),
+      },
+      operation: 'survey',
+      target: 'repo:acme/widget',
+      summary: 'Surveyed the renamed repository.',
+      timestamp: new Date('2026-11-12T00:00:00.000Z'),
+      sources: [],
+      targetNodeId: 'R_widget',
+      pages: [
+        {
+          path: PATH,
+          content: [
+            '---',
+            'type: repo',
+            'title: acme/widget',
+            'created: 2026-11-12',
+            'updated: 2026-11-12',
+            '---',
+            '',
+            'Body.',
+            '',
+          ].join('\n'),
+        },
+      ],
+    })
+    const migrated = result.files[PATH] ?? ''
+    expect(result.deletedPaths).toStrictEqual([oldPath])
+    expect(migrated).toContain('https://github.com/acme/old-widget')
+
+    const leaks = detectPrivateWikiLeaks({
+      dataWikiPages: [page('acme--widget.md', 'h1', migrated)],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+    expect(leaks).toStrictEqual([])
+  })
+
+  it('is blocked when the page listed sources that do not match, which the ingest leaves as they are', () => {
+    const leaks = detectPrivateWikiLeaks({
+      dataWikiPages: [
+        page(
+          'acme--widget.md',
+          'h1',
+          ingestTarget(['sources:', '  - url: https://github.com/acme/other', '    accessed: 2026-11-01']),
+        ),
+      ],
+      publicSlugMap,
+      grandfatherPages: [],
+    })
+    expect(leaks).toHaveLength(1)
+    expect(leaks[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
   })
 })
 

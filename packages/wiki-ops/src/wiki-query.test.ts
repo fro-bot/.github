@@ -220,6 +220,27 @@ describe('assembleWikiContext', () => {
   })
 })
 
+describe('assembleWikiContext: a page whose frontmatter block is never closed', () => {
+  it('throws like invalid YAML, so the CLI shell fails soft to empty context', () => {
+    const files = {
+      'knowledge/wiki/topics/unclosed.md':
+        '---\ntype: topic\ntitle: Unclosed\n\nBody that was meant to follow a close.\n',
+    }
+
+    expect(() => assembleWikiContext({files, event: {eventName: 'workflow_dispatch', title: 'unclosed'}})).toThrow(
+      'Invalid wiki frontmatter in knowledge/wiki/topics/unclosed.md',
+    )
+  })
+
+  it('reads a CRLF page without error', () => {
+    const files = {
+      'knowledge/wiki/topics/crlf.md': '---\r\ntype: topic\r\ntitle: Crlf\r\ntags: [x]\r\n---\r\n\r\nBody.\r\n',
+    }
+
+    expect(() => assembleWikiContext({files, event: {eventName: 'workflow_dispatch', title: 'crlf'}})).not.toThrow()
+  })
+})
+
 describe('writeSelectedPathsHandoff', () => {
   it('writes selected paths as a deterministic JSON array under the handoff path', async () => {
     // #given a runner-temp directory and a set of selected wiki paths

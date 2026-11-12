@@ -1003,6 +1003,35 @@ describe('assertChangePolicy', () => {
     )
   })
 
+  it.each([[NODE_ID], [null]])(
+    'reads a CRLF page: an in-place edit is allowed when its node id is %s and its sources name the old URL',
+    nodeId => {
+      const files = {...snapshot(), [OLD_PAGE_PATH]: oldRepoPage({nodeId}).replaceAll('\n', '\r\n')}
+
+      expect(() =>
+        assertChangePolicy([{op: 'edit-page', path: OLD_PAGE_PATH, content: 'x'}], context(files)),
+      ).not.toThrow()
+    },
+  )
+
+  it('rejects an in-place edit of a CRLF page that belongs to another node', () => {
+    const files = {...snapshot(), [OLD_PAGE_PATH]: oldRepoPage({nodeId: 'R_someoneElse'}).replaceAll('\n', '\r\n')}
+
+    expect(() => assertChangePolicy([{op: 'edit-page', path: OLD_PAGE_PATH, content: 'x'}], context(files))).toThrow(
+      RenameError,
+    )
+  })
+
+  it('rejects an in-place edit of an unclosed page', () => {
+    const lines = oldRepoPage({nodeId: NODE_ID}).split('\n')
+    lines.splice(lines.indexOf('---', 1), 1)
+    const files = {...snapshot(), [OLD_PAGE_PATH]: lines.join('\n')}
+
+    expect(() => assertChangePolicy([{op: 'edit-page', path: OLD_PAGE_PATH, content: 'x'}], context(files))).toThrow(
+      RenameError,
+    )
+  })
+
   it('accepts an in-place edit of a page with this node id, or a legacy page that names the old URL', () => {
     for (const nodeId of [NODE_ID, null]) {
       const files = {...snapshot(), [OLD_PAGE_PATH]: oldRepoPage({nodeId})}
