@@ -2,8 +2,11 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-10-28
+updated: 2026-11-12
 sources:
+  - url: https://github.com/bfra-me/.github
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-11-12
   - url: https://github.com/bfra-me/.github
     sha: a81be4c5d5c93824fdcc426418c9433d5e5bd9be
     accessed: 2026-05-20
@@ -64,6 +67,43 @@ node_id: R_kgDOHBEXpg
 ---
 
 # bfra-me/.github
+
+## Unchanged-source re-verification (2026-11-12)
+
+Public `main` still resolves to **`737d27ff96c848836cd46f38c7c6ac81cf488d53`**,
+the same SHA surveyed October 28. The complete, non-truncated tree listing
+retains **16 workflows**, three custom actions, and six workflow-template
+YAML/metadata pairs. Re-read evidence covers the root README, root/workspace
+and three action package manifests, all three action manifests, and the
+`main`, `fro-bot`, `renovate`, `trigger-org-renovate`, and
+`update-repo-settings` workflows. No target commands or embedded prompts were
+executed. Unchanged source is not evidence of unchanged runtime health.
+
+The root remains private package **4.43.0**, with pnpm **11.28.6**,
+TypeScript **6.0.3**, ESLint **10.13.0**, and Vitest **4.1.12**. Action
+package versions remain **0.3.2 / 0.2.2 / 0.4.2** for
+`renovate-changesets`, `update-metadata`, and `update-repository-settings`;
+all three action manifests declare `node24` and `dist/index.js`.
+`main.yaml` still runs the sequential type-check/lint/build/test quality
+command and gates its main-push release job on it. The configured Node
+version file and generated action bundles were not read.
+
+**Fro Bot is present**, SHA-pinned to agent **v0.125.1**, with a daily
+**15:30 UTC** pass and review/autoheal dispatch modes. No missing-workflow
+proposal is warranted. The workflow still ends with `Run Fro Bot`, declares
+no explicit `output-mode`, and supplies no caller-owned delivery step while
+its embedded prompt demands agent-owned delivery. This re-verifies the
+static integration gap in [[github-actions-ci]], not a resolved harness
+mode or a newly observed lost edit. Its checkout credential denylist still
+omits `pull_request_review_comment` and `discussion_comment`.
+
+Renovate retains job-level writer grouping, `cancel-in-progress: false`,
+`queue: max`, and distinct non-main-push dry-run groups. Settings sync still
+selects client-ID or legacy app-ID token paths and invokes the local action
+from its own workflow ref; the README still names `elstudio/actions-settings`.
+That documentation/workflow contradiction remains explicit in
+[[probot-settings]]. Applied settings, actual queue behavior, run outcomes,
+and earlier issue/release observations were not refreshed.
 
 ## Limited workflow and manifest re-survey (2026-10-28)
 

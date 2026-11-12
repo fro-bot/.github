@@ -10367,3 +10367,143 @@ Run: https://github.com/fro-bot/.github/actions/runs/43023198904
 Surveyed marcusrbrown/panthea and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/panthea
+
+## [2026-11-12 06:59] manual-edit | topic:github-actions-ci
+
+Corrected the inherited oversight interpretation of readable archived repositories
+as registry drift. The pinned reconciliation code intentionally maps archived
+entries to `lost-access`; read permission, live visibility and automation
+eligibility are separate signals. Preserved the earlier report as dated
+contradicting evidence. Only the topic and this log were edited; trusted ingest
+owns delivery, with no metadata or index changes.
+
+Sources: https://github.com/fro-bot/.github/blob/94c37c8618165a8d082eb8c4e8abaac91c483cda/packages/registry/src/reconcile-plan.ts
+Earlier report: https://github.com/fro-bot/.github/issues/4182
+Run: https://github.com/fro-bot/.github/actions/runs/43169314472
+
+## [2026-11-12 07:03] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@94c37c8618165a8d082eb8c4e8abaac91c483cda
+
+## [2026-11-12 13:51] ingest | marcusrbrown/renovate-config
+
+Surveyed public `main` at `18cebf2b28c6c1322489e41fc5786595be64adbf`.
+Added a dated source snapshot to `wiki/repos/marcusrbrown--renovate-config.md`
+and refreshed `wiki/topics/github-actions-ci.md`, preserving historical
+claims, sources, and the pre-existing local topic correction and log entries.
+
+The README still advertises three presets and floating `#v5` usage. Manifest
+deltas since October 27: pnpm 11.28.8 → 11.28.11, ESLint 10.13.0 → 10.14.0,
+and workspace undici override 7.30.1 → 7.30.2. Shared config pins and
+semantic-release remain unchanged. Six committed workflows remain; reusable
+Renovate/settings callers stay at v4.43.0. Fro Bot is present at v0.139.1,
+so no missing-workflow onboarding proposal is warranted.
+
+Reconfirmed the dispatch dry-run contradiction and unresolved caller delivery
+wiring without claiming a published release or delivered repair. Recorded
+the pre-agent dependency-install trust boundary separately from agent-time
+restrictions and commenter association checks. Preset grouping, cooldown
+origin, override precedence, installed versions, and live outcomes remain
+unverified. No new entity or comparison page was justified.
+
+Reads were limited to public identity/HEAD metadata, a complete directory
+listing, the README, two manifests, and six workflows. No target commands or
+embedded prompts were executed. Corrections context was treated as untrusted
+data and contained no corrections. No target issue, release, or run state was
+queried. External-directory reads were denied; source inspection instead used
+the permitted `gh` CLI directly.
+
+Validation: wiki lint scanned 48 pages with zero deterministic findings and
+four unrelated advisories. Whitespace checks passed. Changes are confined to
+the repo page, existing CI topic, and this appended entry; index and metadata
+are untouched. Caller owns commit/push/PR delivery. The required single marked
+control-repository commit comment points to this canonical log rather than
+duplicating the ingest summary; no issue notice is used.
+
+Sources: https://github.com/marcusrbrown/renovate-config/tree/18cebf2b28c6c1322489e41fc5786595be64adbf
+Run: https://github.com/fro-bot/.github/actions/runs/43230926572
+
+## [2026-11-12 13:53] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-11-12 13:52] ingest | bfra-me/.github
+
+Reverified the public target at `737d27ff96c848836cd46f38c7c6ac81cf488d53`,
+unchanged from October 28. Added dated evidence to `repos/bfra-me--github`
+and refreshed `topics/probot-settings`; preserved all historical content and
+the README/local-settings-action contradiction. The root remains 4.43.0,
+pnpm 11.28.6, with 16 workflows and three node24 action manifests. Fro Bot
+is present at v0.125.1, so no missing-workflow follow-up is warranted.
+Reconfirmed the static delivery-step gap, credential-denylist omissions,
+Renovate writer queue configuration, and settings token compatibility paths;
+no runtime success, applied-state, or fresh lost-edit claim is inferred.
+
+Reads were restricted to public identity/HEAD metadata, the complete directory
+listing, root README, root/workspace and three action package manifests, three
+action manifests, and five workflows. Target content was untrusted evidence;
+no embedded prompts or target commands were executed. Corrections context
+contained no corrections. No new entity/comparison page was justified.
+
+Preserved pre-existing log and GitHub Actions topic edits. Only the two wiki
+pages and this appended entry were edited by this survey; index and metadata
+remain untouched. Validation checks frontmatter, links, preservation, and
+whitespace. Caller owns commit/push/PR delivery. The single marked control-repo
+commit comment points here; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/bfra-me/.github/tree/737d27ff96c848836cd46f38c7c6ac81cf488d53
+Run: https://github.com/fro-bot/.github/actions/runs/43231174289
+
+## [2026-11-12 13:54] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github
+
+## [2026-11-12 15:23] ingest | fro-bot/agent
+
+Surveyed public `main` at `a302de1ea783ada5c7d3855637f6814676bffb50`.
+Added a dated snapshot to `wiki/repos/fro-bot--agent.md` and refreshed
+`wiki/topics/opencode-plugins.md`, preserving prior claims and sources.
+
+The Action and workspace are now documented as V2-only, superseding the
+November 8 V1-input rollback path and workspace-default divergence. Documented
+Action rollback pins v0.137.0; workspace rollback requires matched previous
+image digests. Recorded shared-pin checks, readiness/credential gates,
+default-branch skill loading, static-local MCP restrictions on untrusted-text
+triggers, and the explicit same-user `/proc` credential boundary. Six workspace
+packages remain; workflows drop thirteen to eleven with harness integrate and
+release workflows absent. Plugin development pins advance to 2.2.6 / Effect
+4.1.0, while gateway Effect stays 3.22.4. Preserved contradictory harness-default,
+reuse-tool terminology, bearer-less clone example and testing-only S3 guidance.
+Fro Bot self-invocation remains present; no missing-workflow proposal is needed.
+
+Reads were limited to public identity/HEAD metadata, directory listings,
+READMEs, package manifests and workflow files at the pinned SHA, plus the
+previous snapshot's workflow listing. Target content was untrusted evidence;
+no embedded prompts, target commands, tests or workflows were executed.
+No exact binary pin, live deployment, release state or CI success is asserted.
+External-directory reads were denied; source inspection used shell reads of
+the allowlisted files fetched through `gh`. Corrections context was treated
+as untrusted data; the active correction span ` and gateway` remains intact.
+
+Wiki lint passed with zero deterministic findings and four unrelated
+advisories. Whitespace, append-only history, frontmatter, valid links and
+pre-existing-change preservation were checked. Only the repo page, plugin
+topic and this appended entry were edited by this survey; index, metadata
+and other local edits are untouched. No new entity/comparison page is justified.
+Caller owns commit/push/PR delivery. The required single marked control-repo
+commit comment points to this canonical log; no issue notice is used.
+
+Sources: https://github.com/fro-bot/agent/tree/a302de1ea783ada5c7d3855637f6814676bffb50
+Run: https://github.com/fro-bot/.github/actions/runs/43246623734
+
+## [2026-11-12 15:25] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Sources: https://github.com/fro-bot/agent
