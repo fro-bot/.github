@@ -59,13 +59,13 @@ A _public repo page_ is a page directly under `knowledge/wiki/repos/` whose slug
 **The other sites**
 
 - R16. Each other site reacts to a malformed block as the table below says. No site gains a new kind of message, error class or output field.
-- R17. Each site keeps its own handling of the body: the sites that trim it still trim it, and the sites that rewrite a file in place still preserve the bytes they do not change.
+- R17. Each site keeps its own handling of the body: the sites that trim it still trim it, and the sites that rewrite a file in place still preserve the bytes they do not change. The one exception is the repo-page move on a CRLF page. It re-renders the block structurally, which writes LF line endings there.
 - R18. The plan-status corrector makes no correction when the block is malformed or its text does not parse as a YAML mapping (#4183).
-- R19. For a file that none of the intended changes below affects, every site returns what it returns today.
+- R19. For a file that none of the intended changes below and R23 affects, every site returns what it returns today.
 
 | Site | Reaction to a malformed block |
 | --- | --- |
-| Wiki page reader (`wiki-utils.ts`) | Returns its frontmatter error, as for invalid YAML. Wiki query then drops the page and lint reports it. |
+| Wiki page reader (`wiki-utils.ts`) | Returns its frontmatter error, as for invalid YAML. Wiki query then fails the baseline context, and the run continues without it (out of scope here). Context expansion drops the page, and lint reports it. |
 | Wiki ingest, both readers (`wiki-ingest.ts`) | Each throws the error it throws today for a missing block. |
 | Frontmatter document reader (`frontmatter.ts`) and the repo-page move that uses it | Throws its missing-frontmatter error, as it does today. |
 | Solutions search (`solutions-query.ts`) | Skips the document with its existing malformed-frontmatter warning. |
@@ -81,11 +81,15 @@ A _public repo page_ is a page directly under `knowledge/wiki/repos/` whose slug
 - R21. A scaling test shows that the splitter's time grows linearly on long adversarial input, including an opened block with no close.
 - R22. The records that describe the old behaviour are updated in the same change: the three-state rule, the "keep the fallback for legacy data" guidance and the code example in `docs/solutions/best-practices/wiki-page-structured-attribution-2026-06-04.md`, the cross-reference in `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md`, and the package graph in `README.md` and `.github/copilot-instructions.md`.
 
+**The writer**
+
+- R23. When the ingest writes the target repository's page and that page has no `sources` or an empty `sources` list, the page's `sources` holds that repository's URL. The ingest never changes a page that lists sources, and it stamps no other repo page in the same write.
+
 ---
 
 ## Intended Changes
 
-These are the only inputs for which a site's result differs from today.
+Apart from R23, these are the only inputs for which a site's result differs from today.
 
 - **A line that starts with `---` but is not a close** (`---x`, `----`, `--- text`). It no longer ends the block. The block runs to the real closing line, so keys after that line are read. The block's text may now be invalid YAML where its first part alone was valid.
 - **Spaces or tabs after the closing `---`.** They belong to the closing line. Today they are left at the start of the body by the sites that do not trim it.
@@ -94,6 +98,7 @@ These are the only inputs for which a site's result differs from today.
 - **An unclosed block.** It is malformed and each site reacts as R16 says. Today it is read as "no frontmatter": solutions search, the wiki page reader and pattern synthesis keep such a document with its whole text as body, and after the change they skip, drop or exclude it.
 - **The privacy gate.** A public repo page without a valid block and `sources` is blocked, where the body URL could pass it (R13).
 - **The plan-status corrector.** It makes no correction for a block that is not a YAML mapping, where it rewrote any `status:` line it found (R18).
+- **The ingest's repo page.** It adds the target repository's URL to the target's page when that page lists no sources (R23).
 
 ---
 
@@ -119,7 +124,7 @@ These are the only inputs for which a site's result differs from today.
 
 - The inputs that defeated #4185 are handled without a rule written for any of them: the gate blocks a decoy URL behind a `---x` or `----` line, and an empty block is read as a block.
 - One implementation of the block rule exists. No production code outside the splitter finds a frontmatter block.
-- No file under `knowledge/` on `data` or under `docs/` on `main` changes outcome at any site.
+- No file under `knowledge/` on `data` or under `docs/` on `main` changes outcome at any reader site.
 - The planner can start from this document without deciding what a block is, how any site reacts to a malformed block, or what the gate does without `sources`.
 
 ---
@@ -127,7 +132,7 @@ These are the only inputs for which a site's result differs from today.
 ## Scope Boundaries
 
 - New kinds of message in sites that are silent on bad frontmatter today: learnings harvest and improvement metrics.
-- What any site does with a well-formed block that the intended changes do not affect.
+- What any site does with a well-formed block that the intended changes and R23 do not affect.
 - The YAML parser and its options.
 - The gate's URL match. A page can list the right URL in `sources` beside others, and the match accepts trailing path segments. This work removes the body-URL route, not a false claim inside `sources`.
 - The test-only parsers in `scripts/agent-skills.test.ts`, `packages/wiki-ops/src/solutions-query.test.ts` and `packages/privacy/src/repo-page-move.test.ts`.
