@@ -144,12 +144,12 @@ repos:
     name: renovate-config
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-27
+    last_survey_at: 2026-11-12
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-11-26
+    next_survey_eligible_at: 2026-12-14
     private: false
     node_id: R_kgDOHRfvyQ
     database_id: 488107977
@@ -222,12 +222,12 @@ repos:
     name: agent
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-11-08
+    last_survey_at: 2026-11-12
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: owned
-    next_survey_eligible_at: 2026-11-22
+    next_survey_eligible_at: 2026-11-27
     private: false
     node_id: R_kgDOQyTMEw
     database_id: 1126485011
@@ -261,12 +261,12 @@ repos:
     name: .github
     added: 2026-05-18
     onboarding_status: onboarded
-    last_survey_at: 2026-10-28
+    last_survey_at: 2026-11-12
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: contrib
-    next_survey_eligible_at: 2026-11-21
+    next_survey_eligible_at: 2026-12-04
     private: false
     node_id: R_kgDOHBEXpg
     database_id: 470882214

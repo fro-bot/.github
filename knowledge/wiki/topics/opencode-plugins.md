@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-10
+updated: 2026-11-12
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: a302de1ea783ada5c7d3855637f6814676bffb50
+    accessed: 2026-11-12
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate/blob/f0d44887e8ec2d37c4162c3c81e2691075ace99a/package.json
     sha: f0d44887e8ec2d37c4162c3c81e2691075ace99a
     accessed: 2026-11-10
@@ -179,6 +182,36 @@ guidance, approval, or persistence boundaries across hosts.
 
 Sources: the commit-pinned README and manifest in frontmatter. These are documented
 contracts and reported observations; host code and runtime behavior were not audited.
+
+## 2026-11-12: trusted configuration is not process isolation
+
+[[fro-bot--agent]] now documents V2-only Action and workspace execution,
+superseding November 8's workspace V1-default description on its repo page.
+The plugin retains `@opencode/plugin ^2.2.0` / `effect ^4.0.0` peers, with
+development pins 2.2.6 / 4.1.0. Workspace readiness explicitly includes active
+Systematic and Fro Bot plugin checks, permissions, and credentials when a model
+is configured. Standalone plugin release still tests before build without
+setting `FRO_BOT_OPENCODE_V2_BIN`; it is not an unconditional real-host test.
+
+Root README distinguishes two extension trust paths. Opt-in `repo-skills`
+loads default-branch skills on trusted events, not checkout/PR-head content;
+project config remains disabled. On `pull_request`, `issue_comment` and
+`issues`, MCP admits only static local servers with no file/env references,
+dropping remote, referenced and malformed entries. `{env:` anywhere in the
+Action config fails setup on those triggers. Local-server commands and literal
+environment values still reach runner processes: they are trusted operator
+code, not containment. Other triggers use the broader validated MCP config.
+MCP tools normally reach the model through Code Mode, unless `codemode: false`.
+
+The README also says withholding `github-token` from agent environment and
+`gh` config is not an OS boundary: the same Linux user can read the Action
+process environment through `/proc`. Use a token acceptable for the agent to
+hold and separate publication jobs where needed. These are documented limits,
+not independently tested security properties. Deploy's `task`/`task_id` guard
+terminology still conflicts with the plugin README's `subagent`/`sessionID`.
+
+Sources: root, deploy and plugin READMEs, plugin manifest and release workflow
+at [a302de1e](https://github.com/fro-bot/agent/tree/a302de1ea783ada5c7d3855637f6814676bffb50).
 
 ## 2026-11-08: load status and host identity are separate gates
 

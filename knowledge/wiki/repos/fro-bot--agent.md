@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-08
+updated: 2026-11-12
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: a302de1ea783ada5c7d3855637f6814676bffb50
+    accessed: 2026-11-12
   - url: https://github.com/fro-bot/agent
     sha: e9a6bde10dac023db36e608273d8bc4d55709691
     accessed: 2026-11-08
@@ -164,6 +167,74 @@ against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
 
 ## Overview
+
+### Bounded source snapshot (2026-11-12)
+
+Public `main` resolves to `a302de1ea783ada5c7d3855637f6814676bffb50`.
+The complete tree lists **six workspace package manifests** and **eleven
+workflows**, down from thirteen on November 8; `harness-release.yaml` and
+`harness-integrate.yaml` are absent. The harness package and README remain, so
+workflow removal is not proof that the package was unpublished. Root still
+declares Bun **1.4.4**, legacy SDK **1.19.5**, Vitest **5.1.0**, ESLint
+**10.14.0**, and TypeScript **6.0.3**. Plugin development pins advance to
+`@opencode/plugin` **2.2.6** and Effect **4.1.0**, retaining the same peer ranges;
+gateway Effect remains **3.22.4**. These are declarations, not installed versions.
+
+**V2 is now exclusive, not merely the default.** Root README says the Action
+rejects V1/harness values and any V2 version other than its recorded pin before
+download. Unset or `latest` selects the recorded V2 release; setup runs on every
+invocation rather than adopting a runner-installed binary. This supersedes
+November 8's explicit-V1-input rollback path. The documented Action rollback is
+to pin the Action itself to **v0.137.0**, the last release described as supporting
+V1, with the desired V1 harness input. This is documentation evidence, not an
+independent release/tag check. V1 history import and separate V2 storage keys
+remain documented; rollback history still forks without reconciliation. Runs
+that stop before cache restore and V2 server startup save no session state.
+
+The deploy README now also describes a **V2-only workspace**, superseding
+November 8's Action/workspace default divergence. Action and workspace use the
+same version/digest pin file. The optional workspace build argument is only an
+equality check; unlike the Action input, workspace `latest` is rejected. The
+documented build gate rejects V1, harness and non-pinned V2 values before any
+download. Gateway admission requires a reported V2-or-newer major from
+`/readyz`; workspace readiness also requires active Systematic and Fro Bot
+plugins, permission validation, and credentials for the effective model's
+provider. Clone-only deployments with no model skip the credential check.
+Each workspace spawn still recreates its OpenCode database. Deploy/rollback
+must use a matched gateway/workspace image pair; the documented rollback uses
+previous image digests rather than assuming an older-ref rebuild is identical.
+The actual pin file, Dockerfiles and implementation were outside the read
+allowlist, so no exact binary version or deployed behavior is asserted.
+
+**Repository skills are an explicit opt-in.** Root README adds `repo-skills`
+(default false): trusted schedules/dispatches and authorized same-repository
+PR/comment/issue events may load `.agents/skills`, always freshly fetched from
+the base repository's default branch, never from the checkout or PR head.
+It documents symlink rejection, bounded size, bundled-name protection, run-scoped
+cleanup and project config remaining disabled. On PR/comment/issue triggers,
+MCP retains only static local servers without file/environment references;
+remote, referenced and malformed entries are dropped. Other triggers retain
+MCP configuration subject to documented validation;
+see [[opencode-plugins]] for the distinction between config withholding and
+process isolation.
+
+**Contradictions and workflow evidence.** The harness manifest still calls it
+the default OpenCode for Fro Bot, conflicting with both current V2-only READMEs.
+Deploy still names the reuse guard `task`/`task_id`, while the plugin README
+names `subagent`/`sessionID`; neither implementation was inspected. The bearer-less
+workspace `/clone` example and early deploy “no S3 calls” guidance retain the
+previously recorded contradictions. Operator contract remains **1.15.0**.
+`fro-bot.yaml` remains present with self-invocation, daily reporting, Sunday
+wiki maintenance, manual/reusable dispatch and queued writers; no missing-workflow
+follow-up is warranted. CI now declares one default workspace-image build plus
+V2 readiness/credential checks and explicit version-gate positive/negative
+controls. No target commands, tests, embedded prompts or workflows were executed;
+workflow activation, successful CI, publication and production health are unverified.
+
+Sources: root/workspace manifests; root, deploy, workspace-agent, harness and
+plugin READMEs; `.github/workflows/{ci,fro-bot,opencode-plugin-release}.yaml`
+and the complete tree listing at
+[a302de1e](https://github.com/fro-bot/agent/tree/a302de1ea783ada5c7d3855637f6814676bffb50).
 
 ### Bounded source snapshot (2026-11-08)
 
