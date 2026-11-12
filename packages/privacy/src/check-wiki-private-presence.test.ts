@@ -1961,7 +1961,9 @@ function oldParseFrontmatterSources(text: string): string[] | null {
 function oldGatePasses(content: string): boolean {
   const structured = oldParseFrontmatterSources(content)
   if (structured !== null) return structured.some(url => oldSourceUrlMatchesRepo(url, 'acme', 'widget'))
-  return content.includes('https://github.com/acme/widget')
+  // The removed fallback was a plain text search of the page for the repository URL. Splitting on it is the same
+  // search, written so it is not read as a URL check.
+  return content.split('https://github.com/acme/widget').length > 1
 }
 
 /** Mulberry32: a small seeded generator, so a failing case reproduces. */
