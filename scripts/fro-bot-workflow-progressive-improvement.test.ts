@@ -4,32 +4,44 @@ import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
 interface WorkflowDocument {
-  env: {
-    OBSERVE_CATEGORIES: string
-    OBSERVE_OUTPUT: string
-    SHARED_RULES: string
+  env: Record<string, string>
+  jobs: {
+    'fro-bot-observe': {steps: {id?: string; env?: {TASK_PROMPT?: string}}[]}
   }
 }
 
 // The daily-pass prompt used to be one monolithic SCHEDULE_PROMPT env entry.
 // It is now split across fro-bot-remediate (categories 1–4) and
-// fro-bot-observe (categories 5–8 + the daily report). Everything this suite
-// asserts on lives in the observe half: OBSERVE_CATEGORIES (categories 5–8),
-// OBSERVE_OUTPUT (the report structure/status legend), and SHARED_RULES (the
-// version-comparison guidance shared with the remediate prompt).
+// fro-bot-observe (categories 5–8 + the daily report). The observe agent step
+// renders six env blocks through format(); this suite composes all six, in the
+// order that template names them, so no block it asserts on can be missing.
 function assertFroBotWorkflow(value: unknown): asserts value is WorkflowDocument {
-  const env = typeof value === 'object' && value !== null && 'env' in value ? (value as {env?: unknown}).env : undefined
+  const doc = value as Partial<WorkflowDocument> | null
+  const env: unknown = doc?.env
+  const steps: unknown = doc?.jobs?.['fro-bot-observe']?.steps
   if (
     typeof env !== 'object' ||
     env === null ||
-    typeof (env as Record<string, unknown>).OBSERVE_CATEGORIES !== 'string' ||
-    typeof (env as Record<string, unknown>).OBSERVE_OUTPUT !== 'string' ||
-    typeof (env as Record<string, unknown>).SHARED_RULES !== 'string'
+    !Object.values(env).every(entry => typeof entry === 'string') ||
+    !Array.isArray(steps)
   ) {
-    throw new TypeError(
-      'fro-bot.yaml does not have expected shape: missing OBSERVE_CATEGORIES/OBSERVE_OUTPUT/SHARED_RULES',
-    )
+    throw new TypeError('fro-bot.yaml does not have expected shape: missing env blocks or the fro-bot-observe steps')
   }
+}
+
+function composeObserveBlocks(doc: WorkflowDocument): string {
+  const taskPrompt = doc.jobs['fro-bot-observe'].steps.find(step => step.id === 'fro-bot-agent')?.env?.TASK_PROMPT
+  const names = /format\('[^']*',([^)]*)\)/.exec(taskPrompt ?? '')?.[1]
+  if (names === undefined) throw new TypeError('observe TASK_PROMPT has no format() call')
+  return names
+    .split(',')
+    .map(arg => {
+      const name = arg.trim().replace(/^env\./, '')
+      const block = doc.env[name]
+      if (block === undefined) throw new TypeError(`env.${name} is not defined`)
+      return block
+    })
+    .join('')
 }
 
 describe('fro-bot.yaml progressive improvement prompt', () => {
@@ -38,7 +50,25 @@ describe('fro-bot.yaml progressive improvement prompt', () => {
   const raw = readFileSync(workflowPath, 'utf8')
   const parsed: unknown = parse(raw)
   assertFroBotWorkflow(parsed)
-  const prompt = `${parsed.env.OBSERVE_CATEGORIES}${parsed.env.OBSERVE_OUTPUT}${parsed.env.SHARED_RULES}`
+  const prompt = composeObserveBlocks(parsed)
+
+  it('composes all six production blocks and carries the report-wide public-only rule', () => {
+    // #then every block the agent step renders is present, and the rule sits in the composed text
+    for (const heading of [
+      'EXECUTION MODEL',
+      'DEDUPLICATION',
+      'CATEGORIES (work in order)',
+      'HARD BOUNDARIES',
+      'AGENT NOTES',
+      'OUTPUT — ONE PERPETUAL SUMMARY ISSUE',
+    ]) {
+      expect(prompt).toContain(heading)
+    }
+    const normalized = prompt.replaceAll(/\s+/g, ' ')
+    expect(normalized).toContain('PUBLIC-ONLY REPORT RULE')
+    expect(normalized).toContain('gh repo view <owner/repo> --json visibility')
+    expect(normalized).toContain('Any other result, including an error, means not public')
+  })
 
   it('flags stalled learning proposals', () => {
     // #then category 7 names the intake, expected authoring action, thresholds,
