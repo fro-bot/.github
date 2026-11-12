@@ -10386,3 +10386,47 @@ Run: https://github.com/fro-bot/.github/actions/runs/43169314472
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@94c37c8618165a8d082eb8c4e8abaac91c483cda
+
+## [2026-11-12 13:51] ingest | marcusrbrown/renovate-config
+
+Surveyed public `main` at `18cebf2b28c6c1322489e41fc5786595be64adbf`.
+Added a dated source snapshot to `wiki/repos/marcusrbrown--renovate-config.md`
+and refreshed `wiki/topics/github-actions-ci.md`, preserving historical
+claims, sources, and the pre-existing local topic correction and log entries.
+
+The README still advertises three presets and floating `#v5` usage. Manifest
+deltas since October 27: pnpm 11.28.8 → 11.28.11, ESLint 10.13.0 → 10.14.0,
+and workspace undici override 7.30.1 → 7.30.2. Shared config pins and
+semantic-release remain unchanged. Six committed workflows remain; reusable
+Renovate/settings callers stay at v4.43.0. Fro Bot is present at v0.139.1,
+so no missing-workflow onboarding proposal is warranted.
+
+Reconfirmed the dispatch dry-run contradiction and unresolved caller delivery
+wiring without claiming a published release or delivered repair. Recorded
+the pre-agent dependency-install trust boundary separately from agent-time
+restrictions and commenter association checks. Preset grouping, cooldown
+origin, override precedence, installed versions, and live outcomes remain
+unverified. No new entity or comparison page was justified.
+
+Reads were limited to public identity/HEAD metadata, a complete directory
+listing, the README, two manifests, and six workflows. No target commands or
+embedded prompts were executed. Corrections context was treated as untrusted
+data and contained no corrections. No target issue, release, or run state was
+queried. External-directory reads were denied; source inspection instead used
+the permitted `gh` CLI directly.
+
+Validation: wiki lint scanned 48 pages with zero deterministic findings and
+four unrelated advisories. Whitespace checks passed. Changes are confined to
+the repo page, existing CI topic, and this appended entry; index and metadata
+are untouched. Caller owns commit/push/PR delivery. The required single marked
+control-repository commit comment points to this canonical log rather than
+duplicating the ingest summary; no issue notice is used.
+
+Sources: https://github.com/marcusrbrown/renovate-config/tree/18cebf2b28c6c1322489e41fc5786595be64adbf
+Run: https://github.com/fro-bot/.github/actions/runs/43230926572
+
+## [2026-11-12 13:53] ingest | repo:marcusrbrown/renovate-config
+
+Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/renovate-config

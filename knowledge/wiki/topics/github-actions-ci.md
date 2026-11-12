@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-11-12
 sources:
+  - url: https://github.com/marcusrbrown/renovate-config/tree/18cebf2b28c6c1322489e41fc5786595be64adbf/.github/workflows
+    sha: 18cebf2b28c6c1322489e41fc5786595be64adbf
+    accessed: 2026-11-12
   - url: https://github.com/fro-bot/.github/blob/94c37c8618165a8d082eb8c4e8abaac91c483cda/packages/registry/src/reconcile-plan.ts
     sha: 94c37c8618165a8d082eb8c4e8abaac91c483cda
     accessed: 2026-11-12
@@ -939,6 +942,22 @@ Sources: `fro-bot.yaml`, `ci.yaml`, `site.yaml`, root `package.json`, and
 and September workflow observations remain dated snapshots, not live results.
 
 ## A dispatch dry-run default can be overridden before execution (2026-10-11)
+
+**2026-11-12 static reconfirmation:** at `18cebf2`,
+[[marcusrbrown--renovate-config]] still rewrites default-branch dispatches
+to `DRY_RUN=false`, leaving `INPUT_DRY_RUN` unused. Lint remains the
+declared release prerequisite, with no separate preset-schema test job.
+Fro Bot is now **v0.139.1**, but the caller still ends at the agent without
+explicit output-mode or caller delivery steps; neither release publication
+nor scheduled repair delivery was checked.
+
+The same caller installs dependencies from the selected PR head **before**
+the agent receives its instruction to avoid project commands on sensitive
+PRs. Agent-time restrictions cannot guard caller-time execution. Commenter
+association checks and a fork-head refusal narrow admission, but direct
+same-repository, non-bot PR admission has no author-association predicate.
+Evaluate these as separate trust decisions, not interchangeable assurances.
+No exploit or secret disclosure was observed in this bounded workflow read.
 
 **2026-10-27 static reconfirmation:** at `7386008`, the same repository still
 overrides requested dry-run on the default branch before invoking
