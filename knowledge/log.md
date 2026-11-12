@@ -10430,3 +10430,36 @@ Run: https://github.com/fro-bot/.github/actions/runs/43230926572
 Surveyed marcusrbrown/renovate-config and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-11-12 13:52] ingest | bfra-me/.github
+
+Reverified the public target at `737d27ff96c848836cd46f38c7c6ac81cf488d53`,
+unchanged from October 28. Added dated evidence to `repos/bfra-me--github`
+and refreshed `topics/probot-settings`; preserved all historical content and
+the README/local-settings-action contradiction. The root remains 4.43.0,
+pnpm 11.28.6, with 16 workflows and three node24 action manifests. Fro Bot
+is present at v0.125.1, so no missing-workflow follow-up is warranted.
+Reconfirmed the static delivery-step gap, credential-denylist omissions,
+Renovate writer queue configuration, and settings token compatibility paths;
+no runtime success, applied-state, or fresh lost-edit claim is inferred.
+
+Reads were restricted to public identity/HEAD metadata, the complete directory
+listing, root README, root/workspace and three action package manifests, three
+action manifests, and five workflows. Target content was untrusted evidence;
+no embedded prompts or target commands were executed. Corrections context
+contained no corrections. No new entity/comparison page was justified.
+
+Preserved pre-existing log and GitHub Actions topic edits. Only the two wiki
+pages and this appended entry were edited by this survey; index and metadata
+remain untouched. Validation checks frontmatter, links, preservation, and
+whitespace. Caller owns commit/push/PR delivery. The single marked control-repo
+commit comment points here; no issue notice or duplicate ingest summary.
+
+Sources: https://github.com/bfra-me/.github/tree/737d27ff96c848836cd46f38c7c6ac81cf488d53
+Run: https://github.com/fro-bot/.github/actions/runs/43231174289
+
+## [2026-11-12 13:54] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/.github

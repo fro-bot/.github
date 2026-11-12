@@ -2,8 +2,14 @@
 type: topic
 title: Probot Settings
 created: 2025-06-18
-updated: 2026-11-10
+updated: 2026-11-12
 sources:
+  - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/.github/workflows/update-repo-settings.yaml
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-11-12
+  - url: https://github.com/bfra-me/.github/blob/737d27ff96c848836cd46f38c7c6ac81cf488d53/README.md
+    sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
+    accessed: 2026-11-12
   - url: https://github.com/marcusrbrown/.github/blob/307d4eb4a5821ee2d179b9fb27a4607b7e944fc2/.github/workflows/update-repo-settings.yaml
     sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
     accessed: 2026-11-10
@@ -544,3 +550,16 @@ Both templates require linear history and enforce admin restrictions. The key di
 | Org repos      | push           | admin     |
 
 This dual-permission model ensures the appropriate entity has administrative control based on repo ownership.
+
+### Org settings executor reverified at unchanged HEAD (2026-11-12)
+
+[[bfra-me--github]] still resolves to October 28's `737d27ff96c848836cd46f38c7c6ac81cf488d53`.
+Its README continues to name `elstudio/actions-settings`, while the workflow
+resolves its own ref, sparse-checks out the local `update-repository-settings`
+action, and invokes that action. Both descriptions remain recorded; the
+workflow is evidence of configured execution, not proof of an applied state.
+The client-ID variable path and legacy app-ID fallback remain, as does the
+reusable interface's required legacy `APPLICATION_ID` secret even when the
+client-ID path is selected. The action manifest declares `node24` and
+`dist/index.js`, and its package remains **0.4.2**. This restricted recheck
+does not refresh source-level read-back behavior or live branch protection.
