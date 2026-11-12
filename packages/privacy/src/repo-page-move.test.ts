@@ -547,6 +547,29 @@ describe('planRepoPageMove: the bytes of a repaired related: list, per layout', 
     )
   })
 
+  it('reads a CRLF page and re-renders its block structurally, writing LF endings there and trimming the body', () => {
+    const files = snapshot({
+      [TOPIC_PATH]: topicWith(['related:', `  - ${OLD_SLUG}`, `  - ${MOTHERSHIP}`]).replaceAll('\n', '\r\n'),
+    })
+
+    const plan = planRepoPageMove(moveParams({files}))
+    const topic = applied(plan, files)[TOPIC_PATH] ?? ''
+
+    expect(plan.outcome).toBe('moved')
+    // The block is LF now; the body keeps its own line endings, and is trimmed at both ends.
+    expect(topic.slice(0, topic.indexOf('\n---\n', 4))).not.toContain('\r')
+    expect(topic.endsWith('N/A |\n')).toBe(true)
+    expect(topic.startsWith('---\ntype: topic\n')).toBe(true)
+    expect(frontmatterOf(topic).related).toEqual([NEW_SLUG, MOTHERSHIP])
+    expect(topic.endsWith('\n')).toBe(true)
+  })
+
+  it('blocks the move for a page with an unclosed block, as for any page it cannot parse', () => {
+    const files = snapshot({[TOPIC_PATH]: '---\ntype: topic\ntitle: GitHub Actions CI\n\nBody.\n'})
+
+    expectBlocked(planRepoPageMove(moveParams({files})), 'unparseable-page')
+  })
+
   it('leaves a page untouched when its related: list does not name the old slug', () => {
     const files = snapshot({[TOPIC_PATH]: topicWith(['related:', `  - ${MOTHERSHIP}`])})
 

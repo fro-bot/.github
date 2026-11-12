@@ -256,7 +256,7 @@ What each site does with the three outcomes, after both PRs:
 
 **Verification:** The new module scores 100% in the mutation gate with no disable directives. The package check passes with a regenerated `dist/gate-contract.json`. The root entry still compiles.
 
-- [ ] **Unit 2: The five in-package readers and the writer stamp**
+- [x] **Unit 2: The five in-package readers and the writer stamp**
 
 **Goal:** Move the package's own readers onto the splitter and make the ingest stamp the target's page.
 

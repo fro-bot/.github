@@ -3,6 +3,7 @@ import {basename} from 'node:path'
 
 import {parse} from 'yaml'
 import {findCodeRegions, findRegionAt} from './code-regions.ts'
+import {splitFrontmatterBlock} from './frontmatter-block.ts'
 
 /** Canonical root directory for wiki page content. Shared by every wiki script. */
 export const WIKI_ROOT = 'knowledge/wiki'
@@ -30,35 +31,33 @@ export interface SplitFrontmatterResult {
 /**
  * Split raw wiki page content into frontmatter and body.
  *
- * Stricter than a naive split: malformed YAML frontmatter is surfaced via `error`
- * rather than silently discarded, so downstream safety/lint logic can observe it.
+ * Stricter than a naive split: malformed YAML frontmatter, and a block that is opened and never closed, are
+ * surfaced via `error` rather than silently discarded, so downstream safety/lint logic can observe them.
  */
 export function splitFrontmatter(content: string): SplitFrontmatterResult {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null) {
+  const split = splitFrontmatterBlock(content)
+  if (split.kind === 'none') {
     return {frontmatter: {}, body: content.trim()}
   }
-
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    return {frontmatter: {}, body: content.trim()}
+  if (split.kind === 'malformed') {
+    return {frontmatter: {}, body: content.trim(), error: 'Invalid frontmatter: missing closing --- delimiter'}
   }
 
   let parsed: unknown
   try {
-    parsed = parse(frontmatterText)
+    parsed = parse(split.text)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Unknown YAML parse error'
     return {
       frontmatter: {},
-      body: content.slice(match[0].length).trim(),
+      body: split.body.trim(),
       error: `Invalid YAML frontmatter: ${message}`,
     }
   }
 
   return {
     frontmatter: isRecord(parsed) ? parsed : {},
-    body: content.slice(match[0].length).trim(),
+    body: split.body.trim(),
   }
 }
 

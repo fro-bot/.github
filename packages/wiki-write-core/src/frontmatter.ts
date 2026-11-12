@@ -1,5 +1,7 @@
 import {parse, stringify} from 'yaml'
 
+import {splitFrontmatterBlock} from './frontmatter-block.ts'
+
 export {splitFrontmatterBlock, type FrontmatterBlockSplit} from './frontmatter-block.ts'
 
 export interface FrontmatterDocument {
@@ -7,15 +9,18 @@ export interface FrontmatterDocument {
   readonly body: string
 }
 
-/** Parse a validated wiki document while retaining its raw body. */
+/**
+ * Parse a validated wiki document while retaining its raw body. A document with no block, or with a block that is
+ * never closed, is missing its frontmatter. An empty block is an empty mapping; any other block must parse to one.
+ */
 export function parseFrontmatterDocument(content: string): FrontmatterDocument {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null || match[1] === undefined) {
+  const split = splitFrontmatterBlock(content)
+  if (split.kind !== 'block') {
     throw new Error('validated wiki page is missing frontmatter')
   }
-  const parsed: unknown = parse(match[1])
+  const parsed: unknown = split.text === '' ? {} : parse(split.text)
   if (!isRecord(parsed)) throw new Error('validated wiki page frontmatter is not an object')
-  return {values: parsed, body: content.slice(match[0].length)}
+  return {values: parsed, body: split.body}
 }
 
 /** Reconstruct a wiki document with system-owned frontmatter and normalized body. */

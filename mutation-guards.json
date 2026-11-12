@@ -2,7 +2,7 @@
   "not-mutated": [
     {
       "path": "packages/wiki-write-core/src/frontmatter.ts",
-      "reason": "Throws on missing/invalid frontmatter, but no mutated gate consumes it: wiki-ingest.ts implements its own local parseFrontmatterDocument/renderFrontmatterDocument instead of importing this module. Its one production consumer is repo-page-move.ts (itself not-mutated, below), which imports parseFrontmatterDocument/renderFrontmatterDocument; the page-move tests reach it through the package-name import, not a same-tree import. wiki-write-core.test.ts additionally exercises reconstructFrontmatter, and only its happy path."
+      "reason": "parseFrontmatterDocument is the YAML and mapping half of a frontmatter read: it throws on a missing or unclosed block and on a block that is not a mapping. Where the block starts and ends is decided by frontmatter-block.ts, which is mutated at 100%. Its production consumers are wiki-ingest.ts and repo-page-move.ts (both not-mutated, below), and the page-move tests reach it through the package-name import, not a same-tree import. frontmatter-readers-differential.test.ts imports it by relative path and compares it with the regex it replaced over a seeded corpus, with a stated result for every changed condition; wiki-write-core.test.ts additionally exercises reconstructFrontmatter, and only its happy path."
     },
     {
       "path": "packages/wiki-write-core/src/rendering-policy.ts",
@@ -10,7 +10,7 @@
     },
     {
       "path": "packages/wiki-write-core/src/wiki-utils.ts",
-      "reason": "splitFrontmatter's error field is the only rejection-shaped output here, and its sole consumer is wiki-lint.ts, itself not-mutated pending relocation. collectWikiPages/collectWikilinks, consumed by the mutated corrections-survival.ts and wiki-ingest.ts, are non-rejecting collection helpers, and findWikilinkSpans (consumed by repo-page-move.ts, itself not-mutated) is the same scan with offsets."
+      "reason": "splitFrontmatter's error field (invalid YAML, or a block that is opened and never closed) is the only rejection-shaped output here, and its sole consumer is wiki-lint.ts, itself not-mutated pending relocation. Where the block starts and ends is decided by frontmatter-block.ts, which is mutated at 100%; frontmatter-readers-differential.test.ts compares splitFrontmatter with the regex it replaced over a seeded corpus. collectWikiPages/collectWikilinks, consumed by the mutated corrections-survival.ts and wiki-ingest.ts, are non-rejecting collection helpers, and findWikilinkSpans (consumed by repo-page-move.ts, itself not-mutated) is the same scan with offsets."
     },
     {
       "path": "packages/wiki-write-core/src/markdown-links.ts",

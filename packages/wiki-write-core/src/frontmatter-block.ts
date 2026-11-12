@@ -43,53 +43,48 @@ export type FrontmatterBlockSplit =
  * - A block can be empty: `---` directly followed by `---` gives empty text.
  * - A block that is opened and never closed is malformed, and so is a file that is only `---`.
  *
- * The scan visits each line once and never goes back, so its running time is linear in the length of the content.
+ * The content is cut at its line feeds once and each piece is visited once, so the running time is linear in the
+ * length of the content, and the loop is bounded by the number of pieces.
  */
 export function splitFrontmatterBlock(content: string): FrontmatterBlockSplit {
-  const first = scanLine(content, 0)
-  if (first.end !== 3 || !content.startsWith('---')) return {kind: 'none'}
-
-  // `textEnd` is the end of the last line that is not the close, before its line ending. A file that is only the
-  // opening line has no next line, so the loop does not run and the block is malformed.
-  let textEnd = first.next
-  let at = first.next
-  while (at < content.length) {
-    const line = scanLine(content, at)
-    if (isCloseLine(content, at, line.end)) {
+  const pieces = content.split('\n')
+  const lastIndex = pieces.length - 1
+  // `offset` is where the piece being read starts. `openingLength` is the length of the opening line with its line
+  // feed, and `textEnd` is where the lines before the piece end, before their line ending.
+  let offset = 0
+  let openingLength = 0
+  let textEnd = 0
+  for (const [index, piece] of pieces.entries()) {
+    // A piece that ends with a carriage return has a CRLF ending when a line feed followed it, that is, unless it is
+    // the last piece.
+    const line = index < lastIndex && piece.endsWith('\r') ? piece.slice(0, -1) : piece
+    if (index === 0) {
+      if (line !== '---') return {kind: 'none'}
+      openingLength = piece.length + 1
+      textEnd = openingLength
+    } else if (isCloseLine(line)) {
+      const lineEnd = offset + piece.length + 1
       return {
         kind: 'block',
-        opening: content.slice(0, first.next),
-        text: content.slice(first.next, textEnd),
-        textEnding: content.slice(textEnd, at),
-        closing: content.slice(at, line.next),
-        body: content.slice(line.next),
+        opening: content.slice(0, openingLength),
+        text: content.slice(openingLength, textEnd),
+        textEnding: content.slice(textEnd, offset),
+        closing: content.slice(offset, lineEnd),
+        body: content.slice(lineEnd),
       }
+    } else {
+      textEnd = offset + line.length
     }
-    textEnd = line.end
-    at = line.next
+    offset += piece.length + 1
   }
   return {kind: 'malformed'}
 }
 
-interface ScannedLine {
-  /** The offset just past the last character of the line, before its line ending. */
-  readonly end: number
-  /** The offset of the next line, or the length of the content. */
-  readonly next: number
-}
-
-function scanLine(content: string, start: number): ScannedLine {
-  const feed = content.indexOf('\n', start)
-  if (feed === -1) return {end: content.length, next: content.length}
-  if (content.charAt(feed - 1) === '\r') return {end: feed - 1, next: feed + 1}
-  return {end: feed, next: feed + 1}
-}
-
-/** Whether the line from `start` to `end` is `---` followed only by spaces and tabs. */
-function isCloseLine(content: string, start: number, end: number): boolean {
-  if (!content.startsWith('---', start)) return false
-  for (let at = start + 3; at < end; at += 1) {
-    const character = content.charAt(at)
+/** Whether `line` is `---` followed only by spaces and tabs. */
+function isCloseLine(line: string): boolean {
+  if (!line.startsWith('---')) return false
+  for (let at = 3; at < line.length; at += 1) {
+    const character = line.charAt(at)
     if (character !== ' ' && character !== '\t') return false
   }
   return true

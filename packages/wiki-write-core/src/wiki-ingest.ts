@@ -17,6 +17,8 @@ import {
   type DataBranchBootstrapParams,
   type DataBranchBootstrapResult,
 } from './data-branch-bootstrap.ts'
+import {splitFrontmatterBlock} from './frontmatter-block.ts'
+import {parseFrontmatterDocument} from './frontmatter.ts'
 import {findIndexEntryLines} from './line-scanners.ts'
 import {assertReposFile} from './schemas.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
@@ -1005,9 +1007,9 @@ export function appendLogEntry(
 }
 
 function parseFrontmatter(path: string, content: string): WikiFrontmatter {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
+  const split = splitFrontmatterBlock(content)
 
-  if (match === null) {
+  if (split.kind !== 'block') {
     throw new WikiIngestError({
       code: 'INVALID_FRONTMATTER',
       message: `${path} is missing YAML frontmatter`,
@@ -1015,16 +1017,7 @@ function parseFrontmatter(path: string, content: string): WikiFrontmatter {
     })
   }
 
-  const frontmatterText = match[1]
-  if (frontmatterText === undefined) {
-    throw new WikiIngestError({
-      code: 'INVALID_FRONTMATTER',
-      message: `${path} frontmatter could not be extracted`,
-      remediation: 'Ensure the page begins with a valid YAML frontmatter block.',
-    })
-  }
-
-  const parsed: unknown = parse(frontmatterText)
+  const parsed: unknown = split.text === '' ? {} : parse(split.text)
   if (!isRecord(parsed)) {
     throw new WikiIngestError({
       code: 'INVALID_FRONTMATTER',
@@ -1073,6 +1066,7 @@ function prepareWikiPage(
   const targetSlug = repoTargetSlug(params.target)
   const trackedNodeId = params.trackedRepoNodeIds?.get(pageSlug)
   const isTargetPage = targetSlug === pageSlug
+  const stamp = isTargetPage ? buildTargetStamp(params, existingFiles[page.path]) : undefined
   const identity = resolvePageIdentity({
     trackedNodeId,
     targetNodeId: isTargetPage ? params.targetNodeId : undefined,
@@ -1086,7 +1080,7 @@ function prepareWikiPage(
         : undefined
     return {
       path: page.path,
-      content: updateRepoPageFrontmatter(page.content, preserveNodeId),
+      content: updateRepoPageFrontmatter(page.content, preserveNodeId, stamp),
     }
   }
 
@@ -1106,13 +1100,14 @@ function prepareWikiPage(
         nodeId: identity.nodeId,
         title: repoTargetTitle(params.target) ?? incomingFrontmatter.title,
         aliases: [nodeMatch.slug],
+        stamp,
       }),
     }
   }
 
   return {
     path: page.path,
-    content: updateRepoPageFrontmatter(page.content, identity.nodeId),
+    content: updateRepoPageFrontmatter(page.content, identity.nodeId, stamp),
   }
 }
 
@@ -1148,7 +1143,7 @@ function findRepoPageByNodeId(
 function mergeRepoPageContent(
   incomingContent: string,
   historicalContents: string[],
-  changes: {nodeId: string; title?: string; aliases?: string[]},
+  changes: {nodeId: string; title?: string; aliases?: string[]; stamp?: TargetStamp},
 ): string {
   const incoming = parseFrontmatterDocument(incomingContent)
   const historical = historicalContents.map(content => parseFrontmatterDocument(content))
@@ -1184,15 +1179,98 @@ function mergeRepoPageContent(
     }
   }
 
+  // The ingest matched the old page to the target by a trusted node ID, so the merged page is the target's.
+  if (changes.stamp !== undefined) addTargetSource(values, changes.stamp)
+
   return renderFrontmatterDocument(values, body)
 }
 
-function updateRepoPageFrontmatter(content: string, nodeId?: string): string {
+function updateRepoPageFrontmatter(content: string, nodeId?: string, stamp?: TargetStamp): string {
   const document = parseFrontmatterDocument(content)
   if (nodeId === undefined) delete document.values.node_id
   else document.values.node_id = nodeId
   delete document.values.database_id
+  if (stamp !== undefined) stampEmptySources(document.values, stamp)
   return renderFrontmatterDocument(document.values, document.body)
+}
+
+/** What the ingest needs to list the target repository on the target's own page. */
+interface TargetStamp {
+  readonly owner: string
+  readonly name: string
+  readonly url: string
+  readonly accessed: string
+  /** The page at this path before the write, if there was one. */
+  readonly existingContent: string | undefined
+}
+
+function buildTargetStamp(
+  params: BuildWikiIngestChangesParams,
+  existingContent: string | undefined,
+): TargetStamp | undefined {
+  const parts = repoTargetParts(params.target)
+  if (parts === undefined) return undefined
+  return {
+    owner: parts.owner,
+    name: parts.name,
+    url: `https://github.com/${parts.owner}/${parts.name}`,
+    accessed: params.timestamp.toISOString().slice(0, 10),
+    existingContent,
+  }
+}
+
+/**
+ * Lists the target on its own page when the page lists no sources: no `sources` key, or an empty list. A page that
+ * lists any source is never changed, and neither is a `sources` value that is not a list. When the page on the
+ * branch already has an entry for the target, that entry is kept as it is, date included, so a repeat write changes
+ * nothing.
+ */
+function stampEmptySources(values: Record<string, unknown>, stamp: TargetStamp): void {
+  const sources = values.sources
+  if (sources !== undefined && !Array.isArray(sources)) return
+  if (sources !== undefined && sources.length > 0) return
+  values.sources = [findExistingTargetSource(stamp) ?? {url: stamp.url, accessed: stamp.accessed}]
+}
+
+/** Adds the target to a migrated page's sources when no entry matches it, keeping every other entry. */
+function addTargetSource(values: Record<string, unknown>, stamp: TargetStamp): void {
+  const sources = values.sources
+  if (sources !== undefined && !Array.isArray(sources)) return
+  const listed: unknown[] = sources ?? []
+  if (listed.some(entry => sourceMatchesTarget(entry, stamp))) return
+  values.sources = [...listed, {url: stamp.url, accessed: stamp.accessed}]
+}
+
+function findExistingTargetSource(stamp: TargetStamp): unknown {
+  if (stamp.existingContent === undefined) return undefined
+  try {
+    const sources = parseFrontmatterDocument(stamp.existingContent).values.sources
+    return Array.isArray(sources) ? sources.find(entry => sourceMatchesTarget(entry, stamp)) : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function sourceMatchesTarget(entry: unknown, stamp: TargetStamp): boolean {
+  return isRecord(entry) && typeof entry.url === 'string' && sourceUrlMatchesRepo(entry.url, stamp.owner, stamp.name)
+}
+
+/**
+ * Whether `sourceUrl` refers to the repository `owner`/`name` on github.com by the rule the privacy gate applies to
+ * a page's sources (`sourceUrlMatchesRepo` in `check-wiki-private-presence.ts`): `https`, host `github.com`, no
+ * port, owner and name equal without case, and any path after them. This package cannot import the gate, so the
+ * rule is copied and a test pins the copy against the gate's own cases.
+ */
+function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(sourceUrl)
+  } catch {
+    return false
+  }
+  if (parsed.protocol !== 'https:' || parsed.hostname !== 'github.com' || parsed.port !== '') return false
+  const segments = parsed.pathname.split('/').filter(segment => segment.length > 0)
+  return segments[0]?.toLowerCase() === owner.toLowerCase() && segments[1]?.toLowerCase() === name.toLowerCase()
 }
 
 function getExistingRepoNodeId(content: string | undefined, path: string): string | undefined {
@@ -1233,16 +1311,6 @@ function mergeFrontmatterArray(records: Record<string, unknown>[], key: string):
     }
   }
   return values
-}
-
-function parseFrontmatterDocument(content: string): {values: Record<string, unknown>; body: string} {
-  const match = /^---\n([\s\S]+?)\n---\n?/u.exec(content)
-  if (match === null || match[1] === undefined) {
-    throw new Error('validated wiki page is missing frontmatter')
-  }
-  const parsed: unknown = parse(match[1])
-  if (!isRecord(parsed)) throw new Error('validated wiki page frontmatter is not an object')
-  return {values: parsed, body: content.slice(match[0].length)}
 }
 
 function isRepoPagePath(path: string): boolean {
