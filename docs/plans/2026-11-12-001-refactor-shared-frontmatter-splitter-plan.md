@@ -206,7 +206,7 @@ What each site does with the three outcomes, after both PRs:
 
 ### Phase 1: the published package (first PR, one minor release) and its live checks
 
-- [ ] **Unit 1: The splitter**
+- [x] **Unit 1: The splitter**
 
 **Goal:** Add the splitter as a new module in the published package, exported through `./frontmatter`, with its proof.
 

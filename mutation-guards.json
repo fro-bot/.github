@@ -853,6 +853,7 @@
       "packages/reports/src/gateway-announce-cli.ts",
       "packages/status-truth/src/program-trackers.ts",
       "packages/wiki-ops/src/route-stderr.ts",
+      "packages/wiki-write-core/src/frontmatter-block.ts",
       "scripts/wiki-lockfile-gates-core.ts"
     ]
   ]

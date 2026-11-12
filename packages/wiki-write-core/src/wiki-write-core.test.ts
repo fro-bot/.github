@@ -1,5 +1,7 @@
 import {describe, expect, it} from 'vitest'
 
+import * as frontmatterEntry from './frontmatter.ts'
+import * as rootEntry from './index.ts'
 import {
   buildWikiIngestChanges,
   checkPrivateLeakWithAdapter,
@@ -9,6 +11,22 @@ import {
 } from './index.ts'
 
 describe('wiki write core', () => {
+  it('exports the frontmatter splitter as splitFrontmatterBlock, never as splitFrontmatter', () => {
+    expect(rootEntry.splitFrontmatterBlock).toBe(frontmatterEntry.splitFrontmatterBlock)
+    expect(rootEntry.splitFrontmatterBlock('---\na: 1\n---\nbody')).toStrictEqual({
+      kind: 'block',
+      opening: '---\n',
+      text: 'a: 1',
+      textEnding: '\n',
+      closing: '---\n',
+      body: 'body',
+    })
+    // The root entry already exports the wiki page reader under `splitFrontmatter`; a second export of that name
+    // would not compile.
+    expect(rootEntry.splitFrontmatter).not.toBe(rootEntry.splitFrontmatterBlock)
+    expect(Object.keys(frontmatterEntry)).not.toContain('splitFrontmatter')
+  })
+
   it('renders manual-edit operations distinctly in the append-only log', () => {
     const result = buildWikiIngestChanges({
       existingFiles: {

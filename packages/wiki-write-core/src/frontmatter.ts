@@ -1,5 +1,7 @@
 import {parse, stringify} from 'yaml'
 
+export {splitFrontmatterBlock, type FrontmatterBlockSplit} from './frontmatter-block.ts'
+
 export interface FrontmatterDocument {
   readonly values: Record<string, unknown>
   readonly body: string
