@@ -116,6 +116,22 @@ env:
     repos) follows .agents/skills/cross-repo-program/SKILL.md. Read it before you act on such a request. It does not
     apply to any other request.
 
+  # Rendered by the fro-bot job's DELIVERY_NOTE for an issue_comment on a pull request only. That run has no
+  # credential, and the agent can push to the PR branch only through its brokered push, which needs a
+  # trusted-head-sha input this workflow does not pass. Without this rule the run can end green with nothing
+  # pushed. Remove it when the workflow passes trusted-head-sha.
+  PR_COMMENT_DELIVERY_NOTE: |
+    PULL REQUEST COMMENT DELIVERY
+    This run cannot push commits to this pull request's branch. If the comment asks for a code or file
+    change, your reply must:
+    - say plainly that no change was pushed;
+    - give the requested change as a reviewable description or patch in the reply, when that is practical;
+    - say the change can be delivered by running the Fro Bot workflow by workflow_dispatch with a prompt
+      that describes it, which opens a branch and a pull request.
+    Never say the change is done, pushed or delivered. Do not try to work around the missing credential.
+    Do not dispatch the workflow yourself. A review, analysis, answer or knowledge capture needs no change
+    to this branch, so this rule does not affect it.
+
   PR_REVIEW_PROMPT: |
     You are a skeptical reviewer for fro-bot/.github (org control center).
     Focus on correctness, security, and automation safety. Prefer false positives
@@ -737,6 +753,7 @@ jobs:
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
           # Handoff path only — never the file contents or selected paths themselves.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
+          DELIVERY_NOTE: ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && env.PR_COMMENT_DELIVERY_NOTE) || '' }}
           TASK_PROMPT: >-
             ${{
               (github.event_name == 'pull_request' && env.PR_REVIEW_PROMPT)
@@ -753,6 +770,8 @@ jobs:
             <persona>
             ${{ env.PERSONA }}
             </persona>
+
+            ${{ env.DELIVERY_NOTE }}
 
             ${{ env.TASK_PROMPT }}
 
