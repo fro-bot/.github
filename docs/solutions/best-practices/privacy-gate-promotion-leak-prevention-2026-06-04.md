@@ -1,7 +1,7 @@
 ---
 title: Privacy Gate Design for Data→Main Promotion Leak Prevention
 date: 2026-06-04
-last_updated: 2026-07-04
+last_updated: 2026-11-12
 verified: 2026-06-04
 category: best-practices
 module: github-workflows
@@ -203,8 +203,8 @@ return {ok: false, matchedFiles: redactedFiles}
 ## See also — privacy-gate correctness patterns
 
 - [Structured-first attribution for public-allowlist privacy gates](wiki-page-structured-attribution-2026-06-04.md) —
-  three-state frontmatter read (absent / present-but-malformed / present-with-URLs) and the
-  substring/prefix/truthy leak vectors that structured attribution closes.
+  a public repo page passes only with a valid frontmatter block and a matching `sources` URL (no
+  fallback), and the substring/prefix/unreadable-provenance leak vectors that closes.
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) —
   defense-in-depth at the dispatch boundary: the workflow is its own privacy boundary, not a
   downstream consumer of someone else's gate.

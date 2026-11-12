@@ -2,7 +2,7 @@
 
 The improvement-metrics loop, the daily digest counts and the gateway announcer of the Fro Bot control plane. The loop is two jobs of `improvement-metrics.yaml`: `improvement-metrics-detect` computes a counts-only digest of codified solution classes and the proposal issues that may recur against them, and `improvement-metrics-report` upserts the perpetual report issue from that digest. `daily-digest-counts` derives the numbers the daily digest announces, and `gateway-announce` posts the invitation, survey and digest events to the gateway presence endpoint. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
-It depends on `@fro-bot/core` (guards, env, JSON lines, retry, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the fail-closed denylist, the redacted-ID loader and the public-output gate) and `yaml`. It imports no other domain package. Tests also import `@fro-bot/test-kit` (the spawn helper and the fake GitHub).
+It depends on `@fro-bot/core` (guards, env, JSON lines, retry, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the fail-closed denylist, the redacted-ID loader and the public-output gate), `@fro.bot/wiki-write-core` (the frontmatter splitter that `improvement-metrics-detect` reads a solution doc's block through) and `yaml`. It imports no other domain package. Tests also import `@fro-bot/test-kit` (the spawn helper and the fake GitHub).
 
 Nothing here holds a credential of its own. `improvement-metrics-report` routes every rendered surface through the public-output gate and writes nothing when the gate or the token load fails. `gateway-announce` signs the exact bytes it sends and never prints the secret, the signature, the body or the context. The detect half falls back to an empty digest and exits 0 on any failure, because detection must never fail the workflow; the report half throws on a GitHub error and exits 1. The detect-to-report digest file is an artifact contract between two jobs, so its key set and bytes do not change.
 
@@ -52,6 +52,7 @@ C4Component
   System_Ext(entrypoints, "scripts/<name>.ts", "Six-line entrypoints run by workflows")
   System_Ext(core, "@fro-bot/core", "cli, env, guards, json, retry, github")
   System_Ext(privacy, "@fro-bot/privacy", "capture-learnings-privacy, redacted-ids, status-truth-public-output")
+  System_Ext(wwc, "@fro.bot/wiki-write-core", "frontmatter splitter")
   System_Ext(github, "GitHub", "REST API")
   System_Ext(gateway, "Gateway", "Presence endpoint, HMAC-signed POST")
 
@@ -72,6 +73,7 @@ C4Component
   Rel(gateway_announce_cli, core, "runs on")
   Rel(improvement_metrics_detect, core, "imports")
   Rel(improvement_metrics_detect, privacy, "imports")
+  Rel(improvement_metrics_detect, wwc, "imports")
   Rel(improvement_metrics_detect_cli, core, "runs on")
   Rel(improvement_metrics_report, core, "imports")
   Rel(improvement_metrics_report, privacy, "imports")
@@ -97,6 +99,7 @@ C4Component
   UpdateRelStyle(gateway_announce_cli, core, $offsetX="-61", $offsetY="15")
   UpdateRelStyle(improvement_metrics_detect, core, $offsetX="6", $offsetY="37")
   UpdateRelStyle(improvement_metrics_detect, privacy, $offsetX="23", $offsetY="-39")
+  UpdateRelStyle(improvement_metrics_detect, wwc, $offsetX="-30", $offsetY="25")
   UpdateRelStyle(improvement_metrics_detect_cli, core, $offsetX="-76", $offsetY="-43")
   UpdateRelStyle(improvement_metrics_report, core, $offsetX="50", $offsetY="-22")
   UpdateRelStyle(improvement_metrics_report, privacy, $offsetX="-57", $offsetY="4")

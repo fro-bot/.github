@@ -2,7 +2,7 @@
 
 The status-truth maintenance loop and the rollout tracker preflight of the Fro Bot control plane. The loop is three steps that `status-truth.yaml` runs in order: `status-truth-detect` scans the public docs and the issues of this repository for claims about pull requests, issues, releases, plans and the rollout tracker, resolves them against live state and writes a sanitized report; `status-truth-proposals` turns that report into proposal issues; `status-truth-prs` opens bounded correction PRs for the claim kinds that have graduated. `rollout-tracker-snapshot` is the preflight of `gateway-rollout-tracker.yaml`, and `status-truth.yaml` pipes it to `jq` for the rollout-tracker claims.
 
-It depends on `@fro-bot/core` (the Octokit client factory with its no-op logger, the guards, and the goke runner for the four CLI modules) and `@fro-bot/privacy` (the public-output gate and the private-token and redacted-ID loaders). It does not import `@fro.bot/wiki-write-core`. The package is private and exports `.ts` source with no build step.
+It depends on `@fro-bot/core` (the Octokit client factory with its no-op logger, the guards, and the goke runner for the four CLI modules), `@fro-bot/privacy` (the public-output gate and the private-token and redacted-ID loaders) and `@fro.bot/wiki-write-core` (the frontmatter splitter that `detect-plan-consistency` reads a plan's block through, and the reader its corrector checks the block with). The package is private and exports `.ts` source with no build step.
 
 Each CLI keeps a `scripts/<name>.ts` entrypoint of six lines: `main` from the package's `-cli` module under the entry guard. Workflows run the same paths as before.
 
@@ -115,6 +115,7 @@ C4Component
   System_Ext(entrypoints, "scripts/<name>.ts", "Six-line entrypoints run by workflows")
   System_Ext(core, "@fro-bot/core", "cli, github, guards")
   System_Ext(privacy, "@fro-bot/privacy", "public-output gate, token loaders")
+  System_Ext(wwc, "@fro.bot/wiki-write-core", "frontmatter splitter and reader")
   System_Ext(gh, "GitHub", "Issues, pull requests, refs, contents, releases")
 
   Rel(entrypoints, detectcli, "main")
@@ -135,6 +136,7 @@ C4Component
   Rel(live, model, "imports")
   Rel(planc, extract, "imports")
   Rel(planc, model, "imports")
+  Rel(planc, wwc, "imports")
   Rel(rollout, extract, "imports")
   Rel(rollout, model, "imports")
   Rel(rollout, snapshot, "imports")
@@ -189,6 +191,7 @@ C4Component
   UpdateRelStyle(live, model, $offsetX="30", $offsetY="20")
   UpdateRelStyle(planc, extract, $offsetX="60", $offsetY="0")
   UpdateRelStyle(planc, model, $offsetX="90", $offsetY="30")
+  UpdateRelStyle(planc, wwc, $offsetX="-40", $offsetY="-30")
   UpdateRelStyle(rollout, extract, $offsetX="-60", $offsetY="-20")
   UpdateRelStyle(rollout, model, $offsetX="-30", $offsetY="10")
   UpdateRelStyle(rollout, snapshot, $offsetX="0", $offsetY="-10")

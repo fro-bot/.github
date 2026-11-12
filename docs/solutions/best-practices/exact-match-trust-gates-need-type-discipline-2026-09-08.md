@@ -1,7 +1,7 @@
 ---
 title: An exact-match trust gate needs type discipline — establish shape before a coercing consumer sees the value
 date: 2026-09-08
-last_updated: 2026-09-08
+last_updated: 2026-11-12
 verified: 2026-09-08
 category: best-practices
 module: packages/privacy/src/check-wiki-private-presence.ts
@@ -40,9 +40,9 @@ Test every exact-match check at a trust boundary against a one-element-array dec
 
 The type check stops the coercion. It does not establish that the value means what the gate assumes. The implemented defence in `check-wiki-private-presence.ts` is three layers, and the type check is the cheapest one:
 
-1. **Structured field is authoritative.** Parsed frontmatter `sources` decide attribution when present.
+1. **Structured field is the only authority.** Parsed frontmatter `sources` decide attribution; a page with no readable block or no matching source is blocked, and the body is never consulted.
 2. **Exact comparison after parsing.** Each candidate is compared through `new URL(...)`, not by string equality against a raw field.
-3. **Substring fallback only when structured sources are absent**, and deliberately — a grandfathered path, not a general equivalence.
+3. **No weaker path.** The body-substring fallback that once covered pages without structured sources was removed, because a page could be shaped to reach it.
 
 A reader who takes only the `typeof` conjunct has closed the coercion vector and left the weaker comparison in place. State which layer you are adding.
 

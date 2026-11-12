@@ -1,7 +1,7 @@
 ---
 title: Pure-Core Privacy Gates with a Shared Module and Mutation-Proof Tests
 date: 2026-06-22
-last_updated: 2026-07-04
+last_updated: 2026-11-12
 problem_type: best_practice
 category: best-practices
 component: development_workflow
@@ -128,7 +128,7 @@ it('mutation proof: digest assembly drops private prose', () => {
 ## Related
 
 - [Privacy-gate promotion leak prevention](../best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md) — the trusted-chokepoint and fail-closed-resolution patterns this gate extends into the pure core. Its "See also — privacy-gate correctness patterns" section indexes the full cluster of gate docs, including this one.
-- [Wiki page structured attribution](../best-practices/wiki-page-structured-attribution-2026-06-04.md) — the present-but-empty vs absent distinction recurs here; encode it as a habit. The three-state frontmatter read (absent / present-but-malformed / present-with-URLs) is the same discipline applied to structured provenance.
+- [Wiki page structured attribution](../best-practices/wiki-page-structured-attribution-2026-06-04.md) — the present-but-empty vs absent distinction recurs here; encode it as a habit. The attribution gate applies the same discipline to structured provenance: an unreadable block, a missing `sources` key and an empty list are all blocked, and none selects a weaker check.
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — verify privacy inside the trusted workflow before any public side effect.
 - [Private repo dispatch visibility gate](../security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md) — the fail-closed predicate and opaque-identifier redaction this gate builds on.
 - `packages/privacy/src/status-truth-public-output.ts` — a third chokepoint (`applyPublicOutputGate`) built on the same shared module: it wraps `learningBodyHasPrivateLeak` / `logDiffHasSecret` rather than forking privacy logic, and fails closed the same way — a token-load failure blocks all output.

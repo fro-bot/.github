@@ -429,7 +429,7 @@ What each site does with the three outcomes, after both PRs:
 
 **Verification:** The layout test passes with the three new edges and matching lock entries. The mutation gate is clean. The package graph has no cycle. The pinned-corpus check shows no reader difference for these sites, and the PR records its two commits and counts.
 
-- [ ] **Unit 6: Records**
+- [x] **Unit 6: Records**
 
 **Goal:** Bring the solution docs and the package-graph descriptions in line with the new behaviour.
 
