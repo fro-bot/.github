@@ -315,7 +315,7 @@ What each site does with the three outcomes, after both PRs:
 
 **Verification:** The package check passes. The dashboard's calls (`parseFrontmatterDocument`, `reconstructFrontmatter`, `lintWikiSnapshot`, `buildWikiIngestChanges`) return unchanged results on LF inputs that no intended change affects, and a page-path target is never stamped. The pinned-corpus check shows no reader difference and is recorded in the PR with its two commits and counts.
 
-- [ ] **Unit 3: Live checks after the first PR**
+- [x] **Unit 3: Live checks after the first PR**
 
 **Goal:** Confirm the release and the stamp on their first real runs, before the gate changes.
 
@@ -338,6 +338,14 @@ What each site does with the three outcomes, after both PRs:
 **Test expectation:** none -- live verification of shipped behaviour.
 
 **Verification:** Each item above is recorded in this plan with its run. Unit 4 does not start before the survey persist is recorded.
+
+**Recorded results (2026-11-12):**
+
+- Release: `@fro.bot/wiki-write-core` 0.2.0 is published (`npm view` shows 0.2.0).
+- Survey persist: survey run 43246623734 on 2026-11-12 passed and rewrote `knowledge/wiki/repos/fro-bot--agent.md` on `data` with its sources intact and a new entry dated 2026-11-12. That page already listed its repository, so the stamp did not need to add one.
+- Dashboard marker: the marker on `main` reads version 1.
+- Next promotion passes both gates: pending.
+- Next wiki lint run reports no new finding: pending.
 
 ### Phase 2: the private packages and the gate (second PR, no release)
 
