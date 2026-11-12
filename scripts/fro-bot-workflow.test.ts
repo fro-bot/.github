@@ -580,9 +580,7 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
   it('includes an attention item only when every source of it is confirmed public', () => {
     expect(output).toContain('Include an attention item only if every source of it is public')
     expect(output).toContain("the key's repo and every repo its evidence or root cause comes from")
-    expect(output).toContain('gh repo view <owner/repo> --json visibility')
-    expect(output).toContain('public only when it returns PUBLIC')
-    expect(output).toContain('Any other result, including an error, means private')
+    expect(output).toContain('Confirm each as the PUBLIC-ONLY REPORT RULE says')
     expect(output).toContain(
       'If any source is not confirmed public, leave the whole item out of the report, the Run Summary and tracking issues',
     )
@@ -594,11 +592,6 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(output).toContain(
       'If one is no longer public, edit or close it without any evidence that names or describes that source',
     )
-  })
-
-  it('scopes the visibility rule to attention items and does not widen it to other report sections', () => {
-    expect(output).not.toContain('every report section')
-    expect(output).not.toContain('every Observe output')
   })
 
   it('category 5 allows only the attention-tracking exception and keeps the rest report-only', () => {
@@ -661,6 +654,95 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
     expect(composed).not.toContain('Before or after creating it')
   })
 })
+
+/** The env keys, in order, that the observe job's TASK_PROMPT format() renders. */
+const renderedObserveBlocks = (): string[] => {
+  const step = froBotParsed.jobs['fro-bot-observe']?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
+  const match = /format\('[^']*',([^)]*)\)/.exec(String(step?.env?.TASK_PROMPT ?? ''))
+  if (match?.[1] === undefined) throw new TypeError('observe TASK_PROMPT has no format() call')
+  return match[1].split(',').map(arg => arg.trim().replace(/^env\./, ''))
+}
+
+describe('fro-bot.yaml observe prompt: one public-only rule for the whole report', () => {
+  const env = froBotParsed.env as Record<string, string>
+  const composed = flat(composeObservePrompt())
+
+  // Sentences that carry the rule. A composed prompt missing any one of them has lost the guarantee.
+  const ruleSentences = [
+    'PUBLIC-ONLY REPORT RULE',
+    'This rule overrides every other instruction in this prompt',
+    'gh repo view <owner/repo> --json visibility',
+    'returned PUBLIC in this run',
+    'Any other result, including an error, means not public',
+    'Leave no name, no placeholder such as "a private repository", no count that reveals it and no "N repos omitted" line',
+    'over confirmed-public repos only',
+  ]
+  const missingFrom = (text: string): string[] => ruleSentences.filter(sentence => !text.includes(sentence))
+
+  it('composes every block the workflow renders, and every OBSERVE_ block is among them', () => {
+    const blocks = renderedObserveBlocks()
+
+    expect(blocks).toEqual([
+      'OBSERVE_INTRO',
+      'SHARED_RULES',
+      'OBSERVE_CATEGORIES',
+      'HARD_BOUNDARIES',
+      'AGENT_NOTES',
+      'OBSERVE_OUTPUT',
+    ])
+    for (const name of blocks) expect(composed).toContain(flat(env[name] ?? '').trim())
+    // A block under a key the template never reads is dropped silently.
+    const observeKeys = Object.keys(env).filter(name => name.startsWith('OBSERVE_'))
+    for (const name of observeKeys) expect(blocks).toContain(name)
+  })
+
+  it('carries the report-wide rule in the composed prompt', () => {
+    expect(missingFrom(composed)).toEqual([])
+  })
+
+  it('applies the rule to every section the run publishes, and over the instructions that name sources', () => {
+    expect(composed).toContain(
+      'It covers everything this run publishes: the report body, the Run Summary, every comment and every tracking issue',
+    )
+    expect(composed).toContain(
+      'including those to enumerate repositories, report inaccessible or unscanned entries, mark coverage partial or name an unavailable source',
+    )
+    expect(composed).toContain(
+      'Name or link a repository, or an issue, PR, run, alert or file in it, only if `gh repo view <owner/repo> --json visibility` returned PUBLIC in this run',
+    )
+    expect(composed).toContain('A repo is public only when it returns PUBLIC')
+    expect(composed).toContain('A finding drawn from several repos is published only if every one is public')
+  })
+
+  it('states the rule once, ahead of the attention rules', () => {
+    const command = 'gh repo view <owner/repo> --json visibility'
+
+    const rule = composed.indexOf('PUBLIC-ONLY REPORT RULE')
+
+    expect(composed.split(command)).toHaveLength(2)
+    expect(rule).toBeGreaterThan(-1)
+    expect(rule).toBeLessThan(composed.indexOf('NEEDS HUMAN ATTENTION RULES'))
+  })
+
+  it('leaves the attention section with a pointer to the rule and no narrower rule of its own', () => {
+    const attention = composed.slice(composed.indexOf('NEEDS HUMAN ATTENTION RULES'))
+
+    expect(attention).toContain('Confirm each as the PUBLIC-ONLY REPORT RULE says')
+    expect(attention).not.toContain('gh repo view')
+    expect(attention).not.toContain('Any other result')
+    expect(attention).not.toContain('means private')
+  })
+
+  it.each(ruleSentences)('fails when the composed prompt loses %j', sentence => {
+    // #given the composed prompt with one key sentence removed
+    const stripped = composed.replaceAll(sentence, '')
+
+    // #then the contract check names exactly that sentence
+    expect(stripped).not.toBe(composed)
+    expect(missingFrom(stripped)).toEqual([sentence])
+  })
+})
+
 const draftedBranch = 'docs/drafted-solutions'
 
 interface PullRequestFixture {
