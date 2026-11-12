@@ -164,6 +164,8 @@ if (sources !== null && sources.some(url => sourceUrlMatchesRepo(url, entry.owne
   cites this doc's structured-provenance-over-body-text pattern.
 - `docs/solutions/best-practices/closed-vocabulary-telemetry-keys-from-public-bodies-2026-07-03.md`
   — cites this doc's structured-metadata-over-body-text pattern.
+- `docs/solutions/best-practices/replace-copied-parsers-with-one-contract-that-returns-a-tagged-result-2026-11-12.md`
+  — how the copied block regexes were replaced: the tagged result, the per-site table and the proofs.
 - `docs/plans/2026-11-12-001-refactor-shared-frontmatter-splitter-plan.md` — the plan that replaced
   the copied block regexes with one splitter and removed the fallback.
 - Issues: #3419 (this refresh), #3408 (operator-actionable blocked output), #3418 (self-asserted
