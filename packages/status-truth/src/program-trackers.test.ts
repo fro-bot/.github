@@ -412,95 +412,100 @@ describe('loadProgramTrackers', () => {
 })
 
 describe('selectProgram and issueRef', () => {
-  const config = parseProgramTrackers(
-    configText(validEntry(), validEntry({key: 'opencode-v2', issue: 'marcusrbrown/plugins#42', evidence: 'none'})),
-  )
+  // A function, not a constant: a describe-scope call into the module runs at collection, which Stryker
+  // counts as static coverage, so every mutant that call reaches would run the whole suite.
+  const config = () =>
+    parseProgramTrackers(
+      configText(validEntry(), validEntry({key: 'opencode-v2', issue: 'marcusrbrown/plugins#42', evidence: 'none'})),
+    )
 
   it('selects the entry with the key', () => {
-    expect(selectProgram(config, 'opencode-v2').issue).toBe('marcusrbrown/plugins#42')
-    expect(selectProgram(config, 'gateway').issue).toBe('fro-bot/.github#3512')
+    expect(selectProgram(config(), 'opencode-v2').issue).toBe('marcusrbrown/plugins#42')
+    expect(selectProgram(config(), 'gateway').issue).toBe('fro-bot/.github#3512')
   })
 
   it.each([[''], ['Gateway'], ['missing'], ['gateway ']])('rejects the unknown key %j', key => {
-    expect(() => selectProgram(config, key)).toThrow(new Error('unknown program key'))
+    expect(() => selectProgram(config(), key)).toThrow(new Error('unknown program key'))
   })
 
   it('splits the tracker issue into its repository and number', () => {
-    expect(issueRef(selectProgram(config, 'gateway'))).toEqual({repo: 'fro-bot/.github', number: 3512})
-    expect(issueRef(selectProgram(config, 'opencode-v2'))).toEqual({repo: 'marcusrbrown/plugins', number: 42})
+    expect(issueRef(selectProgram(config(), 'gateway'))).toEqual({repo: 'fro-bot/.github', number: 3512})
+    expect(issueRef(selectProgram(config(), 'opencode-v2'))).toEqual({repo: 'marcusrbrown/plugins', number: 42})
   })
 })
 
 describe('isOperatorComment', () => {
-  const entry = entryOf()
+  // A function, not a constant: see `selectProgram and issueRef`.
+  const entry = () => entryOf()
 
   it('is true for the operator login', () => {
-    expect(isOperatorComment({author: {login: 'marcusrbrown'}}, entry)).toBe(true)
+    expect(isOperatorComment({author: {login: 'marcusrbrown'}}, entry())).toBe(true)
   })
 
   it('is false, with no numeric id, for anyone else, including the bot and a near match', () => {
     for (const login of ['octocat', 'fro-bot', 'fro-bot[bot]', 'marcusrbrown2', ' marcusrbrown', '']) {
-      expect(isOperatorComment({author: {login}}, entry)).toBe(false)
+      expect(isOperatorComment({author: {login}}, entry())).toBe(false)
     }
   })
 
   it('compares the login ignoring case when the comment carries no numeric id', () => {
-    expect(isOperatorComment({author: {login: 'MarcusRBrown'}}, entry)).toBe(true)
-    expect(isOperatorComment({author: {login: 'MARCUSRBROWN'}}, entry)).toBe(true)
+    expect(isOperatorComment({author: {login: 'MarcusRBrown'}}, entry())).toBe(true)
+    expect(isOperatorComment({author: {login: 'MARCUSRBROWN'}}, entry())).toBe(true)
   })
 
   it('matches on the numeric id alone when the comment carries one', () => {
-    expect(isOperatorComment({author: {login: 'marcusrbrown', id: 831617}}, entry)).toBe(true)
-    expect(isOperatorComment({author: {login: 'marcusrbrown', id: 999}}, entry)).toBe(false)
-    expect(isOperatorComment({author: {login: 'marcusrbrown', id: 0}}, entry)).toBe(false)
+    expect(isOperatorComment({author: {login: 'marcusrbrown', id: 831617}}, entry())).toBe(true)
+    expect(isOperatorComment({author: {login: 'marcusrbrown', id: 999}}, entry())).toBe(false)
+    expect(isOperatorComment({author: {login: 'marcusrbrown', id: 0}}, entry())).toBe(false)
   })
 
   it('accepts the operator id under a mixed-case or renamed login', () => {
-    expect(isOperatorComment({author: {login: 'MarcusRBrown', id: 831617}}, entry)).toBe(true)
-    expect(isOperatorComment({author: {login: 'octocat', id: 831617}}, entry)).toBe(true)
+    expect(isOperatorComment({author: {login: 'MarcusRBrown', id: 831617}}, entry())).toBe(true)
+    expect(isOperatorComment({author: {login: 'octocat', id: 831617}}, entry())).toBe(true)
   })
 
   it('does not accept the operator login under another id, whatever the case', () => {
-    expect(isOperatorComment({author: {login: 'MarcusRBrown', id: 1}}, entry)).toBe(false)
+    expect(isOperatorComment({author: {login: 'MarcusRBrown', id: 1}}, entry())).toBe(false)
   })
 })
 
 describe('isAuthorizedTrigger', () => {
-  const entry = entryOf()
+  // A function, not a constant: see `selectProgram and issueRef`.
+  const entry = () => entryOf()
   const operatorMention = {author: {login: 'marcusrbrown'}, body: 'ping @fro-bot'}
   const operatorPlain = {author: {login: 'marcusrbrown'}, body: 'G4c pass'}
   const stranger = {author: {login: 'octocat'}, body: '@fro-bot G4c pass'}
 
   it('accepts the operator mentioning the bot on a created comment', () => {
-    expect(isAuthorizedTrigger(operatorMention, entry, 'created')).toBe(true)
-    expect(isAuthorizedTrigger({...operatorMention, body: '@FRO-BOT hi'}, entry, 'created')).toBe(true)
+    expect(isAuthorizedTrigger(operatorMention, entry(), 'created')).toBe(true)
+    expect(isAuthorizedTrigger({...operatorMention, body: '@FRO-BOT hi'}, entry(), 'created')).toBe(true)
   })
 
   it('rejects an operator created comment without a mention', () => {
-    expect(isAuthorizedTrigger(operatorPlain, entry, 'created')).toBe(false)
+    expect(isAuthorizedTrigger(operatorPlain, entry(), 'created')).toBe(false)
   })
 
   it('accepts an operator edit without a mention', () => {
-    expect(isAuthorizedTrigger(operatorPlain, entry, 'edited')).toBe(true)
-    expect(isAuthorizedTrigger({author: {login: 'marcusrbrown'}, body: ''}, entry, 'edited')).toBe(true)
+    expect(isAuthorizedTrigger(operatorPlain, entry(), 'edited')).toBe(true)
+    expect(isAuthorizedTrigger({author: {login: 'marcusrbrown'}, body: ''}, entry(), 'edited')).toBe(true)
   })
 
   it('treats a missing event kind like a created comment', () => {
-    expect(isAuthorizedTrigger(operatorMention, entry, '')).toBe(true)
-    expect(isAuthorizedTrigger(operatorPlain, entry, '')).toBe(false)
+    expect(isAuthorizedTrigger(operatorMention, entry(), '')).toBe(true)
+    expect(isAuthorizedTrigger(operatorPlain, entry(), '')).toBe(false)
   })
 
   it('rejects anyone but the operator, whatever the event', () => {
-    expect(isAuthorizedTrigger(stranger, entry, 'created')).toBe(false)
-    expect(isAuthorizedTrigger(stranger, entry, 'edited')).toBe(false)
-    expect(isAuthorizedTrigger(stranger, entry, '')).toBe(false)
+    expect(isAuthorizedTrigger(stranger, entry(), 'created')).toBe(false)
+    expect(isAuthorizedTrigger(stranger, entry(), 'edited')).toBe(false)
+    expect(isAuthorizedTrigger(stranger, entry(), '')).toBe(false)
   })
 
   it('rejects the operator login with the wrong numeric id', () => {
-    expect(isAuthorizedTrigger({author: {login: 'marcusrbrown', id: 1}, body: '@fro-bot'}, entry, 'created')).toBe(
+    expect(isAuthorizedTrigger({author: {login: 'marcusrbrown', id: 1}, body: '@fro-bot'}, entry(), 'created')).toBe(
       false,
     )
-    expect(isAuthorizedTrigger({author: {login: 'marcusrbrown', id: 1}, body: 'x'}, entry, 'edited')).toBe(false)
+    expect(isAuthorizedTrigger({author: {login: 'marcusrbrown', id: 1}, body: 'x'}, entry(), 'edited')).toBe(false)
   })
 })
 
@@ -510,36 +515,37 @@ describe('confirmedReposMissing', () => {
     {nameWithOwner: 'marcusrbrown/plugin-b', nodeId: 'R_b'},
     {nameWithOwner: 'marcusrbrown/plugin-c', nodeId: 'R_c'},
   ]
-  const entry = entryOf({repos})
+  // A function, not a constant: see `selectProgram and issueRef`.
+  const entry = () => entryOf({repos})
   const allPublic = new Set(repos.map(repo => repo.nameWithOwner))
 
   it('returns the confirmed repos that have no Project item, in config order', () => {
     const items = [{content_repo: 'marcusrbrown/plugin-b'}]
 
-    expect(confirmedReposMissing(entry, items, allPublic)).toEqual([repos[0], repos[2]])
+    expect(confirmedReposMissing(entry(), items, allPublic)).toEqual([repos[0], repos[2]])
   })
 
   it('returns nothing once every confirmed repo has an item', () => {
     const items = repos.map(repo => ({content_repo: repo.nameWithOwner}))
 
-    expect(confirmedReposMissing(entry, items, allPublic)).toEqual([])
+    expect(confirmedReposMissing(entry(), items, allPublic)).toEqual([])
   })
 
   it('returns every confirmed repo for an empty Project', () => {
-    expect(confirmedReposMissing(entry, [], allPublic)).toEqual(repos)
+    expect(confirmedReposMissing(entry(), [], allPublic)).toEqual(repos)
   })
 
   it('matches repo names ignoring case', () => {
     const items = [{content_repo: 'MarcusRBrown/Plugin-A'}]
 
-    expect(confirmedReposMissing(entry, items, new Set(['MARCUSRBROWN/PLUGIN-A', 'marcusrbrown/plugin-c']))).toEqual([
+    expect(confirmedReposMissing(entry(), items, new Set(['MARCUSRBROWN/PLUGIN-A', 'marcusrbrown/plugin-c']))).toEqual([
       repos[2],
     ])
   })
 
   it('ignores a confirmed repo that is not public any more', () => {
-    expect(confirmedReposMissing(entry, [], new Set(['marcusrbrown/plugin-a']))).toEqual([repos[0]])
-    expect(confirmedReposMissing(entry, [], new Set())).toEqual([])
+    expect(confirmedReposMissing(entry(), [], new Set(['marcusrbrown/plugin-a']))).toEqual([repos[0]])
+    expect(confirmedReposMissing(entry(), [], new Set())).toEqual([])
   })
 
   it('returns nothing for an entry without confirmed repos', () => {
@@ -550,7 +556,7 @@ describe('confirmedReposMissing', () => {
   it('does not count an item from an unconfirmed repo', () => {
     const items = [{content_repo: 'someone/else'}]
 
-    expect(confirmedReposMissing(entry, items, allPublic)).toEqual(repos)
+    expect(confirmedReposMissing(entry(), items, allPublic)).toEqual(repos)
   })
 })
 
