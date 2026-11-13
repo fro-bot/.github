@@ -162,7 +162,7 @@ See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements
   - Each tick says which kind it is.
   - The self-check re-reads live state and corrects only values this run wrote.
 - **Starting a program, where merge confirms the scope.**
-  - A start run is a custom-prompt `fro-bot.yaml` dispatch from the CLI or the Actions UI. It reads the skill and searches for an existing program.
+  - A start run is a custom-prompt `fro-bot.yaml` dispatch from Discord (`/fro-bot dispatch`), the CLI or the Actions UI. It reads the skill and searches for an existing program.
   - It checks each proposed repo with `gh repo view --json visibility,id`.
     - `PUBLIC` repos are kept.
     - Non-public and 404 repos are dropped without naming them.
@@ -396,5 +396,5 @@ Draw on #3512's history: the item cap, the body and marker size, the edit gap, a
 ## Sources & References
 
 - **Origin document:** `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements.md`
-- Related: `docs/plans/2026-10-22-001-feat-rollout-tracker-autonomy-plan.md`, #4146, #3512, fro-bot/agent#2129, fro-bot/agent#2130.
+- Related: `docs/plans/2026-10-22-001-feat-rollout-tracker-autonomy-plan.md`, #4146, #3512, fro-bot/agent#2129, fro-bot/agent#2130, fro-bot/agent#2139, fro-bot/agent#2187, fro-bot/dashboard#825.
 - Research and reviews: `.context/program-tracker-plan/` (local, untracked).
