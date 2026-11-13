@@ -10527,3 +10527,27 @@ Run: https://github.com/fro-bot/.github/actions/runs/43375062413
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@1557f67642473e90867a19324b166c7ea0a9a67a
+
+## [2026-11-13 14:00] ingest | repo:marcusrbrown/dev-like
+
+Limited re-survey of marcusrbrown/dev-like at `7f1f05b`, covering the tree,
+README, manifests, seven workflows, metadata, and issue/PR titles only. The
+structure is unchanged: 135 blobs, 5 registry directories, version 0.4.1, zero
+runtime deps. Pins: Fro Bot v0.140.3, Playwright 1.65.0, npm 11.21.2, and
+`bfra-me/.github` held at v4.43.0. Fro Bot is present, so no onboarding
+follow-up is needed. New finding: 11 unclosed weekly `Link rot detected
+<date>` issues (2026-08-31 to 2026-11-09). They exist because `link-check.yaml`
+puts the date in its titles and does no existing-issue lookup. The autoheal
+prompt's human-gated registry/provenance boundary plausibly bars the daemon
+from fixing the cause (inferred, not verified). This corrects the 2026-08-30
+"no issue spam" framing; open PRs are still 0. Added a dated
+notifier-dedup section to github-actions-ci.
+
+Sources: https://github.com/marcusrbrown/dev-like/tree/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8
+Run: https://github.com/fro-bot/.github/actions/runs/43431370503
+
+## [2026-11-13 13:13] ingest | repo:marcusrbrown/dev-like
+
+Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/dev-like
