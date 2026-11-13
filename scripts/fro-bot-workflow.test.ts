@@ -893,7 +893,9 @@ describe('fro-bot.yaml: Remediate reports learnings in its handoff comment, Obse
       expect(observeDuty).toContain("find this run's Remediation handoff comment")
       expect(observeDuty).toContain("the comment that carries this run's URL (Workflow run URL in <run_context>)")
       expect(observeDuty).toContain('on a line of its own under its "Remediation handoff" heading')
-      expect(observeDuty).toContain("on the newest daily report older than today's (open or closed")
+      expect(observeDuty).toContain(
+        "on the open daily report and on the newest daily report older than today's (open or closed, so a retry after rotation still finds it)",
+      )
       expect(observe).toContain(`<run_context> Workflow run URL: ${testRunUrl} </run_context>`)
       expect(observeDuty).not.toContain('UTC date')
       expect(observeDuty).toContain(`Read the section "${learningsHeading}" in it`)

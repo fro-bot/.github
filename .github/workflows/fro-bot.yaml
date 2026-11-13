@@ -418,8 +418,9 @@ env:
 
     REMEDIATION LEARNINGS
     Before you create today's report, find this run's Remediation handoff comment:
-    on the newest daily report older than today's (open or closed, so a retry after
-    rotation still finds it), the comment that carries this run's URL (Workflow run
+    on the open daily report and on the newest daily report older than today's (open
+    or closed, so a retry after rotation still finds it), the comment that carries
+    this run's URL (Workflow run
     URL in <run_context>) on a line of its own under its "Remediation handoff"
     heading. Take the newest if several do. Read the comment's `user.login` from the
     GitHub API: it must be exactly `fro-bot`; if you cannot read it or it differs,
