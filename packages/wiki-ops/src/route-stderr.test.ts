@@ -479,6 +479,22 @@ describe('runRouteStderr plan validation', () => {
   })
 })
 
+/** Runs the plan with a summary path that cannot be appended to, and collects everything the router wrote. */
+async function runWithBrokenSummary(
+  plan: RouteStderrPlan,
+  env: Record<string, string>,
+  brokenSummary: string,
+): Promise<{code: number; replayed: string}> {
+  const chunks: Uint8Array[] = []
+  const code = await runRouteStderr(plan, {
+    env: {...env, GITHUB_STEP_SUMMARY: brokenSummary},
+    replay: chunk => {
+      chunks.push(chunk)
+    },
+  })
+  return {code, replayed: Buffer.concat(chunks).toString('utf8')}
+}
+
 describe('runRouteStderr', () => {
   it('returns the exit code of the command, and replays its stderr unchanged', async () => {
     for (const exit of ['0', '1', '2', '3', '255']) {
@@ -554,6 +570,91 @@ describe('runRouteStderr', () => {
     )
     expect(ran.code).toBe(1)
     expect(ran.summary).toBe('### Correction context warnings\n- w1\nfailed\n')
+  })
+
+  describe('when the summary cannot be written', () => {
+    const SUMMARY_FAILED_LINE = 'route-stderr: summary-write-failed\n'
+    const conflict = {exitCode: 3, output: 'conflict'}
+
+    it.each([['0'], ['1'], ['3']])(
+      'keeps exit %s, replays stderr in full and then writes one fixed line, for a summary path that is a directory',
+      async exit => {
+        const stderr = 'wiki-ingest:warning:w1\nplain\n'
+        const ran = await runWithBrokenSummary(childPlan(), baseEnv({CASE_EXIT: exit, CASE_STDERR: stderr}), dir)
+        expect(ran.code).toBe(Number(exit))
+        expect(ran.replayed).toBe(`${stderr}${SUMMARY_FAILED_LINE}`)
+      },
+    )
+
+    it('writes the same fixed line when the summary file is in a directory that does not exist', async () => {
+      const ran = await runWithBrokenSummary(
+        childPlan(),
+        baseEnv({CASE_STDERR: 'wiki-ingest:warning:w1\n'}),
+        join(dir, 'no-such-directory', 'summary'),
+      )
+      expect(ran.code).toBe(0)
+      expect(ran.replayed).toBe(`wiki-ingest:warning:w1\n${SUMMARY_FAILED_LINE}`)
+    })
+
+    it('names neither the path nor the error code', async () => {
+      const ran = await runWithBrokenSummary(childPlan(), baseEnv({CASE_STDERR: 'wiki-ingest:warning:w1\n'}), dir)
+      expect(ran.replayed).not.toContain(dir)
+      expect(ran.replayed).not.toMatch(/EISDIR|ENOENT|illegal operation/u)
+    })
+
+    it('writes no line when nothing matched, because nothing was appended', async () => {
+      const ran = await runWithBrokenSummary(childPlan(), baseEnv({CASE_STDERR: 'plain\n'}), dir)
+      expect(ran.code).toBe(0)
+      expect(ran.replayed).toBe('plain\n')
+    })
+
+    it('still writes the conflict output on the conflict exit code', async () => {
+      const ran = await runWithBrokenSummary(
+        childPlan({conflict}),
+        baseEnv({CASE_EXIT: '3', CASE_STDERR: 'wiki-ingest:warning:w1\n'}),
+        dir,
+      )
+      expect(ran.code).toBe(3)
+      expect(readFileSync(outputPath, 'utf8')).toBe('conflict=true\n')
+    })
+
+    it('does not swallow a conflict output that cannot be written', async () => {
+      const env = baseEnv({CASE_EXIT: '3', CASE_STDERR: 'wiki-ingest:warning:w1\n'})
+      delete (env as Partial<typeof env>).GITHUB_OUTPUT
+      await expect(runWithBrokenSummary(childPlan({conflict}), env, dir)).rejects.toThrow('GITHUB_OUTPUT is required')
+    })
+
+    it('does not swallow a bad plan: the command never starts', async () => {
+      await expect(runWithBrokenSummary(childPlan({routes: []}), baseEnv({CASE_STDERR: 'x\n'}), dir)).rejects.toThrow(
+        'at least one --route is required',
+      )
+    })
+
+    it('does not turn a command that cannot start into anything but 127', async () => {
+      const route: Route = {prefix: 'route-stderr:', heading: 'Router'}
+      const ran = await runWithBrokenSummary(
+        childPlan({routes: [route], command: [join(dir, 'no-such-command')]}),
+        baseEnv(),
+        dir,
+      )
+      expect(ran.code).toBe(127)
+      expect(ran.replayed).toBe(`${startLine('ENOENT')}${SUMMARY_FAILED_LINE}`)
+    })
+
+    it('leaves a successful write and an unset summary variable as they were', async () => {
+      const written = await run(childPlan(), baseEnv({CASE_STDERR: 'wiki-ingest:warning:w1\n'}))
+      expect(written.summary).toBe('### Wiki ingest warnings\n- w1\n')
+      expect(written.replayed.toString('utf8')).toBe('wiki-ingest:warning:w1\n')
+      for (const unset of [undefined, '']) {
+        const env = baseEnv({CASE_STDERR: 'wiki-ingest:warning:w1\n'})
+        if (unset === undefined) delete (env as Partial<typeof env>).GITHUB_STEP_SUMMARY
+        else env.GITHUB_STEP_SUMMARY = unset
+        const chunks: Uint8Array[] = []
+        const code = await runRouteStderr(childPlan(), {env, replay: chunk => chunks.push(chunk)})
+        expect(code).toBe(0)
+        expect(Buffer.concat(chunks).toString('utf8')).toBe('wiki-ingest:warning:w1\n')
+      }
+    })
   })
 
   describe('conflict output', () => {
