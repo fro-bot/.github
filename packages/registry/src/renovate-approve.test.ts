@@ -1,6 +1,7 @@
 import {describe, expect, it} from 'vitest'
 import {
   runApprove,
+  stdoutRow,
   summaryOf,
   sweep,
   type ApproveOctokit,
@@ -1010,7 +1011,16 @@ describe('sweep: it yields to open pull requests by people', () => {
         exitCode: 0,
         live: _mode === 'live',
         stop: null,
-        rows: [{number: 7, head: sha(7).slice(0, 7), outcome: 'yielded', detail: YIELD_DETAIL(3), armed: false}],
+        rows: [
+          {
+            number: 7,
+            head: sha(7).slice(0, 7),
+            outcome: 'yielded',
+            detail: YIELD_DETAIL(3),
+            armed: false,
+            yieldedTo: 3,
+          },
+        ],
       })
       expect(w.order()).toEqual(JUDGED)
     },
@@ -1165,7 +1175,7 @@ describe('sweep: it yields to open pull requests by people', () => {
     const t = runParams({}, world({prs: [pr(7), person(3)]}))
     expect(await runApprove(t.params)).toBe(0)
 
-    expect(t.out).toEqual(['renovate-approve: #7 yielded\n'])
+    expect(t.out).toEqual(['renovate-approve: #7 yielded to #3\n'])
     expect(t.err).toEqual([])
     expect(t.appended).toEqual([
       {
@@ -1189,9 +1199,58 @@ describe('sweep: it yields to open pull requests by people', () => {
       world({prs: [pr(7), person(3)]}),
     )
     expect(await runApprove(t.params)).toBe(0)
-    expect(t.out).toEqual(['renovate-approve: #7 yielded\n'])
+    expect(t.out).toEqual(['renovate-approve: #7 yielded to #3\n'])
     expect(t.err).toEqual([])
     expect(t.appended[0]?.content.startsWith('### Renovate approve (dry run)\n')).toBe(true)
+  })
+
+  it.each([
+    ['live', {}, '#7 yielded to #5'],
+    [
+      'dry run',
+      {env: {GH_TOKEN: 't', GITHUB_REPOSITORY: 'fro-bot/.github', GITHUB_STEP_SUMMARY: '/tmp/s'}},
+      '#7 yielded to #5',
+    ],
+  ] as const)(
+    'prints the lowest-numbered blocker on a yielded row when several are open (%s)',
+    async (_mode, overrides, row) => {
+      const t = runParams(overrides, world({prs: [pr(7), person(12), person(5), person(9)]}))
+      expect(await runApprove(t.params)).toBe(0)
+      expect(t.out).toEqual([`renovate-approve: ${row}\n`])
+      expect(t.err).toEqual([])
+    },
+  )
+
+  it('prints the blocker on every yielded row and leaves the rows of other outcomes as they were', async () => {
+    const t = runParams(
+      {},
+      world({prs: [pr(1, {labels: ['automerge', 'hold-merge']}), pr(2, {behindBy: 1}), pr(3), pr(4), person(9)]}),
+    )
+    expect(await runApprove(t.params)).toBe(0)
+    expect(t.out).toEqual([
+      'renovate-approve: #1 held\n',
+      'renovate-approve: #2 behind\n',
+      'renovate-approve: #3 yielded to #9\n',
+      'renovate-approve: #4 yielded to #9\n',
+    ])
+  })
+
+  it('prints the blocker found by the re-check before the approval', async () => {
+    const w: World = world({
+      prs: [pr(7)],
+      onGet: (_spec, call) => {
+        if (call === 1) w.prs.push(person(3))
+      },
+    })
+    const t = runParams({}, w)
+    expect(await runApprove(t.params)).toBe(0)
+    expect(t.out).toEqual(['renovate-approve: #7 yielded to #3\n'])
+  })
+
+  it('prints a blocker in the row and no title or login', async () => {
+    const t = runParams({}, world({prs: [pr(7), person(3, {title: 'Rotate the SECRET-TITLE credentials'})]}))
+    await runApprove(t.params)
+    expect(t.out.join('')).not.toContain('SECRET-TITLE')
   })
 
   it('renders a `yielded` row in the summary table', () => {
@@ -1216,6 +1275,7 @@ describe('sweep: it yields to open pull requests by people', () => {
 
       expect(outcomes(result)).toEqual({7: 'yielded'})
       expect(rowOf(result, 7).detail).toBe(YIELD_DETAIL(3))
+      expect(rowOf(result, 7).yieldedTo).toBe(3)
       expect(result.exitCode).toBe(0)
       expect(w.named('approve')).toEqual([])
       expect(w.order()).toEqual([
@@ -2716,6 +2776,49 @@ function runParams(overrides: Partial<RunApproveParams> = {}, w = world({prs: [p
   }
   return {params, out, err, appended, w}
 }
+
+describe('stdoutRow', () => {
+  const rowFor = (outcome: OutcomeCode, extra: Partial<Row> = {}): Row => ({
+    number: 4217,
+    head: 'abc1234',
+    outcome,
+    detail: 'an open PR by a user account (#1) comes first',
+    armed: false,
+    ...extra,
+  })
+
+  it('names the PR a yielded row yielded to', () => {
+    expect(stdoutRow(rowFor('yielded', {yieldedTo: 4218}))).toBe('renovate-approve: #4217 yielded to #4218\n')
+  })
+
+  it('prints a yielded row without a number as it always did', () => {
+    expect(stdoutRow(rowFor('yielded'))).toBe('renovate-approve: #4217 yielded\n')
+  })
+
+  it.each([
+    'held',
+    'foreign-commit',
+    'config-change',
+    'behind',
+    'checks-failed',
+    'checks-pending',
+    'already-approved',
+    'deferred',
+    'head-moved',
+    'no-longer-qualifies',
+    'protection-changed',
+    'switch-off',
+    'would-approve',
+    'approved',
+    'approved-not-armed',
+    'approval-unknown',
+    'approval-refused',
+    'changes-requested',
+    'error',
+  ] as const satisfies readonly OutcomeCode[])('prints %s as `#<n> <outcome>`', outcome => {
+    expect(stdoutRow(rowFor(outcome))).toBe(`renovate-approve: #4217 ${outcome}\n`)
+  })
+})
 
 describe('runApprove', () => {
   it('maps the env to a sweep, writes the report as the job summary and exits 0', async () => {
