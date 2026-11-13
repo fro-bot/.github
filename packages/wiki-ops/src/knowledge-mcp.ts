@@ -15,8 +15,10 @@
  * - Stderr carries `knowledge-mcp: ready` and one fixed `knowledge-mcp: error:<code>` line per error
  *   result, nothing else. OpenCode sends a local server's stderr to its debug log only, so a run shows
  *   no trace of a call there; the call log below is what the job summary reads.
- * - When `KNOWLEDGE_MCP_CALL_LOG` names an absolute path, `serve` creates that file empty once it is
- *   connected, so an existing empty file means the server started and nobody called a tool. Each tool
+ * - When `KNOWLEDGE_MCP_CALL_LOG` names an absolute path, `serve` creates that file empty once the
+ *   transport is attached, so an existing empty file means the server started and nobody called a tool.
+ *   It does not prove the client initialized: `@goke/mcp` keeps its `Server` private, so there is no
+ *   `oninitialized` hook to wait for. Each tool
  *   call then appends one line, `<tool> <code>`, where the code is `ok` or the fixed error code. No
  *   argument, query, path or result is ever written, and a failed create or append changes nothing the
  *   caller sees.
@@ -297,7 +299,7 @@ export interface ServeOptions {
  * Starts the server and returns once it is connected. It calls the `createMcpAction` callback
  * directly (the server takes its name, `knowledge`, from the goke instance): with an empty argv goke would match no command, exit, and never speak JSON-RPC. A startup
  * failure writes one fixed line and sets the exit code; the agent then runs without the tools. The call
- * log is created once the transport is connected, so an existing file means the server came up.
+ * log is created once the transport is attached, so an existing file means the server started.
  */
 export async function serve(options: ServeOptions = {}): Promise<void> {
   const deps = options.deps ?? defaultKnowledgeDeps()

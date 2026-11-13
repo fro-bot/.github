@@ -852,7 +852,7 @@ describe('the call log at startup', () => {
     expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
   })
 
-  it('creates no file when the transport cannot start, so a file means the server came up', async () => {
+  it('creates no file when the transport cannot start, so a file means the server started', async () => {
     const {deps, stderr, created} = memoryDeps({}, {env: WITH_LOG})
     const previous = process.exitCode
     try {
