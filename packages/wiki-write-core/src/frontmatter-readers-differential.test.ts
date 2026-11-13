@@ -272,6 +272,7 @@ interface PageReaderOutcome {
   readonly frontmatter: Record<string, unknown>
   readonly body: string
   readonly error?: string
+  readonly errorKind?: 'unclosed' | 'invalid'
 }
 
 function pageReaderSite(): Site<PageReaderOutcome> {
@@ -290,6 +291,7 @@ function pageReaderSite(): Site<PageReaderOutcome> {
           frontmatter: {},
           body: content.slice(match[0].length).trim(),
           error: `Invalid YAML frontmatter: ${errorMessage(error)}`,
+          errorKind: 'invalid',
         }
       }
     },
@@ -304,6 +306,7 @@ function pageReaderSite(): Site<PageReaderOutcome> {
           frontmatter: {},
           body: entry.content.trim(),
           error: 'Invalid frontmatter: missing closing --- delimiter',
+          errorKind: 'unclosed',
         }
       }
       try {
@@ -314,6 +317,7 @@ function pageReaderSite(): Site<PageReaderOutcome> {
           frontmatter: {},
           body: entry.expected.body.trim(),
           error: `Invalid YAML frontmatter: ${errorMessage(error)}`,
+          errorKind: 'invalid',
         }
       }
     },

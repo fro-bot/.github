@@ -10,6 +10,14 @@ export const WIKI_ROOT = 'knowledge/wiki'
 
 export type WikiPageType = 'repo' | 'topic' | 'entity' | 'comparison'
 
+/**
+ * Why a page's frontmatter could not be read, as a closed vocabulary a caller can switch on without matching the
+ * wording of the error text. `unclosed` is a block that opens with `---` and never closes; `invalid` is a block the
+ * YAML parser rejects. A block that parses to something other than a mapping is read as empty frontmatter and is
+ * not an error, so it has no kind.
+ */
+export type WikiFrontmatterErrorKind = 'unclosed' | 'invalid'
+
 export interface WikiPage {
   readonly path: string
   readonly slug: string
@@ -20,12 +28,16 @@ export interface WikiPage {
   readonly body: string
   readonly frontmatter: Record<string, unknown>
   readonly frontmatterError?: string
+  /** Set exactly when `frontmatterError` is. */
+  readonly frontmatterErrorKind?: WikiFrontmatterErrorKind
 }
 
 export interface SplitFrontmatterResult {
   readonly frontmatter: Record<string, unknown>
   readonly body: string
   readonly error?: string
+  /** Set exactly when `error` is. */
+  readonly errorKind?: WikiFrontmatterErrorKind
 }
 
 /**
@@ -40,7 +52,12 @@ export function splitFrontmatter(content: string): SplitFrontmatterResult {
     return {frontmatter: {}, body: content.trim()}
   }
   if (split.kind === 'malformed') {
-    return {frontmatter: {}, body: content.trim(), error: 'Invalid frontmatter: missing closing --- delimiter'}
+    return {
+      frontmatter: {},
+      body: content.trim(),
+      error: 'Invalid frontmatter: missing closing --- delimiter',
+      errorKind: 'unclosed',
+    }
   }
 
   let parsed: unknown
@@ -52,6 +69,7 @@ export function splitFrontmatter(content: string): SplitFrontmatterResult {
       frontmatter: {},
       body: split.body.trim(),
       error: `Invalid YAML frontmatter: ${message}`,
+      errorKind: 'invalid',
     }
   }
 
@@ -160,7 +178,7 @@ export function findWikilinkSpans(content: string): WikilinkSpan[] {
 
 /** Parse a single wiki page's content (relative path + raw content) into a page record. */
 export function parseWikiPage(path: string, content: string): WikiPage {
-  const {frontmatter, body, error} = splitFrontmatter(content)
+  const {frontmatter, body, error, errorKind} = splitFrontmatter(content)
   const slug = basename(path, '.md')
 
   return {
@@ -175,6 +193,7 @@ export function parseWikiPage(path: string, content: string): WikiPage {
     body,
     frontmatter,
     frontmatterError: error,
+    frontmatterErrorKind: errorKind,
   }
 }
 

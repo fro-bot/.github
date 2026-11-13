@@ -3,7 +3,13 @@ import process from 'node:process'
 
 import {formatJsonLine} from '@fro-bot/core/json'
 import {writeGithubOutputs} from '@fro-bot/core/output'
-import {byteLength, collectWikiPages, truncateToBytes, WIKI_ROOT} from '@fro.bot/wiki-write-core/wiki-utils'
+import {
+  byteLength,
+  collectWikiPages,
+  truncateToBytes,
+  WIKI_ROOT,
+  type WikiFrontmatterErrorKind,
+} from '@fro.bot/wiki-write-core/wiki-utils'
 
 const MAX_CONTEXT_BYTES = 5 * 1024
 
@@ -106,7 +112,7 @@ function collectPages(files: Record<string, string>): {pages: PageSummary[]; ski
   for (const page of collectWikiPages(files)) {
     if (page.frontmatterError !== undefined) {
       firstSkippedPath ??= page.path
-      skippedPages.push({path: page.path, reason: skippedPageReason(page.frontmatterError)})
+      skippedPages.push({path: page.path, reason: skippedPageReason(page.frontmatterErrorKind)})
       continue
     }
 
@@ -131,13 +137,11 @@ function collectPages(files: Record<string, string>): {pages: PageSummary[]; ski
 }
 
 /**
- * The splitter's error message quotes the parser for invalid YAML and so can carry page text; only the kind of
- * failure is kept. Anything but the unclosed-block message reads as invalid frontmatter.
+ * The reader's error message quotes the parser for invalid YAML and so can carry page text; only the kind of
+ * failure the reader sets next to it is kept. Anything but an unclosed block reads as invalid frontmatter.
  */
-function skippedPageReason(frontmatterError: string): SkippedPageReason {
-  return frontmatterError.startsWith('Invalid frontmatter: missing closing')
-    ? 'unclosed-frontmatter'
-    : 'invalid-frontmatter'
+function skippedPageReason(kind: WikiFrontmatterErrorKind | undefined): SkippedPageReason {
+  return kind === 'unclosed' ? 'unclosed-frontmatter' : 'invalid-frontmatter'
 }
 
 function scorePage(page: PageSummary, eventName: string, tokens: Set<string>, repoSlug: string | null): number {
