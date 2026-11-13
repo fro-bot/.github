@@ -6,6 +6,7 @@ module: packages/core/src/cli.ts
 problem_type: architecture_pattern
 component: development_workflow
 severity: high
+last_updated: 2026-11-14
 applies_when:
   - moving a `scripts/*.ts` module into `packages/*/src` and leaving a shim at the old path
   - putting a hand-parsed CLI onto the shared goke runner
@@ -50,7 +51,7 @@ A move changes behaviour that neither the type checker nor the test suite sees. 
    [`equivalence-refactors-need-differential-proofs-past-the-bound`](equivalence-refactors-need-differential-proofs-past-the-bound-2026-09-06.md) and [`calibrate-performance-guards-before-trusting-bounds`](calibrate-performance-guards-before-trusting-bounds-2026-10-09.md) cover how to build those tests.
 
 4. **Re-derive paths relative to the moved file, and test that a moved gate still fails closed.** Cover the real repository root, the trigger coverage, and a missing config.
-   - The mutation gate pins `findRepositoryRoot` (`packages/ci-checks/src/repository-root.ts:14`) and lists every file it loads in `FIXED_TRIGGER_FILES` (`packages/ci-checks/src/check-mutation-guards.ts:1508`).
+   - The mutation gate pins `findRepositoryRoot` (`packages/ci-checks/src/repository-root.ts:14`) and lists its own files in `FIXED_TRIGGER_FILES` (`packages/ci-checks/src/check-mutation-guards.ts:1520`), together with the files its listed tests read at run time. Package CLI modules are covered by a pattern and by seeding the import closure, not by the list. The list is pinned, so a test that starts reading another file needs an entry: [`an-import-closure-does-not-see-what-a-test-reads-at-run-time`](an-import-closure-does-not-see-what-a-test-reads-at-run-time-2026-11-14.md).
    - Use `import.meta.main` in an executable shim. A guard of the form `import.meta.url === \`file://${process.argv[1]}\``is false for a path the URL form escapes, so the shim exits 0 without running.`scripts/check-mutation-guards.ts:7`uses`import.meta.main`; the other shims still use the URL comparison.
 5. **Recheck mutation-test reachability and isolation.** Follow [`a-mutation-score-can-measure-nothing`](a-mutation-score-can-measure-nothing-2026-09-08.md).
 6. **Check main's open code-scanning alerts after each merge, not only the PR's.**
