@@ -2056,6 +2056,38 @@ describe('package manifests are fixed triggers', () => {
   })
 })
 
+describe('package CLI modules are fixed triggers', () => {
+  const evaluate = async (changed: string[]) =>
+    evaluateTriggerGate(fakeTriggerConfig(), PULL_REQUEST_EVENT, fakeGateDeps({fetchChangedFiles: () => changed}))
+
+  // A test imports every `packages/<package>/src/*-cli.ts` by a computed path, so the closure walk cannot name them.
+  it.each(['packages/wiki-ops/src/wiki-repair-cli.ts', 'packages/brand-new/src/brand-new-cli.ts'])(
+    'runs for a changed %s',
+    async cli => {
+      expect(await evaluate([cli])).toBeUndefined()
+    },
+  )
+
+  it.each([
+    'packages/wiki-ops/src/wiki-repair.ts',
+    'packages/wiki-ops/src/wiki-repair-cli.test.ts',
+    'packages/wiki-ops/src/nested/wiki-repair-cli.ts',
+    'packages/wiki-ops/wiki-repair-cli.ts',
+    'packages/wiki-ops/src/wiki-repair-cli.ts.bak',
+    'docs/packages/wiki-ops/src/wiki-repair-cli.ts',
+    'scripts/wiki-repair-cli.ts',
+  ])('does not run for %s, which no test imports as a CLI module', async changed => {
+    expect((await evaluate([changed]))?.verdict).toBe('not-applicable')
+  })
+
+  it('carries the CLI pattern next to the manifest pattern, so membership is decided from the trigger set alone', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(triggerSet.filePatterns).toHaveLength(2)
+    expect(changedFilesIntersectTriggerSet(['./packages/brand-new/src/brand-new-cli.ts'], triggerSet)).toBe(true)
+    expect(changedFilesIntersectTriggerSet(['packages/brand-new/package.json'], triggerSet)).toBe(true)
+  })
+})
+
 describe(
   'the gate names every path from the repository root, three levels above the package',
   {timeout: 60_000},
