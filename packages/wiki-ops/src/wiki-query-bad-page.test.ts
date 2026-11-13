@@ -11,9 +11,9 @@ import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
 import process from 'node:process'
 
-import {describe, expect, it} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it} from 'vitest'
 
-import {assembleWikiContext} from './wiki-query.ts'
+import {assembleWikiContext, runWikiQuery} from './wiki-query.ts'
 
 const UUID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gu
 
@@ -410,5 +410,84 @@ describe('wiki-query CLI: a page with unreadable frontmatter', () => {
     expect(run.stderr).toBe('wiki-query:warn:baseline-query-failed\n')
     expect(run.stdout).toBe(EMPTY_STDOUT)
     expect(JSON.parse(run.handoff)).toEqual({selectedPaths: []})
+  })
+})
+
+describe('wiki-query CLI: the path in a warning is safe to put in a Markdown summary', () => {
+  const HOSTILE_NAME = 'x [a](http:evil) <img src=x onerror=1> "q" `b` _i_ *s* ~ | é.md'
+  const HOSTILE_PATH = `knowledge/wiki/topics/${HOSTILE_NAME}`
+
+  it('keeps an ordinary path readable and percent-encodes everything else', async () => {
+    const run = await runCli({...FIXTURE_WIKI, 'knowledge/wiki/topics/a b.md': UNCLOSED_PAGE}, EVENT_ENV)
+
+    expect(run.stderr).toBe(
+      'wiki-query:warn:page-skipped path="knowledge/wiki/topics/a%20b.md" reason=unclosed-frontmatter\n',
+    )
+  })
+
+  it('writes a hostile file name as one line of plain characters that decodes back to the name', async () => {
+    const run = await runCli({...FIXTURE_WIKI, [HOSTILE_PATH]: UNCLOSED_PAGE}, EVENT_ENV)
+
+    const match = /^wiki-query:warn:page-skipped path="([^"]*)" reason=unclosed-frontmatter\n$/u.exec(run.stderr)
+    expect(match, run.stderr).not.toBeNull()
+    const encoded = match?.[1] ?? ''
+    expect(encoded).toMatch(/^[\w%./-]+$/u)
+    expect(decodeURIComponent(encoded)).toBe(HOSTILE_PATH)
+  })
+})
+
+describe('runWikiQuery: a stderr that cannot be written', () => {
+  let originalCwd = ''
+  let cwd = ''
+
+  beforeEach(async () => {
+    originalCwd = process.cwd()
+    cwd = await mkdtemp(join(tmpdir(), 'wiki-query-stderr-'))
+    process.chdir(cwd)
+  })
+
+  afterEach(async () => {
+    process.chdir(originalCwd)
+    await rm(cwd, {recursive: true, force: true})
+  })
+
+  async function runWithBrokenStderr(files: Readonly<Record<string, string>>): Promise<{stdout: string[]}> {
+    await writeWiki(cwd, files)
+    const stdout: string[] = []
+    await runWikiQuery(
+      {
+        ...EVENT_ENV,
+        GITHUB_OUTPUT: join(cwd, 'github-output.txt'),
+        WIKI_CONTEXT_HANDOFF_PATH: join(cwd, 'handoff.json'),
+      },
+      {
+        stdout: text => stdout.push(text),
+        stderr: () => {
+          throw new Error('EPIPE')
+        },
+      },
+    )
+    return {stdout}
+  }
+
+  it('still writes the outputs, the handoff and stdout when a skipped-page warning cannot be written', async () => {
+    const {stdout} = await runWithBrokenStderr({...FIXTURE_WIKI, [UNCLOSED_PATH]: UNCLOSED_PAGE})
+
+    expect(stdout).toHaveLength(1)
+    expect((JSON.parse(stdout[0] ?? '') as {selectedPaths: string[]}).selectedPaths).toContain(
+      'knowledge/wiki/repos/fro-bot--agent.md',
+    )
+    expect(await readFile(join(cwd, 'github-output.txt'), 'utf8')).toContain('selected-paths=[')
+    expect(
+      (JSON.parse(await readFile(join(cwd, 'handoff.json'), 'utf8')) as {selectedPaths: string[]}).selectedPaths,
+    ).toContain('knowledge/wiki/repos/fro-bot--agent.md')
+  })
+
+  it('still writes the empty outputs when the baseline-failed warning cannot be written', async () => {
+    const {stdout} = await runWithBrokenStderr({'knowledge/index.md': '# Wiki Index\n', [UNCLOSED_PATH]: UNCLOSED_PAGE})
+
+    expect(stdout).toEqual([EMPTY_STDOUT])
+    expect(await readFile(join(cwd, 'github-output.txt'), 'utf8')).toContain('selected-paths=[]')
+    expect(JSON.parse(await readFile(join(cwd, 'handoff.json'), 'utf8'))).toEqual({selectedPaths: []})
   })
 })

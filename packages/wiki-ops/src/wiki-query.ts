@@ -289,11 +289,36 @@ export interface WikiQueryIo {
 }
 
 /**
- * One warning per skipped page: the repository-relative path as a JSON string (so a file name cannot start a new
- * log line) and the fixed reason. Wiki page paths are public; nothing from the page or the parser is written.
+ * The path with every byte outside `A-Z a-z 0-9 . _ - /` written as `%XX`. A file name can hold Markdown, HTML,
+ * a quote or a control character, and the warning is lifted into the job summary: after this the path is plain
+ * characters on one line, and `decodeURIComponent` gives the name back.
+ */
+function encodePath(path: string): string {
+  let encoded = ''
+  for (const char of path) {
+    if (/[\w./-]/u.test(char)) encoded += char
+    else
+      for (const byte of new TextEncoder().encode(char))
+        encoded += `%${byte.toString(16).toUpperCase().padStart(2, '0')}`
+  }
+  return encoded
+}
+
+/**
+ * One warning per skipped page: the encoded repository-relative path and the fixed reason. Wiki page paths are
+ * public; nothing from the page or the parser is written.
  */
 function skippedPageWarning(page: SkippedPage): string {
-  return `wiki-query:warn:page-skipped path=${JSON.stringify(page.path)} reason=${page.reason}\n`
+  return `wiki-query:warn:page-skipped path="${encodePath(page.path)}" reason=${page.reason}\n`
+}
+
+/** A warning is a courtesy: a stderr that cannot be written (a closed pipe) must not cost the outputs. */
+function warn(io: WikiQueryIo, line: string): void {
+  try {
+    io.stderr(line)
+  } catch {
+    // Swallowed on purpose: the outputs, the handoff and stdout are written regardless.
+  }
 }
 
 /**
@@ -319,12 +344,12 @@ export async function runWikiQuery(env: Readonly<Record<string, string | undefin
   } catch {
     // Emit a closed-vocabulary stderr warning, fall back to an explicit empty context, and continue
     // writing outputs so downstream steps still see a valid, empty result.
-    io.stderr('wiki-query:warn:baseline-query-failed\n')
+    warn(io, 'wiki-query:warn:baseline-query-failed\n')
     result = EMPTY_CONTEXT_RESULT
   }
 
   for (const page of result.skippedPages) {
-    io.stderr(skippedPageWarning(page))
+    warn(io, skippedPageWarning(page))
   }
 
   writeGithubOutput(result, env)
