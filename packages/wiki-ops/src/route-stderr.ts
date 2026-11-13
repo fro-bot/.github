@@ -13,6 +13,9 @@
  *   prefix of each matching line replaced by a bullet, and adds no newline the stderr did not have.
  * - The exit code is the command's. A command that ends on a signal exits 128 plus its number; one that cannot
  *   start exits 127 (not found) or 126, with a fixed line naming only the error code, never the command.
+ * - A summary that cannot be written does not change the exit code: after the replay the router writes the fixed
+ *   line `route-stderr: summary-write-failed` and goes on. Only that append is caught. A bad plan, a conflict
+ *   output that cannot be written and any other error still reject, and the CLI turns them into exit 1.
  * - No line the router writes names the wrapped command, its arguments or the environment.
  *
  * Nothing here runs a regular expression over the stderr: lines are split on `\n` and compared with `startsWith`.
@@ -200,14 +203,22 @@ export async function runCommand(
 
 /**
  * Runs the plan and returns the command's exit code. The plan is checked before the command runs, so a bad plan
- * never starts it. The replay comes first, then the summary, then the conflict output. The conflict output
- * throws when `GITHUB_OUTPUT` is unset, because a conflict that cannot be reported must fail the step.
+ * never starts it. The replay comes first, then the summary (a failed append adds one fixed line to the replay
+ * and nothing else), then the conflict output. The conflict output throws when `GITHUB_OUTPUT` is unset, because
+ * a conflict that cannot be reported must fail the step.
  */
 export async function runRouteStderr(plan: RouteStderrPlan, io: RouteStderrIo): Promise<number> {
   assertPlan(plan)
   const {code, stderr} = await runCommand(plan.command, io.env)
   if (stderr.length > 0) io.replay(stderr)
-  appendStepSummary(buildSummary(stderr.toString('utf8'), plan.routes, plan.summary), {onMissing: 'skip', env: io.env})
+  const summary = buildSummary(stderr.toString('utf8'), plan.routes, plan.summary)
+  try {
+    appendStepSummary(summary, {onMissing: 'skip', env: io.env})
+  } catch {
+    // The command has already run and its exit code is the step's result: a summary that cannot be written is
+    // reported as a fixed line, with no exception text (a message can carry a path), and changes nothing else.
+    io.replay(Buffer.from('route-stderr: summary-write-failed\n'))
+  }
   if (plan.conflict !== undefined && code === plan.conflict.exitCode) {
     writeGithubOutputs({[plan.conflict.output]: 'true'}, {onMissing: 'throw', env: io.env})
   }

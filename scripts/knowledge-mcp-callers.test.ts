@@ -133,7 +133,7 @@ const EXCERPT_STEPS = {
       'WIKI_QUERY_BODY',
       'WIKI_CONTEXT_HANDOFF_PATH',
     ],
-    run: 'bun scripts/wiki-query.ts',
+    run: "bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts",
   },
   'solutions-query': {
     env: [

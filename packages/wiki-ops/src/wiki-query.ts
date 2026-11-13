@@ -21,10 +21,20 @@ export interface AssembleWikiContextParams {
   maxBytes?: number
 }
 
+/** Why a page was left out. A closed vocabulary: the reason never carries text from the page or the parser. */
+export type SkippedPageReason = 'unclosed-frontmatter' | 'invalid-frontmatter'
+
+export interface SkippedPage {
+  readonly path: string
+  readonly reason: SkippedPageReason
+}
+
+/** The result printed on stdout is `excerpt`, `selectedPaths` and `byteLength`; `skippedPages` is for stderr only. */
 export interface AssembleWikiContextResult {
   excerpt: string
   selectedPaths: string[]
   byteLength: number
+  skippedPages: readonly SkippedPage[]
 }
 
 interface PageSummary {
@@ -39,7 +49,7 @@ interface PageSummary {
 
 export function assembleWikiContext(params: AssembleWikiContextParams): AssembleWikiContextResult {
   const maxBytes = params.maxBytes ?? MAX_CONTEXT_BYTES
-  const pages = collectPages(params.files)
+  const {pages, skippedPages} = collectPages(params.files)
   const tokens = collectTokens(params.event)
   const repoSlug =
     params.event.owner !== undefined && params.event.repo !== undefined
@@ -81,16 +91,26 @@ export function assembleWikiContext(params: AssembleWikiContextParams): Assemble
     excerpt = ''
   }
 
-  return {excerpt, selectedPaths, byteLength: byteLength(excerpt)}
+  return {excerpt, selectedPaths, byteLength: byteLength(excerpt), skippedPages}
 }
 
-function collectPages(files: Record<string, string>): PageSummary[] {
-  return collectWikiPages(files).map(page => {
+/**
+ * A page whose frontmatter cannot be read is left out and reported by path and a fixed reason. When no page is
+ * readable the corpus is bad as a whole and this throws, so the caller falls back to an empty context as before.
+ */
+function collectPages(files: Record<string, string>): {pages: PageSummary[]; skippedPages: SkippedPage[]} {
+  const pages: PageSummary[] = []
+  const skippedPages: SkippedPage[] = []
+  let firstSkippedPath: string | undefined
+
+  for (const page of collectWikiPages(files)) {
     if (page.frontmatterError !== undefined) {
-      throw new Error(`Invalid wiki frontmatter in ${page.path}`)
+      firstSkippedPath ??= page.path
+      skippedPages.push({path: page.path, reason: skippedPageReason(page.frontmatterError)})
+      continue
     }
 
-    return {
+    pages.push({
       path: page.path,
       slug: page.slug,
       title: page.title,
@@ -98,8 +118,26 @@ function collectPages(files: Record<string, string>): PageSummary[] {
       body: page.body,
       tags: [...page.tags],
       score: 0,
-    }
-  })
+    })
+  }
+
+  if (pages.length === 0 && firstSkippedPath !== undefined) {
+    throw new Error(`Invalid wiki frontmatter in ${firstSkippedPath}`)
+  }
+
+  // Path order, so the warnings do not depend on the order the directory listing returned.
+  skippedPages.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0))
+  return {pages, skippedPages}
+}
+
+/**
+ * The splitter's error message quotes the parser for invalid YAML and so can carry page text; only the kind of
+ * failure is kept. Anything but the unclosed-block message reads as invalid frontmatter.
+ */
+function skippedPageReason(frontmatterError: string): SkippedPageReason {
+  return frontmatterError.startsWith('Invalid frontmatter: missing closing')
+    ? 'unclosed-frontmatter'
+    : 'invalid-frontmatter'
 }
 
 function scorePage(page: PageSummary, eventName: string, tokens: Set<string>, repoSlug: string | null): number {
@@ -238,7 +276,12 @@ export async function writeSelectedPathsHandoff(handoffPath: string, selectedPat
   }
 }
 
-const EMPTY_CONTEXT_RESULT: AssembleWikiContextResult = {excerpt: '', selectedPaths: [], byteLength: 0}
+const EMPTY_CONTEXT_RESULT: AssembleWikiContextResult = {
+  excerpt: '',
+  selectedPaths: [],
+  byteLength: 0,
+  skippedPages: [],
+}
 
 export interface WikiQueryIo {
   readonly stdout: (text: string) => void
@@ -246,8 +289,42 @@ export interface WikiQueryIo {
 }
 
 /**
- * The baseline wiki query. Fail-soft: a corpus-level failure (e.g. malformed wiki frontmatter) never
- * breaks the baseline prompt-injection workflow, so it falls back to an explicit empty context and
+ * The path with every byte outside `A-Z a-z 0-9 . _ - /` written as `%XX`. A file name can hold Markdown, HTML,
+ * a quote or a control character, and the warning is lifted into the job summary: after this the path is plain
+ * characters on one line, and `decodeURIComponent` gives the name back.
+ */
+function encodePath(path: string): string {
+  let encoded = ''
+  for (const char of path) {
+    if (/[\w./-]/u.test(char)) encoded += char
+    else
+      for (const byte of new TextEncoder().encode(char))
+        encoded += `%${byte.toString(16).toUpperCase().padStart(2, '0')}`
+  }
+  return encoded
+}
+
+/**
+ * One warning per skipped page: the encoded repository-relative path and the fixed reason. Wiki page paths are
+ * public; nothing from the page or the parser is written.
+ */
+function skippedPageWarning(page: SkippedPage): string {
+  return `wiki-query:warn:page-skipped path="${encodePath(page.path)}" reason=${page.reason}\n`
+}
+
+/** A warning is a courtesy: a stderr that cannot be written (a closed pipe) must not cost the outputs. */
+function warn(io: WikiQueryIo, line: string): void {
+  try {
+    io.stderr(line)
+  } catch {
+    // Swallowed on purpose: the outputs, the handoff and stdout are written regardless.
+  }
+}
+
+/**
+ * The baseline wiki query. A page whose frontmatter cannot be read is left out and reported on stderr; the rest
+ * of the context is built. Fail-soft: a corpus-level failure (the wiki cannot be read, or no page is readable)
+ * never breaks the baseline prompt-injection workflow, so it falls back to an explicit empty context and
  * still writes the outputs. A handoff-write failure is also swallowed (see writeSelectedPathsHandoff).
  */
 export async function runWikiQuery(env: Readonly<Record<string, string | undefined>>, io: WikiQueryIo): Promise<void> {
@@ -267,8 +344,12 @@ export async function runWikiQuery(env: Readonly<Record<string, string | undefin
   } catch {
     // Emit a closed-vocabulary stderr warning, fall back to an explicit empty context, and continue
     // writing outputs so downstream steps still see a valid, empty result.
-    io.stderr('wiki-query:warn:baseline-query-failed\n')
+    warn(io, 'wiki-query:warn:baseline-query-failed\n')
     result = EMPTY_CONTEXT_RESULT
+  }
+
+  for (const page of result.skippedPages) {
+    warn(io, skippedPageWarning(page))
   }
 
   writeGithubOutput(result, env)
@@ -278,5 +359,7 @@ export async function runWikiQuery(env: Readonly<Record<string, string | undefin
     await writeSelectedPathsHandoff(handoffPath, result.selectedPaths)
   }
 
-  io.stdout(formatJsonLine(result))
+  io.stdout(
+    formatJsonLine({excerpt: result.excerpt, selectedPaths: result.selectedPaths, byteLength: result.byteLength}),
+  )
 }

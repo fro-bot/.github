@@ -38,7 +38,7 @@ Carried from the origin document:
 
 ### Deferred to Separate Tasks
 
-- One page with bad frontmatter empties the baseline wiki context for every agent run, because wiki query throws and the run continues without context. An unclosed block now counts as bad, so this is easier to hit. A fix that skips the one page is a separate change.
+- Done: one page with bad frontmatter used to empty the baseline wiki context for every agent run, because wiki query threw and the run continued without context. Wiki query now leaves out the one page and warns once per page by path and a fixed reason (`wiki-query:warn:page-skipped`). It still falls back to an empty context when the wiki cannot be read or no page is readable.
 
 ## Intended Behaviour Changes
 
@@ -498,7 +498,7 @@ What each site does with the three outcomes, after both PRs:
 | A repo page for another repository, written by the content or Observe job without `sources`, or a dashboard save that removes a page's sources, is written and then blocked at promotion. Today its body URL would pass it. | No writer stamps such a page: the stamp covers only the target's page, and those jobs target this repository. Recovery is a survey of that repository, which rewrites its page, or a dashboard edit that restores the source. No page on `data` is in this state at `62f9a45`. No write-time gate is added. A blocked public repo page on `data` also makes wiki repair abort as `privacy-leak` before it commits, for every repair in that run, until the page is fixed by a survey of that repository or a dashboard edit. |
 | A public repo page is blocked after the second PR | A survey of that repository or a dashboard edit fixes it. A changed non-public page is blocked today as well and is outside this change. Reverting the gate is the last resort and reopens the body-URL route. |
 | A reader's result changes for a real file | The differential test per site, the CI test over `docs/`, and the pinned-corpus run recorded in each PR. At the measured commits (`origin/data` `62f9a45`, `docs/` at `f9affca`) no file has a changed shape. |
-| One unclosed page empties the wiki context for every agent run | It behaves as invalid YAML does today. Wiki lint reports the page. The fix is deferred to a separate task. |
+| One unclosed page empties the wiki context for every agent run | It behaves as invalid YAML does. Wiki lint reports the page. Wiki query leaves the page out and warns once, so it no longer empties the context; this is done. |
 | The dashboard disagrees with `main` while it is on 0.1.4 | The version integer is unchanged, so saves keep working. The one looser case is written by the dashboard, reported by wiki lint and, for a public repo page, blocked at promotion until it is edited in the dashboard. |
 | The splitter's result shape is public from 0.2.0 | Unit 1 fixes it against the in-place editors before the first PR merges. A change to it after that needs a second release. |
 | The splitter cannot reach a 100% mutation score without disable directives | It is a small pure function with no module-level state. If a mutant is equivalent, enumerate the mutator's variants before any directive. |

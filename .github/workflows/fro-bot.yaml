@@ -709,7 +709,7 @@ jobs:
           # Run-local handoff for optional wiki context expansion.
           # Contains only selected wiki paths — never logged, never echoed.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
-        run: bun scripts/wiki-query.ts
+        run: bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts
 
       - name: Query solutions context
         id: solutions-query
@@ -975,7 +975,7 @@ jobs:
           # Run-local handoff for optional wiki context expansion.
           # Contains only selected wiki paths — never logged, never echoed.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
-        run: bun scripts/wiki-query.ts
+        run: bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts
 
       - name: Query solutions context
         id: solutions-query
@@ -1164,7 +1164,7 @@ jobs:
           # Run-local handoff for optional wiki context expansion.
           # Contains only selected wiki paths — never logged, never echoed.
           WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
-        run: bun scripts/wiki-query.ts
+        run: bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts
 
       # Overlay metadata/ from the data branch so this run can derive digest
       # counts and scan metadata/repos.yaml (category 6) from live data.

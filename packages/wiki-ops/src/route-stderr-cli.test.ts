@@ -297,6 +297,20 @@ describe('the shim under a checkout path the URL form escapes', () => {
   })
 })
 
+describe('a summary that cannot be written, through the real entrypoint', () => {
+  it.each([[0], [3]])("exits %s, the command's code, replays stderr and adds the fixed line", async exit => {
+    // dir is a directory, so appending to it fails.
+    const result = await spawnEntrypoint({
+      entrypoint: ENTRYPOINT,
+      argv: ['--route', 'wiki-ingest:warning:=Wiki ingest warnings', process.execPath, CHILD],
+      env: {GITHUB_STEP_SUMMARY: dir, CASE_STDERR: 'wiki-ingest:warning:w1\n', CASE_EXIT: String(exit)},
+    })
+
+    expect(result.exitCode).toBe(exit)
+    expect(result.stderr).toBe('wiki-ingest:warning:w1\nroute-stderr: summary-write-failed\n')
+  })
+})
+
 describe('the usage text', () => {
   it('carries an example, the route syntax, both summary modes, the paired conflict flags and the no-flags rule', async () => {
     const result = await runCli(routeStderrCli(), {argv: ['--help'], env: runnerEnv()})
@@ -386,12 +400,15 @@ function stubBin(): string {
 describe('each workflow step, with its real argv', () => {
   const steps = loadRouterSteps()
 
-  it('finds the four steps', () => {
+  it('finds the seven steps', () => {
     expect(steps.map(step => `${step.file}/${step.job}`)).toStrictEqual([
       'fro-bot.yaml/fro-bot-wiki-ingest',
       'fro-bot.yaml/fro-bot-observe-wiki-ingest',
       'survey-repo.yaml/survey-persist',
       'survey-repo.yaml/survey-repo',
+      'fro-bot.yaml/fro-bot',
+      'fro-bot.yaml/fro-bot-remediate',
+      'fro-bot.yaml/fro-bot-observe',
     ])
   })
 

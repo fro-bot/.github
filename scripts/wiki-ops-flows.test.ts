@@ -476,9 +476,28 @@ describe('wiki-query (bun; fro-bot.yaml:592)', () => {
     expect(JSON.parse(result.stdout)).toEqual({excerpt: '', selectedPaths: [], byteLength: 0})
   })
 
-  it('fails soft on a malformed page: warning, empty outputs, an empty handoff and exit 0', async () => {
+  it('skips a malformed page and builds the rest: one warning with its path and a fixed reason, exit 0', async () => {
+    const clean = await run('wiki-query', {cwd: checkout(WIKI), env: EVENT})
     const handoff = join(root, 'wiki-handoff-broken.json')
     const cwd = checkout({...WIKI, 'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n'})
+    const result = await run('wiki-query', {cwd, env: {...EVENT, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe(
+      'wiki-query:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\n',
+    )
+    expect(result.stdout).toBe(clean.stdout)
+    expect(parseOutputs(result.githubOutput)).toEqual(parseOutputs(clean.githubOutput))
+    expect(JSON.parse(readFileSync(handoff, 'utf8'))).toEqual({
+      selectedPaths: (JSON.parse(clean.stdout) as {selectedPaths: string[]}).selectedPaths,
+    })
+  })
+
+  it('fails soft when no page is readable: warning, empty outputs, an empty handoff and exit 0', async () => {
+    const handoff = join(root, 'wiki-handoff-all-broken.json')
+    const cwd = checkout({
+      'knowledge/index.md': INDEX,
+      'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n',
+    })
     const result = await run('wiki-query', {cwd, env: {...EVENT, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('wiki-query:warn:baseline-query-failed\n')
