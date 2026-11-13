@@ -1,9 +1,9 @@
 name: Knowledge MCP Summary
-description: Add a table of the knowledge MCP server's tool calls to the job summary and print the same text to the step log, from the call log that knowledge-mcp-config names. It never fails the job.
+description: Add a table of the knowledge MCP server's tool calls to the job summary and print the same text to the step log, from the call log that knowledge-mcp-config names. A log with no matching line and no log at all read differently. It never fails the job.
 
 inputs:
   call-log:
-    description: The `call-log` output of `knowledge-mcp-config`. Read through `env:` only. Empty, a missing file or a file with no matching line gives one fixed line instead of a table.
+    description: 'The `call-log` output of `knowledge-mcp-config`. Read through `env:` only. A file with no matching line gives `Knowledge tools: available, no calls.`; an empty input or a missing file gives `Knowledge tools: no call log found (the server did not start, or the run had no log path).`; otherwise a table.'
     required: false
     default: ''
 
@@ -27,8 +27,14 @@ runs:
         # The server writes `<tool> <code>` and nothing else, so only lines of exactly that shape count.
         # `--` ends option parsing, `-a` reads a binary file as text, and the C locale keeps `[a-z-]`
         # and the sort order the same on every runner. Anything else in the file is never printed.
+        #
+        # The server creates the file empty once it is connected, so an existing file means it started, and
+        # a missing one means it did not, or no path reached it. The survey's three attempts share one file,
+        # so there an existing file means that some attempt's server started, and the table is cumulative.
         counts=''
+        found=no
         if [ -n "$log" ] && [ -f "$log" ]; then
+          found=yes
           counts=$(LC_ALL=C grep -aE '^(wiki_search|wiki_linked|solutions_search) [a-z-]+$' -- "$log" 2>/dev/null |
             LC_ALL=C sort | LC_ALL=C uniq -c 2>/dev/null) || counts=''
         fi
@@ -37,8 +43,10 @@ runs:
         # summary cannot. Every line is a fixed string or built from tokens the strict pattern matched, so no
         # line from the file reaches stdout and none can start with `::` to act as a workflow command.
         emit() {
-          if [ -z "$counts" ]; then
-            printf 'Knowledge tools: no calls recorded.\n\n'
+          if [ "$found" = no ]; then
+            printf 'Knowledge tools: no call log found (the server did not start, or the run had no log path).\n\n'
+          elif [ -z "$counts" ]; then
+            printf 'Knowledge tools: available, no calls.\n\n'
           else
             printf '### Knowledge tool calls\n\n| Tool | Code | Calls |\n| --- | --- | ---: |\n'
             while read -r count tool code; do
