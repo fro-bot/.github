@@ -371,10 +371,7 @@ describe('release-wiki-write-core.yaml release tool pins', () => {
     const pins = parseToolPins(workflowRaw, 'release-wiki-write-core.yaml')
 
     expect(Object.keys(pins).toSorted()).toEqual(RELEASE_TOOLS.map(({name}) => name).toSorted())
-    // Renovate bumps these pins, so assert the exact x.y.z shape `parseToolPins` enforces, not the values.
-    for (const [name, version] of Object.entries(pins)) {
-      expect(version, name).toMatch(/^\d+\.\d+\.\d+$/u)
-    }
+    // Renovate bumps these pins, so no version is asserted. `parseToolPins` throws on a pin that is not exact x.y.z.
   })
 
   it('gives every pin a renovate comment naming the tool it tracks', () => {

@@ -601,10 +601,7 @@ describe('release tool pins', () => {
       'conventional-changelog-writer',
       'semantic-release',
     ])
-    // Renovate bumps these pins, so assert the exact x.y.z shape `parseToolPins` enforces, not the values.
-    for (const [name, version] of Object.entries(pins)) {
-      expect(version, name).toMatch(/^\d+\.\d+\.\d+$/u)
-    }
+    // Renovate bumps these pins, so no version is asserted. `parseToolPins` throws on a pin that is not exact x.y.z.
   })
 })
 
