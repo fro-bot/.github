@@ -53,6 +53,7 @@ interface Harness {
   readonly deps: KnowledgeDeps
   readonly stderr: string[]
   readonly logged: LoggedLine[]
+  readonly created: string[]
   readonly session: Client
 }
 
@@ -65,9 +66,10 @@ interface LoggedLine {
 function memoryDeps(
   files: Readonly<Record<string, string>>,
   overrides: Partial<KnowledgeDeps> = {},
-): {deps: KnowledgeDeps; stderr: string[]; logged: LoggedLine[]} {
+): {deps: KnowledgeDeps; stderr: string[]; logged: LoggedLine[]; created: string[]} {
   const stderr: string[] = []
   const logged: LoggedLine[] = []
+  const created: string[] = []
   const deps: KnowledgeDeps = {
     env: {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH},
     readDir: async path => {
@@ -85,11 +87,12 @@ function memoryDeps(
     },
     writeStderr: line => stderr.push(line),
     appendCallLog: (path, line) => logged.push({path, line}),
+    createCallLog: path => created.push(path),
     expand: defaultKnowledgeDeps().expand,
     searchSolutions: defaultKnowledgeDeps().searchSolutions,
     ...overrides,
   }
-  return {deps, stderr, logged}
+  return {deps, stderr, logged, created}
 }
 
 const clients: Client[] = []
@@ -103,13 +106,13 @@ async function harness(
   files: Readonly<Record<string, string>> = FULL_CHECKOUT,
   overrides: Partial<KnowledgeDeps> = {},
 ): Promise<Harness> {
-  const {deps, stderr, logged} = memoryDeps(files, overrides)
+  const {deps, stderr, logged, created} = memoryDeps(files, overrides)
   const [serverSide, clientSide] = InMemoryTransport.createLinkedPair()
   await serve({deps, createTransport: () => serverSide})
   const session = new Client({name: 'knowledge-mcp-test', version: '0.0.0'})
   clients.push(session)
   await session.connect(clientSide)
-  return {deps, stderr, logged, session}
+  return {deps, stderr, logged, created, session}
 }
 
 async function call(
@@ -808,6 +811,122 @@ describe('the call log', () => {
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
+  })
+})
+
+describe('the call log at startup', () => {
+  const LOG = '/work/temp/knowledge-mcp-calls-1-1-fro-bot.log'
+  const WITH_LOG = {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: LOG}
+
+  it('creates the file named by the variable once the server is up, before any call', async () => {
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
+
+    expect(h.created).toEqual([LOG])
+    expect(h.logged).toEqual([])
+    expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
+  })
+
+  it('creates the file once, not once per call', async () => {
+    const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
+
+    await call(h, 'wiki_search', {query: 'runner fixture'})
+    await call(h, 'wiki_linked')
+
+    expect(h.created).toEqual([LOG])
+    expect(h.logged).toHaveLength(2)
+  })
+
+  it.each([
+    ['unset', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH}],
+    ['empty', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: ''}],
+    ['a bare file name', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: 'calls.log'}],
+    ['a relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: './tmp/calls.log'}],
+    ['a parent-relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: '../calls.log'}],
+  ])('creates no file when KNOWLEDGE_MCP_CALL_LOG is %s, and still serves', async (_label, env) => {
+    const h = await harness(FULL_CHECKOUT, {env})
+
+    const outcome = await call(h, 'wiki_linked')
+
+    expect(h.created).toEqual([])
+    expect(outcome.isError).toBe(false)
+    expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
+  })
+
+  it('creates no file when the transport cannot start, so a file means the server came up', async () => {
+    const {deps, stderr, created} = memoryDeps({}, {env: WITH_LOG})
+    const previous = process.exitCode
+    try {
+      await serve({
+        deps,
+        createTransport: () => {
+          throw new Error('no transport')
+        },
+      })
+
+      expect(created).toEqual([])
+      expect(stderr).toEqual(['knowledge-mcp: error:startup\n'])
+    } finally {
+      process.exitCode = previous
+    }
+  })
+
+  it('serves when the create fails: no startup error, and later calls still try to append', async () => {
+    const createCallLog = vi.fn<KnowledgeDeps['createCallLog']>(() => {
+      throw new Error('EACCES: permission denied, open /work/temp')
+    })
+    const previous = process.exitCode
+    try {
+      process.exitCode = undefined
+      const h = await harness(FULL_CHECKOUT, {env: WITH_LOG, createCallLog})
+
+      const outcome = await call(h, 'wiki_linked')
+
+      expect(createCallLog).toHaveBeenCalledTimes(1)
+      expect(createCallLog).toHaveBeenCalledWith(LOG)
+      expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
+      expect(process.exitCode).toBeUndefined()
+      expect(outcome.isError).toBe(false)
+      expect(h.logged).toEqual([{path: LOG, line: 'wiki_linked ok\n'}])
+    } finally {
+      process.exitCode = previous
+    }
+  })
+
+  it('swallows a thrown non-error from the create', async () => {
+    const h = await harness(FULL_CHECKOUT, {
+      env: WITH_LOG,
+      createCallLog: () => {
+        throw LOG
+      },
+    })
+
+    expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
+  })
+
+  it('creates an empty file through the default deps and leaves what an earlier attempt wrote', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'knowledge-mcp-call-log-create-'))
+    try {
+      const fresh = join(dir, 'fresh.log')
+      const earlier = join(dir, 'earlier.log')
+      const {appendCallLog, createCallLog} = defaultKnowledgeDeps()
+
+      createCallLog(fresh)
+      appendCallLog(earlier, 'wiki_search ok\n')
+      createCallLog(earlier)
+
+      expect(readFileSync(fresh, 'utf8')).toBe('')
+      expect(readFileSync(earlier, 'utf8')).toBe('wiki_search ok\n')
+    } finally {
+      rmSync(dir, {recursive: true, force: true})
+    }
+  })
+
+  it('lets the default create throw for a directory that does not exist, which serve then swallows', () => {
+    const {createCallLog} = defaultKnowledgeDeps()
+
+    expect(() => {
+      createCallLog('/no-such-directory-knowledge-mcp/calls.log')
+    }).toThrow()
   })
 })
 
