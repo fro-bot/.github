@@ -1,5 +1,5 @@
 /**
- * Test support: the four workflow steps that run through `scripts/route-stderr.ts`, read from the real workflow
+ * Test support: the seven workflow steps that run through `scripts/route-stderr.ts`, read from the real workflow
  * YAML, with the step's `run:` line tokenised the way the shell would split it. A step that smuggles anything the
  * tokenizer does not model (a pipe, a substitution, a redirect, a second line) fails to load, so what a test runs is
  * exactly what the shell would run.
@@ -9,7 +9,7 @@ import {readFileSync} from 'node:fs'
 import {fileURLToPath} from 'node:url'
 import {parse} from 'yaml'
 
-export type RouterStepKey = 'fro-bot-ingest' | 'survey-wiki-commit' | 'survey-corrections'
+export type RouterStepKey = 'fro-bot-ingest' | 'survey-wiki-commit' | 'survey-corrections' | 'wiki-query'
 
 export interface RouterStep {
   readonly key: RouterStepKey
@@ -88,7 +88,10 @@ function toStep(key: RouterStepKey, file: string, job: string, name: string, wor
   return {key, file, job, name, run: step.run, argv, wrapped, routerFlags: argv.slice(0, -2), env: step.env ?? {}}
 }
 
-/** The four steps, in workflow order: both fro-bot ingest steps, the survey commit, the survey corrections load. */
+/**
+ * The seven steps: both fro-bot ingest steps, the survey commit, the survey corrections load, then the baseline
+ * wiki query of the main fro-bot job, Remediate and Observe.
+ */
 export function loadRouterSteps(): RouterStep[] {
   const froBot = load('fro-bot.yaml')
   const survey = load('survey-repo.yaml')
@@ -97,5 +100,8 @@ export function loadRouterSteps(): RouterStep[] {
     toStep('fro-bot-ingest', 'fro-bot.yaml', 'fro-bot-observe-wiki-ingest', 'Ingest wiki insight changes', froBot),
     toStep('survey-wiki-commit', 'survey-repo.yaml', 'survey-persist', 'Commit wiki ingest to data branch', survey),
     toStep('survey-corrections', 'survey-repo.yaml', 'survey-repo', 'Load correction context', survey),
+    toStep('wiki-query', 'fro-bot.yaml', 'fro-bot', 'Query wiki context', froBot),
+    toStep('wiki-query', 'fro-bot.yaml', 'fro-bot-remediate', 'Query wiki context', froBot),
+    toStep('wiki-query', 'fro-bot.yaml', 'fro-bot-observe', 'Query wiki context', froBot),
   ]
 }

@@ -100,7 +100,7 @@ function routesOf(step: RouterStep): Route[] {
 }
 
 const steps = loadRouterSteps()
-const ingestSteps = steps.filter(step => step.key !== 'survey-corrections')
+const ingestSteps = steps.filter(step => step.key === 'fro-bot-ingest' || step.key === 'survey-wiki-commit')
 const corrections = steps.find(step => step.key === 'survey-corrections')
 
 describe('every workflow step that runs an emitter', () => {
@@ -122,7 +122,7 @@ describe('every workflow step that runs an emitter', () => {
     return runs
   }
 
-  it.each(['scripts/wiki-ingest.ts', 'scripts/render-corrections-context.ts'])(
+  it.each(['scripts/wiki-ingest.ts', 'scripts/render-corrections-context.ts', 'scripts/wiki-query.ts'])(
     'runs %s only as the command the router wraps',
     script => {
       const running = allRuns().filter(({run}) => run.includes(script))
@@ -135,10 +135,11 @@ describe('every workflow step that runs an emitter', () => {
     },
   )
 
-  it('counts three writer steps for wiki-ingest.ts and one for the corrections render', () => {
+  it('counts three writer steps for wiki-ingest.ts, one for the corrections render and three for the wiki query', () => {
     const count = (script: string): number => allRuns().filter(({run}) => run.includes(script)).length
     expect(count('scripts/wiki-ingest.ts')).toBe(3)
     expect(count('scripts/render-corrections-context.ts')).toBe(1)
+    expect(count('scripts/wiki-query.ts')).toBe(3)
   })
 })
 
@@ -283,5 +284,55 @@ describe('the corrections emitter', () => {
   it('is wrapped by the survey corrections step, with the whole stderr appended', () => {
     expect(corrections?.wrapped).toStrictEqual(['bun', 'scripts/render-corrections-context.ts'])
     expect(corrections?.routerFlags).toContain('all')
+  })
+})
+
+describe('the wiki-query emitter', () => {
+  const PREFIX = 'wiki-query:warn:'
+
+  /** Kinds the wiki query can write after `wiki-query:warn:`, from its source: lowercase letters and dashes. */
+  function emittedKinds(): string[] {
+    const text = readFileSync(join(REPOSITORY_ROOT, 'packages/wiki-ops/src/wiki-query.ts'), 'utf8')
+    const kinds = new Set<string>()
+    for (let at = text.indexOf(PREFIX); at !== -1; at = text.indexOf(PREFIX, at + 1)) {
+      let end = at + PREFIX.length
+      while (end < text.length && (((text[end] ?? '') >= 'a' && (text[end] ?? '') <= 'z') || text[end] === '-'))
+        end += 1
+      const kind = text.slice(at + PREFIX.length, end)
+      if (kind !== '') kinds.add(kind)
+    }
+    return [...kinds].sort()
+  }
+
+  /** Kinds the wiki-query steps deliberately do not route: a failed handoff write leaves the baseline context intact. */
+  const UNROUTED_KINDS = ['handoff-write-failed']
+
+  const queryRoutes = (): Route[] => steps.filter(step => step.key === 'wiki-query').flatMap(step => routesOf(step))
+  const routedBy = (kind: string, route: Route): boolean => `${PREFIX}${kind} path="x"`.startsWith(route.prefix)
+
+  it('writes exactly the kinds baseline-query-failed, handoff-write-failed and page-skipped', () => {
+    expect(emittedKinds()).toStrictEqual(['baseline-query-failed', 'handoff-write-failed', 'page-skipped'])
+  })
+
+  it('routes every other kind in each of the three steps, each under its own heading, and none twice', () => {
+    const queryStepRoutes = steps.filter(step => step.key === 'wiki-query').map(step => routesOf(step))
+    expect(queryStepRoutes).toHaveLength(3)
+    for (const routes of queryStepRoutes) {
+      expect(routes.map(route => route.heading)).toStrictEqual(['Wiki pages skipped', 'Wiki context unavailable'])
+      for (const kind of emittedKinds()) {
+        const matching = routes.filter(route => routedBy(kind, route))
+        expect(matching.length, kind).toBe(UNROUTED_KINDS.includes(kind) ? 0 : 1)
+      }
+    }
+  })
+
+  it('has no route that matches a line the query does not write', () => {
+    for (const route of queryRoutes()) {
+      expect(emittedKinds().filter(kind => routedBy(kind, route)).length, route.prefix).toBe(1)
+    }
+  })
+
+  it('lists only kinds the query writes as unrouted', () => {
+    for (const kind of UNROUTED_KINDS) expect(emittedKinds()).toContain(kind)
   })
 })
