@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/ha-addon-repository
 created: 2026-05-20
-updated: 2026-10-14
+updated: 2026-11-13
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
@@ -37,6 +37,9 @@ sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: b7bcd528f511809e0f5906af42ca6ff131c1ff1e
     accessed: 2026-10-14
+  - url: https://github.com/bfra-me/ha-addon-repository
+    sha: 8fcd4acc92a0d657d2d5503802f9e10a89f2023d
+    accessed: 2026-11-13
 tags:
   - home-assistant
   - addon
@@ -60,6 +63,8 @@ related:
   - docker-containers
   - github-actions-ci
   - probot-settings
+  - fro-bot--agent
+  - marcusrbrown--infra
 node_id: R_kgDOIKWaJA
 ---
 
@@ -68,6 +73,57 @@ node_id: R_kgDOIKWaJA
 Template repository for a Home Assistant add-on repository. GitHub template (`is_template: true`) under the `bfra-me` org, used as the blueprint when starting a new HA add-on collection. The repo ships one example add-on (`example/`) that gets built and published to GHCR.
 
 This is the bfra-me ecosystem's add-on counterpart to Marcus's runtime [[marcusrbrown--ha-config]] — where ha-config consumes add-ons and integrations, this repo defines the scaffolding for building and publishing new ones.
+
+## 2026-11-13 — Three commits, two files, one input deleted
+
+Public `main` moved from `b7bcd528` to **`8fcd4acc92a0d657d2d5503802f9e10a89f2023d`**
+(2026-11-09T03:35Z). The compare shows exactly **three commits touching two files**,
+both workflows; the 45-blob tree listing is otherwise identical, so both READMEs,
+`repository.yaml`, and `example/config.yaml` carry no source change and the
+October 14 and September 30 static findings stand.
+
+| Commit | Date (UTC) | Author | Change |
+|---|---|---|---|
+| `59a029e6` (#603) | 2026-10-28 | Marcus R. Brown | `fro-bot.yaml`: drop the `omo-providers: ${{ secrets.OMO_PROVIDERS }}` input |
+| `f7c5c278` (#599) | 2026-11-05 | `bfra-me[bot]` | `scorecard.yaml`: `actions/upload-artifact` v7.0.1 → **v7.0.2** (SHA-pinned) |
+| `8fcd4acc` (#605) | 2026-11-09 | `bfra-me[bot]` | `fro-bot.yaml`: `fro-bot/agent` v0.112.0 → **v0.136.5** (`7f7bf891…`) |
+
+### The agent moved 24 minors; the delivery shape did not
+
+**Fro Bot is present**, now `fro-bot/agent@7f7bf8917435c04c83dd3bb749896ffec6b3886b # v0.136.5`,
+same `30 15 * * *` schedule. No missing-workflow onboarding draft is warranted.
+The job is still two steps — `Checkout repository` (`actions/checkout` v7.0.1,
+`persist-credentials: false`) and `Run Fro Bot` — with `with:` reduced to
+`auth-json`, `github-token`, `model`, `opencode-config`, `prompt`. Still no
+`output-mode` input and no post-agent commit/push/PR stage. A ~24-minor harness
+jump that changed neither half of the caller is consistent with the 2026-09-15
+*delivery break* finding; whether v0.136.5 resolves delivery differently inside
+the action was not inspected, so this is source-shape evidence only, not a
+renewed observation of discarded work.
+
+### `omo-providers` removal is a caller-side cleanup, not a fleet signal yet
+
+#603 is the only human-authored commit in the interval, and it **subtracts** an
+input rather than adding the missing delivery half. `OMO_PROVIDERS` still appears
+on several other fleet callers' recorded auth surfaces (for example
+[[marcusrbrown--containers]], [[marcusrbrown--tokentoilet]]), and
+[[fro-bot--agent]]'s recorded input table still lists `omo-providers`. Whether
+the input was deprecated upstream or merely unused here was not established
+from this repo's sources; treat it as a local change until another caller
+drops it. [[marcusrbrown--infra]] removed the corresponding repo secret back in
+June, so this is at least the second repo shedding the oMo provider plumbing.
+
+### Carried drift, rechecked against `8fcd4acc`
+
+- `SCHEDULE_PROMPT` still says `bfra-me/.github` "currently v4.16.6"; both reusable
+  callers (`renovate.yaml`, `update-repo-settings.yaml`) remain at
+  `0e881c39… # v4.29.0`.
+- `main.yaml` pins are unchanged: `home-assistant/builder/actions/*@4de35182 # 2026.06.0`,
+  `creyD/prettier_action@v4.6` (still the abandoned action in the `Lint` path),
+  `dorny/paths-filter@v4.0.3`, `frenck/action-addon-linter@v2.21.1`.
+- The generic-`:latest` and validation-versus-publication findings from
+  2026-10-14 and 2026-09-30 are untouched by this interval — neither changed file
+  is `main.yaml`.
 
 ## 2026-10-14 — Unchanged source, distinct tag contracts
 
@@ -263,7 +319,7 @@ The rule: **when a fix must be hand-applied under time pressure, the minimum-via
 - **Primary language:** Dockerfile
 - **Topics:** `addon`, `addons`, `hassio`, `home-assistant`, `homeassistant`, `template`
 - **Created:** 2022-10-08 · **Repo id:** `547723812` · **`node_id`:** `R_kgDOIKWaJA`
-- **HEAD:** `b7bcd528f511809e0f5906af42ca6ff131c1ff1e` (2026-09-14T16:36:34Z)
+- **HEAD:** `b7bcd528f511809e0f5906af42ca6ff131c1ff1e` (2026-09-14T16:36:34Z) → **`8fcd4acc92a0d657d2d5503802f9e10a89f2023d`** (2026-11-09T03:35:17Z, observed 2026-11-13)
 - **Stars / forks / watchers:** 2 / 1 / 2 (steady across all nine surveys)
 - **`open_issues_count`:** 7 = 4 Renovate PRs + 3 issues (#4 Dependency Dashboard, #554 Daily Autohealing Report, #569 settings-sync failure)
 
@@ -452,7 +508,8 @@ Contrast [[marcusrbrown--sparkle]]'s `skipErrorChecking: true`, a blind suppress
 
 ## The Fro Bot workflow
 
-- **Agent:** `fro-bot/agent@5494812ab3b9a96573e9807e99f7fdfdd5d92e81 # v0.112.0` (was v0.43.1 — a ~69-minor crossing landed in three hops: v0.107.0 #557, v0.107.1 #584, v0.112.0 #591). PR **#597** proposes v0.112.1.
+- **Agent (2026-11-13):** `fro-bot/agent@7f7bf8917435c04c83dd3bb749896ffec6b3886b # v0.136.5` (#605); `omo-providers` input removed (#603). Two-step job shape unchanged.
+- **Agent (2026-09-15):** `fro-bot/agent@5494812ab3b9a96573e9807e99f7fdfdd5d92e81 # v0.112.0` (was v0.43.1 — a ~69-minor crossing landed in three hops: v0.107.0 #557, v0.107.1 #584, v0.112.0 #591). PR **#597** proposes v0.112.1.
 - **Triggers:** unchanged — `issue_comment`, `pull_request_review_comment`, `discussion_comment`, `issues` (opened/edited), `pull_request` (5 types), `schedule` `30 15 * * *`, `workflow_dispatch` with a required `prompt`.
 - **Hardening (new):** workflow-level `permissions: contents: read`; checkout at `persist-credentials: false` (#586); a **fork guard** (`!github.event.pull_request.head.repo.fork`) in addition to the existing bot-author and `OWNER`/`MEMBER`/`COLLABORATOR` association guards; `concurrency` keyed on issue/PR/discussion number with `cancel-in-progress: false`.
 - **`PR_REVIEW_PROMPT`** — still add-on-aware (Dockerfile base pinning, shell quality with named shellcheck codes, AppArmor integrity, Actions SHA pinning, breaking add-on-interface changes, translation completeness) with a mandatory `PASS | CONDITIONAL | REJECT` verdict structure. Updated for the build system change: `config.yaml/build.yaml` → `config.yaml / Dockerfile`.
@@ -613,8 +670,11 @@ The two `frenck/action-*` tools are siblings serving the two sides of HA develop
 | 2026-08-07 | `0a163c3f` | HEAD frozen 83 days. #556 → v4.16.44, #557 → v0.96.3 (~53-minor jump), #559 → v4.6.0, #560 → v6.1.0. `open_issues_count` 7 steady across the entire deadlock. Unauthenticated survey. |
 | 2026-08-31 | `0a163c3f` | HEAD frozen **107 days**; tree byte-identical (31 blobs). **Two firsts.** (1) Daily autoheal daemon dead — 17 consecutive scheduled `failure` since 2026-08-14, last success 08-13 matching #554's last update; failure in `Run Fro Bot` (`agent@v0.43.1`) ~2 min in; root cause unconfirmed. Unnoticed because `Fro Bot` as a required check is evaluated on `pull_request` where the bot guard makes it skip (⇒ passing). (2) PR #556 autoclosed unmerged after 106 days; update demoted to a Rate-Limited dashboard checkbox. New #561 took the slot (first queue-composition change since 05-22); #557 → v0.107.0 (~64-minor jump). Dashboard reveals a fixed 5-PR window (`prConcurrentLimit`) over a 6-deep rate-limited backlog + 2 approval-gated majors (`actions/checkout` v7; `home-assistant/tempio` **v2026** vs pinned 2024.11.2, ~21 months stale, the image's only network-fetched build artifact). New **Abandoned Dependencies** section flags `creyD/prettier_action` and `pre-commit/pre-commit-hooks`. Supply-chain findings: `chrisdickinson/setup-yq` invisible to Renovate entirely; `home-assistant/builder@2026.03.2` tag-pinned in the cosign/`packages: write` job; `repology` manager pointed at `alpine_3_20` against 3.23/3.22 images. Run storm: ~1,500 no-op runs in two days from `issues.edited` × dashboard rewrites. |
 | **2026-09-15** | **`b7bcd528`** | **The deadlock broke and the repo was rebuilt.** `marcusrbrown` approved #557 at **2026-09-01T02:13** after **107 days**; 34 commits followed in 14 days (bot 16 / **human 15** / fro-bot 3), tree **31 → 45 blobs**, workflows **4 → 7**. **Review latency tracks reviewer presence, not risk** — #557 (`+1/-1`) waited 107 days; #564 (agent-authored, *drops two published architectures*, 7 files) was approved and merged in **25 minutes**. **Correction:** the daemon recovered at **2026-08-31T20:54** on unchanged HEAD, ~6 h before any commit — the outage was transient, and the prior page's stale-harness root cause is **superseded**. **Every open supply-chain finding closed:** `setup-yq` deleted, `home-assistant/builder` SHA-pinned and split into composable `build-image`/`publish-multi-arch-manifest`, `alpine_3_20` → `alpine_3_24`, `tempio` 2024.11.2 → **2026.07.0** — but the unverified `curl` that installs tempio is untouched, so freshness was fixed and **integrity was not**. Build system rewritten: `build.yaml` deleted, single arch-agnostic digest-pinned base, arch 4 → 2, **native `ubuntu-24.04-arm`** instead of QEMU, build/publish separated by permission, and two new patterns — **aggregators that assert expected `skipped` vs `success` per event** (`require_status`, the correct repair for "skipped ⇒ passing") and **registry readback verification** (`docker buildx imagetools inspect` platform assertion; 3rd fleet confirmation of *assert on the artifact*). Security scanning none → **four gates** (Scorecard, hadolint, zizmor, actionlint) with two model suppressions that name their own invalidation conditions. `.cursorrules` → **two-audience `AGENTS.md`** (Part I template / Part II fork) + `SECURITY.md` telling forkers not to report to upstream — *a template artifact must state which repository it is about*. **Three new problems.** (1) **The agent runs green and delivers nothing** — last artifact 09-01T03:29, then 13 green scheduled runs and zero output; its report states delivery mode `working-dir` expecting "the caller workflow to diff, commit, and open" a PR, but `fro-bot.yaml` ends at `Run Fro Bot`; it has re-applied the same 4-line doc fix **12 consecutive nights** and says so in its own ⚠️ line (3rd instance of the class after [[marcusrbrown--tokentoilet]]). (2) **#569** — `.github/settings.yml` sync fails intermittently with an empty error body, and **push-triggered runs are green by design** because `paths-filter` skips the apply step; the agent's first triage blamed the nearest recent PR and was corrected on-thread by the human with control-repo evidence; branch-protection applied state **unverified** (401). (3) **Doc drift with teeth** — `AGENTS.md`/`CONTRIBUTING.md` document `npx prettier@3.8.3` against a **3.9.6** gate, Python 3.13.13 against 3.13.15, and `AGENTS.md` lists 5 required checks where `settings.yml`/`CONTRIBUTING.md` list 8 (authored 21 h apart, mutually contradictory). Also: third repo in the `tar` outage (inert ≈ **6h01m**; the three fleet hand-fixes landed 22:56 / **22:57** / 23:01 — one operator, five minutes), with `update-repo-settings.yaml` deliberately left on the poisoned ref for **10 days** — *minimum-viable fix ≠ complete fix*. Queue drained to 4 fresh PRs (no Rate-Limited, no Pending Approval), and the **run storm abated ~44×** without the recommended trigger change — draining the backlog removed the churn that fed it. Corrections: `renovate.yaml`'s **40,000** `total_count` is a **cap, not a count**; #554 at **68,793 chars** still writes fine, which **falsifies the issue-body-size mechanism** hypothesized at [[marcusrbrown--cortexkit-anthropic-auth]]. Unauthenticated survey (no `gh` token). |
+| 2026-11-13 | `8fcd4acc` | 3 commits / 2 files since `b7bcd528`: agent v0.112.0 → **v0.136.5** (#605), `omo-providers` input dropped by hand (#603), Scorecard `upload-artifact` v7.0.2 (#599). READMEs and manifests unchanged. Delivery shape still two steps, no `output-mode`, no persistence stage. Reusable workflows still v4.29.0; `SCHEDULE_PROMPT` still says v4.16.6. |
 
 ## Drift Watch
+
+- **Delivery break, rechecked 2026-11-13:** unchanged in source at `8fcd4acc` across a ~24-minor agent bump. The only human edit to `fro-bot.yaml` in the interval removed an input rather than adding the delivery half.
 
 - **Delivery break (new 2026-09-15, highest priority):** `fro-bot.yaml` requests `working-dir` output and has no commit/push/PR step. The agent has produced a correct 4-line fix twelve nights running and landed none of it. Fix: adopt [[marcusrbrown--sparkle]]'s `Resolve delivery mode` pattern — one computed step feeding both the agent's `output-mode` and a conditional credential restore — so the delivery decision and the credential cannot disagree. Do **not** simply re-enable `persist-credentials` without the delivery half; that reintroduces the credential exposure #586 removed and still delivers nothing.
 - **`SCHEDULE_PROMPT` dead references (carried since 2026-05-30, now partly orphaned):** the `bfra-me/.github` "currently v4.16.6" literal is ~23 minors stale, and category 3 still names `chrisdickinson/setup-yq`, deleted in #573. Both degrade gracefully because the same clauses instruct dynamic lookup (see *Stale prompt constants*), so this is wasted work rather than wrong output — but the `PR_REVIEW_PROMPT` was updated for the build system change and the `SCHEDULE_PROMPT` was not, so the file is now internally inconsistent about which build system it describes.

@@ -10551,3 +10551,28 @@ Run: https://github.com/fro-bot/.github/actions/runs/43431370503
 Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/dev-like
+
+## [2026-11-13 16:30] ingest | repo:bfra-me/ha-addon-repository
+
+Re-surveyed bfra-me/ha-addon-repository. HEAD moved `b7bcd528` → `8fcd4acc`
+(3 commits, 2 workflow files): `fro-bot/agent` v0.112.0 → v0.136.5 (#605),
+`omo-providers` input removed from `fro-bot.yaml` by hand (#603), Scorecard
+`actions/upload-artifact` v7.0.2 (#599). Tree listing, READMEs, `repository.yaml`
+and `example/config.yaml` unchanged. Fro Bot workflow present (no onboarding
+draft needed); its two-step job still has no `output-mode` input and no
+post-agent persistence stage, so the 2026-09-15 delivery-break finding stands
+as source-shape evidence. Reusable workflows remain v4.29.0 while
+`SCHEDULE_PROMPT` still cites v4.16.6. Added a dated section, Identity HEAD,
+Fro Bot agent bullet, Survey History row and Drift Watch recheck to the repo
+page; prior content untouched. No topic/entity/comparison page change justified.
+Reads limited to tree listing, compare diff, and workflow files. Corrections
+context was empty.
+
+Sources: https://github.com/bfra-me/ha-addon-repository/tree/8fcd4acc92a0d657d2d5503802f9e10a89f2023d
+Run: https://github.com/fro-bot/.github/actions/runs/43431596429
+
+## [2026-11-13 13:14] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
