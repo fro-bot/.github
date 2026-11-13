@@ -4,6 +4,8 @@ import {join, relative} from 'node:path'
 
 import {afterAll, beforeAll, describe, expect, it, vi} from 'vitest'
 import {
+  buildTriggerSet,
+  changedFilesIntersectTriggerSet,
   FIXED_TRIGGER_FILES,
   froBotPackageSourceFiles,
   isLiteralPath,
@@ -440,6 +442,138 @@ describe('the shard and merge modules and the shard composite are fixed triggers
     expect(missing, missing.length === 0 ? undefined : `not in FIXED_TRIGGER_FILES: ${missing.join(', ')}`).toEqual([])
   })
 })
+
+/**
+ * Repository files that a `testFiles` entry reads at run time without importing them, so the import closure never
+ * reaches them: the content decides what the test sees, and a pull request that changes only one of them must run
+ * Stryker. THIS IS A PINNED LIST, NOT A DETECTOR. Nothing here finds a new read: a test that starts reading another
+ * repository file stays invisible until someone adds it below and to `FIXED_TRIGGER_FILES` (or a pattern in
+ * `buildTriggerSet`). Each entry names the reading test; the guard fails when that test stops being listed or stops
+ * naming the file, so a stale pin cannot linger. The list came from tracing every `fs` read of the `testFiles` run
+ * under Vitest (a preload that wraps the `fs` and `fs/promises` read functions and logs each path under the
+ * checkout with its first test-file frame, loaded through `NODE_OPTIONS=--require`; no script for it is kept, because
+ * registering one in `scripts/` or `packages/ci-checks` costs more than the list it would feed) and dropping the reads whose content cannot change an assertion: `knowledge/` (read by
+ * `runWikiIngestCli` in corrections-survival.test.ts, only to collect existing pages that no assertion looks at),
+ * `metadata/repos.yaml` (read by the privacy token loaders in two CLI tests that accept either failure flag), and
+ * absence probes such as `.drafted-solutions/drafted-solutions-digest.json`.
+ */
+const RUNTIME_READ_TRIGGERS: readonly {
+  readonly path: string
+  readonly reader: string
+  readonly marker: string
+  readonly onDisk: boolean
+}[] = [
+  {
+    path: 'common-settings.yaml',
+    reader: 'packages/registry/src/protection-drift.test.ts',
+    marker: 'common-settings.yaml',
+    onDisk: true,
+  },
+  {
+    path: '.github/settings.yml',
+    reader: 'packages/registry/src/protection-drift.test.ts',
+    marker: '.github/settings.yml',
+    onDisk: true,
+  },
+  {
+    path: 'program-trackers.json',
+    reader: 'packages/status-truth/src/program-trackers.test.ts',
+    marker: 'program-trackers.json',
+    onDisk: true,
+  },
+  {
+    path: 'quartz-site/quartz.config.yaml',
+    reader: 'scripts/wiki-lockfile-gates.test.ts',
+    marker: 'quartz.config.yaml',
+    onDisk: true,
+  },
+  {
+    path: 'quartz-site/quartz.lock.json',
+    reader: 'scripts/wiki-lockfile-gates.test.ts',
+    marker: 'quartz.lock.json',
+    onDisk: true,
+  },
+  {
+    path: 'packages/ci-checks/fixtures/mutation-report-baseline.json',
+    reader: 'packages/ci-checks/src/mutation-merge.test.ts',
+    marker: 'mutation-report-baseline',
+    onDisk: true,
+  },
+  {
+    path: 'packages/ci-checks/fixtures/mutation-report-two-shard-a.json',
+    reader: 'packages/ci-checks/src/mutation-merge.test.ts',
+    marker: 'mutation-report-two-shard-a',
+    onDisk: true,
+  },
+  {
+    path: 'packages/ci-checks/fixtures/mutation-report-two-shard-b.json',
+    reader: 'packages/ci-checks/src/mutation-merge.test.ts',
+    marker: 'mutation-report-two-shard-b',
+    onDisk: true,
+  },
+  {
+    path: 'packages/knowledge/src/drafted-solutions-harvest.test.ts',
+    reader: 'packages/ci-checks/src/mutation-guards-reach.test.ts',
+    marker: 'drafted-solutions-harvest.test.ts',
+    onDisk: true,
+  },
+  // knowledge-mcp.test.ts imports every `packages/*/src/*-cli.ts` by a computed path, so a closure walk that
+  // follows literal specifiers does not reach the ones no listed test names. Each existing CLI and its imports are
+  // seeded into the trigger set, and a pattern matches a new CLI before it exists.
+  {
+    path: 'packages/wiki-ops/src/wiki-repair-cli.ts',
+    reader: 'packages/wiki-ops/src/knowledge-mcp.test.ts',
+    marker: '-cli.ts',
+    onDisk: true,
+  },
+  {
+    path: 'packages/brand-new/src/brand-new-cli.ts',
+    reader: 'packages/wiki-ops/src/knowledge-mcp.test.ts',
+    marker: '-cli.ts',
+    onDisk: false,
+  },
+]
+
+describe(
+  'files a listed test reads at run time are fixed triggers (a pinned list, not a detector)',
+  {timeout: 60_000},
+  () => {
+    const config = readStrykerConfig(strykerConfigPath)
+    const triggerSet = buildTriggerSet(config)
+    const listed = new Set(config.testFiles.map(normalizePath))
+
+    it.each(RUNTIME_READ_TRIGGERS.map(entry => [entry.path, entry] as const))(
+      '%s is in the trigger set, so a pull request that changes only it runs Stryker',
+      (_path, entry) => {
+        expect(changedFilesIntersectTriggerSet([entry.path], triggerSet)).toBe(true)
+      },
+    )
+
+    it.each(RUNTIME_READ_TRIGGERS.map(entry => [entry.path, entry] as const))(
+      '%s is still read by a listed test: the reader is in testFiles and names it',
+      (_path, entry) => {
+        expect(listed.has(entry.reader), `${entry.reader} is not in testFiles`).toBe(true)
+        expect(readFileSync(join(repositoryRoot, entry.reader), 'utf8')).toContain(entry.marker)
+        expect(existsSync(join(repositoryRoot, entry.path))).toBe(entry.onDisk)
+      },
+    )
+
+    it('does not make a file nothing reads a trigger: docs, other workflows, knowledge/ and metadata/ stay out', () => {
+      for (const path of [
+        'README.md',
+        'docs/ideation/2026-11-07-open-ideation.md',
+        '.github/workflows/fro-bot.yaml',
+        '.github/renovate.json5',
+        'default.json',
+        'knowledge/index.md',
+        'metadata/repos.yaml',
+        'packages/test-kit/src/workflow-expression.ts',
+      ]) {
+        expect(changedFilesIntersectTriggerSet([path], triggerSet), path).toBe(false)
+      }
+    })
+  },
+)
 
 describe('findMutateTestPairingViolations (pure)', () => {
   it("flags a mutate entry when reach resolves only to the other tree's shell", () => {

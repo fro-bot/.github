@@ -13,6 +13,7 @@ import {
   defaultStrykerSpawner,
   evaluateTriggerGate,
   exitCodeFor,
+  FIXED_TRIGGER_FILES,
   flattenReport,
   froBotPackageSourceFiles,
   mutationReportPath,
@@ -886,6 +887,26 @@ function fakeTriggerConfig(overrides: Partial<StrykerConfigShape> = {}): Stryker
   }
 }
 
+/** Every `packages/<package>/src/*-cli.ts` on the real tree, repo-relative. */
+function existingCliModules(): string[] {
+  const root = findRepositoryRoot()
+  return readdirSync(join(root, 'packages'), {withFileTypes: true})
+    .filter(entry => entry.isDirectory() && existsSync(join(root, 'packages', entry.name, 'src')))
+    .flatMap(entry =>
+      readdirSync(join(root, 'packages', entry.name, 'src'))
+        .filter(name => name.endsWith('-cli.ts'))
+        .map(name => `packages/${entry.name}/src/${name}`),
+    )
+}
+
+/** The manifest of every package directory on the real tree that has one, repo-relative. */
+function existingManifests(): string[] {
+  const root = findRepositoryRoot()
+  return readdirSync(join(root, 'packages'), {withFileTypes: true})
+    .filter(entry => entry.isDirectory() && existsSync(join(root, 'packages', entry.name, 'package.json')))
+    .map(entry => `packages/${entry.name}/package.json`)
+}
+
 function fakeGateDeps(overrides: Partial<ChangedFileGateDeps> = {}): ChangedFileGateDeps {
   return {
     readPullRequestContext: async () => ({
@@ -1142,14 +1163,13 @@ describe('closure-based trigger set against the real config', () => {
   // (b) A file genuinely outside the real closure, computed from the real config rather than
   // hardcoded, and confirmed both to EXIST on disk and to be absent from the real trigger set
   // — so the premise ("this file really is unreachable from every mutate/testFiles entry") is
-  // visible in the test itself, not asserted by fiat. `packages/registry/src/reconcile-plan.ts` is the
-  // pure planning seam of the repository reconciler (repo reconciliation/star-sync): no import path —
-  // direct, transitive, or via a package-name reference — leads to it from any `mutate` or
-  // `testFiles` entry in `stryker.config.json`, and it does not itself import, or get imported by,
-  // anything in the mutation set. It exists at the repository root the gate resolves, which is the
-  // point of naming it: a root resolved one level too deep would not find it.
-  it('reports not-applicable for a real file confirmed outside the real import closure (packages/registry/src/reconcile-plan.ts)', async () => {
-    const outsideClosureFile = 'packages/registry/src/reconcile-plan.ts'
+  // visible in the test itself, not asserted by fiat. `packages/test-kit/src/workflow-expression.ts` is a
+  // fixture helper that only workflow-structure tests outside `testFiles` import: no import path — direct,
+  // transitive, or via a package-name reference — leads to it from any `mutate`, `testFiles` or package CLI
+  // entry. It exists at the repository root the gate resolves, which is the point of naming it: a root
+  // resolved one level too deep would not find it.
+  it('reports not-applicable for a real file confirmed outside the real import closure (packages/test-kit/src/workflow-expression.ts)', async () => {
+    const outsideClosureFile = 'packages/test-kit/src/workflow-expression.ts'
     expect(existsSync(join(findRepositoryRoot(), outsideClosureFile))).toBe(true)
     expect(realTriggerSet.files.has(outsideClosureFile)).toBe(false)
 
@@ -2019,7 +2039,16 @@ describe('package manifests are fixed triggers', () => {
     for (const manifest of ['packages/core/package.json', 'packages/test-kit/package.json']) {
       expect(triggerSet.files.has(manifest), manifest).toBe(true)
     }
-    expect(triggerSet.closureSize).toBe(0)
+    // The only closure under a fake config is what the real CLI modules reach beyond the files listed outright.
+    const listed = new Set([
+      ...['scripts/a.ts', 'scripts/a.test.ts'],
+      ...FIXED_TRIGGER_FILES,
+      ...existingCliModules(),
+      ...existingManifests(),
+    ])
+    expect(triggerSet.closureSize).toBe(
+      [...buildImportClosure(existingCliModules()).files].filter(f => !listed.has(f)).length,
+    )
   })
 
   it('carries the manifest pattern on the trigger set, so membership is decided from the trigger set alone', () => {
@@ -2053,6 +2082,49 @@ describe('package manifests are fixed triggers', () => {
     expect(
       changedFilesIntersectTriggerSet(['./packages/core/package.json'], buildTriggerSet(fakeTriggerConfig())),
     ).toBe(true)
+  })
+})
+
+describe('package CLI modules are fixed triggers', () => {
+  const evaluate = async (changed: string[]) =>
+    evaluateTriggerGate(fakeTriggerConfig(), PULL_REQUEST_EVENT, fakeGateDeps({fetchChangedFiles: () => changed}))
+
+  // A test imports every `packages/<package>/src/*-cli.ts` by a computed path, so the closure walk cannot name them:
+  // each existing one seeds the walk (its siblings and theirs join the set), and the pattern covers one that is new.
+  it.each([
+    'packages/wiki-ops/src/wiki-repair-cli.ts',
+    'packages/brand-new/src/brand-new-cli.ts',
+    // A module an outside-closure CLI imports, and one it reaches two imports away (reconcile-cli -> reconcile-handler).
+    'packages/wiki-ops/src/wiki-repair.ts',
+    'packages/registry/src/reconcile-effects.ts',
+  ])('runs for a changed %s', async changed => {
+    expect(await evaluate([changed])).toBeUndefined()
+  })
+
+  it('puts every existing CLI and everything it imports in the trigger set', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    const clis = existingCliModules()
+    expect(clis.length).toBeGreaterThan(30)
+    for (const cli of clis) expect(triggerSet.files.has(cli), cli).toBe(true)
+    for (const file of buildImportClosure(clis).files) expect(triggerSet.files.has(file), file).toBe(true)
+  })
+
+  it.each([
+    'packages/wiki-ops/src/wiki-repair-cli.test.ts',
+    'packages/wiki-ops/src/nested/wiki-repair-cli.ts',
+    'packages/wiki-ops/wiki-repair-cli.ts',
+    'packages/wiki-ops/src/wiki-repair-cli.ts.bak',
+    'docs/packages/wiki-ops/src/wiki-repair-cli.ts',
+    'scripts/wiki-repair-cli.ts',
+  ])('does not run for %s, which no test imports as a CLI module', async changed => {
+    expect((await evaluate([changed]))?.verdict).toBe('not-applicable')
+  })
+
+  it('carries the CLI pattern next to the manifest pattern, so membership is decided from the trigger set alone', () => {
+    const triggerSet = buildTriggerSet(fakeTriggerConfig())
+    expect(triggerSet.filePatterns).toHaveLength(2)
+    expect(changedFilesIntersectTriggerSet(['./packages/brand-new/src/brand-new-cli.ts'], triggerSet)).toBe(true)
+    expect(changedFilesIntersectTriggerSet(['packages/brand-new/package.json'], triggerSet)).toBe(true)
   })
 })
 

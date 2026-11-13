@@ -1509,6 +1509,13 @@ export function buildImportClosure(
  * `tsconfig*.json` files whose settings affect how the mutated TypeScript compiles.
  * `quartz-site/tsconfig.json` is deliberately excluded — it configures an unrelated
  * documentation-site build, not anything Stryker mutates or runs.
+ *
+ * The last group is files a listed test reads from the repository at run time without importing them, so the
+ * import closure never reaches them (the protection-drift test's two settings files, the committed program
+ * tracker config, the Quartz config and lock the lockfile-gate test checks, the mutation-report fixtures the
+ * merge test loads, and a test file whose import closure the reach test measures). They are a pinned list, not
+ * a detector: `mutation-guards-config.test.ts` names each reading test. Reads whose content cannot change an
+ * assertion stay out (`knowledge/` and `metadata/repos.yaml`), which keeps a promotion not-applicable.
  */
 export const FIXED_TRIGGER_FILES: readonly string[] = [
   'stryker.config.json',
@@ -1533,6 +1540,15 @@ export const FIXED_TRIGGER_FILES: readonly string[] = [
   'packages/wiki-write-core/package.json',
   'tsconfig.json',
   'packages/wiki-write-core/tsconfig.build.json',
+  'common-settings.yaml',
+  '.github/settings.yml',
+  'program-trackers.json',
+  'quartz-site/quartz.config.yaml',
+  'quartz-site/quartz.lock.json',
+  'packages/ci-checks/fixtures/mutation-report-baseline.json',
+  'packages/ci-checks/fixtures/mutation-report-two-shard-a.json',
+  'packages/ci-checks/fixtures/mutation-report-two-shard-b.json',
+  'packages/knowledge/src/drafted-solutions-harvest.test.ts',
 ]
 
 /**
@@ -1545,6 +1561,18 @@ export const FIXED_TRIGGER_FILES: readonly string[] = [
  */
 const PACKAGE_MANIFEST_PATTERN = /^packages\/[^/]+\/package\.json$/u
 
+/**
+ * Every `packages/<package>/src/*-cli.ts` module is a fixed trigger. `knowledge-mcp.test.ts` lists each package's
+ * `src/` and imports every `*-cli.ts` it finds by a computed path, then asserts on the commands those modules
+ * declare (which are write-marked, which names exist). The closure walk follows literal specifiers only, so it
+ * reaches the CLI modules some listed test names and no others. Each CLI that exists seeds the walk
+ * (`listPackageCliModules`), so a module it imports joins the set too, and this pattern covers one that does not
+ * exist yet. Measured on the tree this was added to: of 49 modules that 33 CLIs reach outside the set, none feeds
+ * the `commands` the factory declares (all are handlers, run only when the command runs), so seeding is
+ * wider than the test's assertions need. It is kept because a check for that would need a 49-entry allowlist.
+ */
+const PACKAGE_CLI_PATTERN = /^packages\/[^/]+\/src\/[^/]+-cli\.ts$/u
+
 /** Repo-relative path of the manifest of every directory under `packages/` that has one. */
 function listPackageManifests(): string[] {
   const packagesDir = join(repositoryRoot(), 'packages')
@@ -1554,12 +1582,26 @@ function listPackageManifests(): string[] {
     .map(entry => `packages/${entry.name}/package.json`)
 }
 
+/** Repo-relative path of every `packages/<package>/src/*-cli.ts` that exists: the seeds of the CLI closure. */
+function listPackageCliModules(): string[] {
+  const packagesDir = join(repositoryRoot(), 'packages')
+  if (!existsSync(packagesDir)) return []
+  return readdirSync(packagesDir, {withFileTypes: true})
+    .filter(entry => entry.isDirectory() && existsSync(join(packagesDir, entry.name, 'src')))
+    .flatMap(entry =>
+      readdirSync(join(packagesDir, entry.name, 'src'))
+        .filter(name => PACKAGE_CLI_PATTERN.test(`packages/${entry.name}/src/${name}`))
+        .map(name => `packages/${entry.name}/src/${name}`),
+    )
+}
+
 export interface TriggerSet {
   readonly files: ReadonlySet<string>
   /**
    * Pattern triggers: a changed file matches when its normalized path matches one of these, whether
-   * or not it is in `files`. Currently only the package-manifest pattern (see
-   * `PACKAGE_MANIFEST_PATTERN`), which `files` also lists for the manifests that exist.
+   * or not it is in `files`. The package-manifest pattern (see `PACKAGE_MANIFEST_PATTERN`), which
+   * `files` also lists for the manifests that exist, and the package CLI pattern (see
+   * `PACKAGE_CLI_PATTERN`), which `files` also lists for the CLI modules that exist, with their import closure.
    */
   readonly filePatterns: readonly RegExp[]
   /**
@@ -1602,13 +1644,14 @@ export interface TriggerSet {
 export function buildTriggerSet(config: StrykerConfigShape, readSource: SourceReader = defaultReadSource): TriggerSet {
   const configEntries = [...config.mutate, ...config.testFiles]
   const hasGlobEntries = configEntries.some(entry => !isLiteralPath(entry))
+  const cliModules = listPackageCliModules()
   const baseFiles = new Set(
-    [...configEntries, ...FIXED_TRIGGER_FILES, ...listPackageManifests()].map(normalizeMutatePath),
+    [...configEntries, ...FIXED_TRIGGER_FILES, ...listPackageManifests(), ...cliModules].map(normalizeMutatePath),
   )
-  const closure = buildImportClosure(configEntries, readSource)
+  const closure = buildImportClosure([...configEntries, ...cliModules], readSource)
   const files = new Set([...baseFiles, ...closure.files])
   const closureSize = [...closure.files].filter(file => !baseFiles.has(file)).length
-  return {files, filePatterns: [PACKAGE_MANIFEST_PATTERN], hasGlobEntries, closureSize}
+  return {files, filePatterns: [PACKAGE_MANIFEST_PATTERN, PACKAGE_CLI_PATTERN], hasGlobEntries, closureSize}
 }
 
 /**
