@@ -450,7 +450,9 @@ describe('the shard and merge modules and the shard composite are fixed triggers
  * repository file stays invisible until someone adds it below and to `FIXED_TRIGGER_FILES` (or a pattern in
  * `buildTriggerSet`). Each entry names the reading test; the guard fails when that test stops being listed or stops
  * naming the file, so a stale pin cannot linger. The list came from tracing every `fs` read of the `testFiles` run
- * under Vitest and dropping the reads whose content cannot change an assertion: `knowledge/` (read by
+ * under Vitest (a preload that wraps the `fs` and `fs/promises` read functions and logs each path under the
+ * checkout with its first test-file frame, loaded through `NODE_OPTIONS=--require`; no script for it is kept, because
+ * registering one in `scripts/` or `packages/ci-checks` costs more than the list it would feed) and dropping the reads whose content cannot change an assertion: `knowledge/` (read by
  * `runWikiIngestCli` in corrections-survival.test.ts, only to collect existing pages that no assertion looks at),
  * `metadata/repos.yaml` (read by the privacy token loaders in two CLI tests that accept either failure flag), and
  * absence probes such as `.drafted-solutions/drafted-solutions-digest.json`.
@@ -516,8 +518,8 @@ const RUNTIME_READ_TRIGGERS: readonly {
     onDisk: true,
   },
   // knowledge-mcp.test.ts imports every `packages/*/src/*-cli.ts` by a computed path, so a closure walk that
-  // follows literal specifiers does not reach the ones no listed test names. A pattern, not a list: a new CLI
-  // matches before it exists.
+  // follows literal specifiers does not reach the ones no listed test names. Each existing CLI and its imports are
+  // seeded into the trigger set, and a pattern matches a new CLI before it exists.
   {
     path: 'packages/wiki-ops/src/wiki-repair-cli.ts',
     reader: 'packages/wiki-ops/src/knowledge-mcp.test.ts',
@@ -565,7 +567,7 @@ describe(
         'default.json',
         'knowledge/index.md',
         'metadata/repos.yaml',
-        'packages/wiki-ops/src/wiki-repair.ts',
+        'packages/test-kit/src/workflow-expression.ts',
       ]) {
         expect(changedFilesIntersectTriggerSet([path], triggerSet), path).toBe(false)
       }
