@@ -43,7 +43,9 @@ Earlier ideation (`docs/ideation/2026-09-04-open-ideation.md`) recorded the reje
 
 ### 6. Give Remediate a wiki handoff
 
-**Description:** Reuse Observe's chain of baseline, build and trusted ingest for Remediate, so that its learnings land on `data` instead of in Needs Human Attention. **Warrant:** `direct:` `fro-bot.yaml:972-983` says "there is no later step in this job that captures or commits a wiki edit". Observe's handoff is at `:1158-1195`, and the trusted ingest job is at `:1347-1410`. **Rationale:** The pass that does the fixing currently loses the most learnings. **Downsides:** It adds a second ingest to each run. Edits to the same page from Remediate and Observe depend on the existing staleness check. **Confidence:** 55% **Complexity:** Medium **Status:** Unexplored
+**Description:** Reuse Observe's chain of baseline, build and trusted ingest for Remediate, so that its learnings land on `data` instead of in Needs Human Attention. **Warrant:** `direct:` `fro-bot.yaml:972-983` says "there is no later step in this job that captures or commits a wiki edit". Observe's handoff is at `:1158-1195`, and the trusted ingest job is at `:1347-1410`. **Rationale:** The pass that does the fixing currently loses the most learnings. **Downsides:** It adds a second ingest to each run. Edits to the same page from Remediate and Observe depend on the existing staleness check. **Confidence:** 55% **Complexity:** Medium **Status:** Explored
+
+**Outcome:** The handoff was not built. Remediate reports its learnings in its handoff comment under `### Learnings for the wiki`, and Observe, which already owns a handoff, checks and records them. A wiki handoff for Remediate would need a `data`-based tree, because its `knowledge/` tree is restored to `main` and the staleness check compares against `data`, and an ordering with Observe so that the two writers do not collide on the same page.
 
 ### 7. Search recorded decisions
 
