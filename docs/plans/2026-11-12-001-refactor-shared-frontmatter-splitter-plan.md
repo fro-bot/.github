@@ -345,7 +345,7 @@ What each site does with the three outcomes, after both PRs:
 - Release: `@fro.bot/wiki-write-core` 0.2.0 is published (`npm view` shows 0.2.0).
 - Survey persist: survey run 43246623734 on 2026-11-12 passed and rewrote `knowledge/wiki/repos/fro-bot--agent.md` on `data` with its sources intact and a new entry dated 2026-11-12. That page already listed its repository, so the stamp did not need to add one.
 - Dashboard marker: the marker on `main` reads version 1.
-- Next promotion passes both gates: pending.
+- Promotion: run 43274490781 on 2026-11-12 passed both gates on the 0.2.0 code and merged #4204.
 - Wiki lint run 43254822656 on 2026-11-12 (dry run) reported 0 deterministic findings and skipped repair.
 
 ### Phase 2: the private packages and the gate (second PR, no release)
@@ -474,6 +474,12 @@ What each site does with the three outcomes, after both PRs:
 **Test expectation:** none -- live verification of shipped behaviour.
 
 **Verification:** Each item above is recorded in this plan with its run.
+
+**Recorded results:**
+
+- Second PR: #4203 merged on 2026-11-12 and cut no release. #4148 and #4183 closed.
+- Strict gate over `data`: the gate's CLI, run on the `data` tree after promotion #4204 with `main`'s pages as the unchanged set, reported no leaks across 33 repo pages. That run was local, before the merge.
+- First promotion with the strict gate, the knowledge tools in an agent run, a capture run and a metrics run: not yet run.
 
 ## System-Wide Impact
 

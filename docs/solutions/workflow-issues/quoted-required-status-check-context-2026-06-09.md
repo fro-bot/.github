@@ -6,7 +6,7 @@ module: github-actions-workflows
 problem_type: workflow_issue
 component: development_workflow
 severity: medium
-last_updated: 2026-10-18
+last_updated: 2026-11-12
 verified: 2026-06-09
 applies_when:
   - Adding or renaming a required_status_checks.contexts entry in .github/settings.yml
@@ -147,7 +147,8 @@ cancelled run's final job complete.
 
 The required `Fro Bot` job (`.github/workflows/fro-bot.yaml`, listed in `.github/settings.yml`) is the
 deliberate exception to the rule above. Its job-level `if:` skips bot-authored PRs. Fro Bot does not
-review them, Renovate PRs report skipped, and the maintainer approves them manually. A skipped job
+review them, and Renovate PRs report skipped. The `Renovate Approve` workflow approves the ones
+that qualify as the `fro-bot` user when the repository variable `RENOVATE_APPROVE` is `on`; any other needs a person's review to merge. A skipped job
 reports Success, which satisfies the required check, so this is a silent pass by design.
 
 The weekly drafted-docs PR is opened by `fro-bot[bot]` and is covered by the same skip. The operator
