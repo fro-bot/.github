@@ -48,7 +48,7 @@ One splitter replaced the copies: `splitFrontmatterBlock` at `packages/wiki-writ
 5. **List every intended behaviour change, and test against the list.** Keep a copy of each old parser in the test. Where no listed change applies, old and new must agree. Where one applies, the new result must equal an expected value recorded when the test case was built (`packages/wiki-write-core/src/frontmatter-block.test.ts:447-469`). A check that only sees the input has a certain shape and calls the difference intended proves nothing.
 6. **Test the comparison.** Insert known defects and require the tests to fail (`packages/wiki-write-core/src/frontmatter-block.test.ts:481-503`). Require the generated inputs to reach each intended change, so a generator that stops producing one is noticed.
 7. **Compare old and new results on real files at a recorded commit, and also on generated malformed inputs.** `git ls-tree -r` and `git show` read every Markdown file at a commit without a checkout. Real files alone are not enough: #4185 reported that all 230 checked files still parsed, and it still had two blocking defects.
-8. **Add a test that detects a new copy.** `scripts/frontmatter-sites.test.ts:179-197` fails when a non-test TypeScript file under a `packages/*/src` directory, outside the splitter, has a regex literal that starts with `^---`.
+8. **Add a test that detects a new copy.** `scripts/frontmatter-sites.test.ts:179-197` fails when a non-test TypeScript file in a `src` directory under `packages/`, outside the splitter, has a regex literal that starts with `^---`.
 
 ### Smaller rules from the same work
 
