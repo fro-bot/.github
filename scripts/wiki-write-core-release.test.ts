@@ -591,8 +591,17 @@ describe('release tool pins', () => {
   it('reads the pins declared in the workflow the scripts and CI both use', () => {
     const pins = parseToolPins(readFileSync(join(repositoryRoot, TOOLS_WORKFLOW_FILE), 'utf8'), TOOLS_WORKFLOW_FILE)
 
-    expect(pins['semantic-release']).toBe('25.0.9')
-    expect(pins['conventional-changelog-writer']).toBe('9.3.0')
+    expect(Object.keys(pins).toSorted()).toEqual([
+      '@semantic-release/commit-analyzer',
+      '@semantic-release/exec',
+      '@semantic-release/github',
+      '@semantic-release/npm',
+      '@semantic-release/release-notes-generator',
+      'conventional-changelog-conventionalcommits',
+      'conventional-changelog-writer',
+      'semantic-release',
+    ])
+    // Renovate bumps these pins, so no version is asserted. `parseToolPins` throws on a pin that is not exact x.y.z.
   })
 })
 

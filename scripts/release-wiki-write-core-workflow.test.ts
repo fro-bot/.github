@@ -371,16 +371,7 @@ describe('release-wiki-write-core.yaml release tool pins', () => {
     const pins = parseToolPins(workflowRaw, 'release-wiki-write-core.yaml')
 
     expect(Object.keys(pins).toSorted()).toEqual(RELEASE_TOOLS.map(({name}) => name).toSorted())
-    expect(pins).toMatchObject({
-      'semantic-release': '25.0.9',
-      '@semantic-release/exec': '7.1.0',
-      '@semantic-release/npm': '13.2.0',
-      '@semantic-release/github': '12.0.10',
-      '@semantic-release/commit-analyzer': '13.0.1',
-      '@semantic-release/release-notes-generator': '14.1.1',
-      'conventional-changelog-conventionalcommits': '10.4.1',
-      'conventional-changelog-writer': '9.3.0',
-    })
+    // Renovate bumps these pins, so no version is asserted. `parseToolPins` throws on a pin that is not exact x.y.z.
   })
 
   it('gives every pin a renovate comment naming the tool it tracks', () => {
