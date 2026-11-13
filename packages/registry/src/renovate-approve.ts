@@ -132,6 +132,8 @@ export interface Row {
   readonly detail: string
   /** Whether native auto-merge is armed on the PR. */
   readonly armed: boolean
+  /** On a `yielded` row, the number of the PR it yielded to; the stdout row prints it. Absent on every other row. */
+  readonly yieldedTo?: number
 }
 
 export interface SweepResult {
@@ -629,6 +631,11 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       detail,
       armed,
     })
+    /** The `yielded` row: the number of the PR it yielded to is data on the row, not read back from the detail. */
+    const yielded = (to: number, armed = pull.armed): Row => ({
+      ...row('yielded', yieldDetail(to), armed),
+      yieldedTo: to,
+    })
     const fixed = (outcome: keyof typeof texts, armed = pull.armed): Row => row(outcome, texts[outcome], armed)
     /** The row that stops a PR on what its compare shows, or `null` when the compare allows an approval. */
     const stopFor = (compared: Compared, armed: boolean): Row | null => {
@@ -648,7 +655,7 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
       const relisted = await readOpen()
       if (relisted.capped) return row('error', reasons.capped, armed)
       yielding = lowestYield(relisted.items)
-      return yielding === null ? null : row('yielded', yieldDetail(yielding), armed)
+      return yielding === null ? null : yielded(yielding, armed)
     }
 
     if (pull.labels.includes('hold-merge')) return fixed('held')
@@ -669,7 +676,7 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
     if (standing === 'approved') return fixed('already-approved')
     if (standing === 'changes-requested') return fixed('changes-requested')
 
-    if (yielding !== null) return row('yielded', yieldDetail(yielding))
+    if (yielding !== null) return yielded(yielding)
     if (slotUsed) return fixed('deferred')
 
     // The fresh read: the PR, the commits and files of the pinned head against the current `main`, the required
@@ -770,6 +777,15 @@ async function run(input: SweepInput, live: boolean): Promise<SweepResult> {
 /** The outcomes that fail the run: a PR that could not be judged, and an approval that did not go as sent. */
 function isFailure(outcome: OutcomeCode): boolean {
   return outcome === 'error' || outcome === 'approval-unknown' || outcome === 'approval-refused'
+}
+
+/**
+ * The stdout row of a candidate: `renovate-approve: #<n> <outcome>`. A `yielded` row that carries the number of
+ * the PR it yielded to ends with ` to #<m>`, so a readback from the step log names the blocker. Only the number.
+ */
+export function stdoutRow(row: Row): string {
+  const target = row.yieldedTo === undefined ? '' : ` to #${String(row.yieldedTo)}`
+  return `renovate-approve: #${String(row.number)} ${row.outcome}${target}\n`
 }
 
 /** The job summary: the mode, then one table row per candidate. */
@@ -887,7 +903,7 @@ export async function runApprove(params: RunApproveParams): Promise<number> {
     signal: params.signal,
   })
   summarize(summaryOf(result))
-  for (const row of result.rows) params.stdout(`renovate-approve: #${String(row.number)} ${row.outcome}\n`)
+  for (const row of result.rows) params.stdout(stdoutRow(row))
   if (result.stop !== null) {
     params.stderr(`::error::renovate-approve: ${result.stop}\n`)
     return 1
