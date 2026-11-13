@@ -206,14 +206,15 @@ describe('assembleWikiContext', () => {
     expect(result.excerpt).not.toContain('�')
   })
 
-  it('surfaces malformed wiki frontmatter instead of silently including a fallback page', () => {
-    // #given a wiki corpus containing invalid YAML frontmatter
+  it('throws when no page has readable frontmatter, instead of including a fallback page', () => {
+    // #given a wiki corpus whose only page has invalid YAML frontmatter
     const files = {
       'knowledge/wiki/topics/broken.md': '---\ntags: [unterminated\ntitle: Broken\n---\n\nBody.\n',
     }
 
     // #when assembling baseline wiki context
-    // #then the pure core throws so the CLI shell can fail-soft to empty context
+    // #then the pure core throws so the CLI shell can fail-soft to empty context. One bad page among readable
+    // ones is skipped instead: see wiki-query-bad-page.test.ts
     expect(() => assembleWikiContext({files, event: {eventName: 'workflow_dispatch', title: 'broken'}})).toThrow(
       'Invalid wiki frontmatter in knowledge/wiki/topics/broken.md',
     )
@@ -221,7 +222,7 @@ describe('assembleWikiContext', () => {
 })
 
 describe('assembleWikiContext: a page whose frontmatter block is never closed', () => {
-  it('throws like invalid YAML, so the CLI shell fails soft to empty context', () => {
+  it('throws like invalid YAML when it is the only page, so the CLI shell fails soft to empty context', () => {
     const files = {
       'knowledge/wiki/topics/unclosed.md':
         '---\ntype: topic\ntitle: Unclosed\n\nBody that was meant to follow a close.\n',
@@ -377,8 +378,8 @@ describe('wiki-query CLI shell behavior', () => {
     }
   })
 
-  it('catches baseline query failure and still writes empty outputs plus handoff', async () => {
-    // #given a temporary repo-shaped working directory with malformed wiki frontmatter
+  it('catches baseline query failure when no page is readable and still writes empty outputs plus handoff', async () => {
+    // #given a temporary repo-shaped working directory whose only page has malformed wiki frontmatter
     const dir = await mkdtemp(join(tmpdir(), 'wiki-query-cli-'))
     const wikiDir = join(dir, 'knowledge/wiki/topics')
     const githubOutput = join(dir, 'github-output.txt')
@@ -386,6 +387,7 @@ describe('wiki-query CLI shell behavior', () => {
 
     try {
       await mkdir(wikiDir, {recursive: true})
+      await writeFile(join(dir, 'knowledge/index.md'), '# Wiki Index\n')
       await writeFile(join(wikiDir, 'broken.md'), '---\ntags: [unterminated\ntitle: Broken\n---\n\nBody.\n')
 
       // #when the real CLI script runs from that working directory
