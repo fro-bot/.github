@@ -16,7 +16,7 @@ tags:
   - reconciliation
   - canary
 date: 2026-06-09
-last_updated: 2026-11-12
+last_updated: 2026-06-09
 verified: 2026-06-09
 ---
 
@@ -56,15 +56,6 @@ When a stateful fix is proposed for a latent gap:
    detector that needs "N consecutive misses" must persist a counter — that is the same
    carrying cost in disguise. Prefer a signal *derived* from existing fields at evaluation
    time.
-5. **Count what a filed gap has cost before designing its fix.** A design issue listed four
-   delivery gaps in the rollout tracker (#4152). Two weeks of run history and comments showed
-   they had cost 0, 1, 0 and 0 events, and the one event predated a fix that had already
-   shipped. The issue was closed as not planned, with the evidence and the events that would
-   reopen it.
-6. **A model fitted to one run is not a measurement.** A cost model predicted that a new
-   split of the mutation shards would bring their spread from 42.8% to 0.1% (#4187). Two CI
-   runs of the same split differed by about 190 seconds on one shard, and the slowest shard
-   changed. Compare several runs before acting on a difference (#4190).
 
 ## Why This Matters
 
