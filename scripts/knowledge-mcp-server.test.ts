@@ -435,6 +435,26 @@ describe('knowledge MCP server: the composite command, spawned', () => {
 })
 
 describe('knowledge MCP server: the call log, spawned', () => {
+  it('creates the file empty at startup, and a second server on it leaves what the first wrote', async () => {
+    // #given an absolute log path that does not exist yet
+    const cwd = await makeCheckout()
+    const log = join(cwd, 'knowledge-mcp-calls.log')
+    await expect(readFile(log, 'utf8')).rejects.toMatchObject({code: 'ENOENT'})
+
+    // #when a server comes up and nobody calls a tool
+    const first = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log}})
+
+    // #then the file exists and is empty
+    expect(await readFile(log, 'utf8')).toBe('')
+
+    // #when a call lands and a second server (the next survey attempt) starts on the same file
+    await callTool(first, 'wiki_linked')
+    await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log}})
+
+    // #then the earlier line is still there
+    expect(await readFile(log, 'utf8')).toBe('wiki_linked no-handoff\n')
+  })
+
   it('appends one `<tool> <code>` line per tools/call, and nothing the model sent', async () => {
     // #given the composite's environment variable naming an absolute log path
     const cwd = await makeCheckout()

@@ -7,9 +7,10 @@
  */
 
 import {Buffer} from 'node:buffer'
-import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
+import process from 'node:process'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterEach, describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
@@ -35,7 +36,8 @@ const summaryStep = action.runs?.steps?.[0]
 const runScript = String(summaryStep?.run ?? '')
 const expressionStart = '$' + '{{'
 
-const NO_CALLS = 'Knowledge tools: no calls recorded.\n\n'
+const STARTED = 'Knowledge tools: server started, no calls.\n\n'
+const NO_LOG = 'Knowledge tools: no call log found (the server did not start, or the run had no log path).\n\n'
 const HEADING = '### Knowledge tool calls\n\n| Tool | Code | Calls |\n| --- | --- | ---: |\n'
 const SENTINEL = 'sentinel-log-content-6a1c'
 
@@ -128,31 +130,58 @@ describe('knowledge-mcp-summary action: shape', () => {
   })
 })
 
-describe('knowledge-mcp-summary action: nothing recorded', () => {
+describe('knowledge-mcp-summary action: no call log', () => {
   it.each([
     ['an empty input', undefined, ''],
     ['a file that is missing', undefined, undefined],
-    ['an empty file', '', undefined],
-    ['a file of blank lines', '\n\n\n', undefined],
-  ] as const)('writes the one fixed line for %s', (_label, content, input) => {
+  ] as const)('writes the no-log line for %s', (_label, content, input) => {
     const result = run(content, input === undefined ? {} : {input})
 
     expect(result.status).toBe(0)
-    expect(result.summary).toBe(NO_CALLS)
-    expect(result.stdout).toBe(NO_CALLS)
+    expect(result.summary).toBe(NO_LOG)
+    expect(result.stdout).toBe(NO_LOG)
     expect(result.stderr).toBe('')
   })
 
-  it('writes the fixed line when the input names a directory', () => {
+  // Root reads a mode 000 file, so the case cannot hold there.
+  it.skipIf(process.getuid?.() === 0)('writes the no-log line for a file that exists but cannot be read', () => {
+    const dir = scratch()
+    const log = join(dir, 'unreadable.log')
+    writeFileSync(log, 'wiki_search ok\n')
+    chmodSync(log, 0o000)
+
+    const result = run(undefined, {input: log})
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toBe(NO_LOG)
+    expect(result.stdout).toBe(NO_LOG)
+    expect(result.stderr).toBe('')
+  })
+
+  it('writes the no-log line when the input names a directory', () => {
     const dir = scratch()
 
     const result = run(undefined, {input: dir})
 
     expect(result.status).toBe(0)
-    expect(result.summary).toBe(NO_CALLS)
+    expect(result.summary).toBe(NO_LOG)
+  })
+})
+
+describe('knowledge-mcp-summary action: a log with no calls', () => {
+  it.each([
+    ['an empty file', ''],
+    ['a file of blank lines', '\n\n\n'],
+  ] as const)('writes the started line for %s', (_label, content) => {
+    const result = run(content)
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toBe(STARTED)
+    expect(result.stdout).toBe(STARTED)
+    expect(result.stderr).toBe('')
   })
 
-  it('writes the fixed line when the file holds only lines that are not of the shape', () => {
+  it('writes the started line when the file holds only lines that are not of the shape', () => {
     const result = run(
       [
         `${SENTINEL}`,
@@ -174,7 +203,21 @@ describe('knowledge-mcp-summary action: nothing recorded', () => {
     )
 
     expect(result.status).toBe(0)
-    expect(result.summary).toBe(NO_CALLS)
+    expect(result.summary).toBe(STARTED)
+    expect(result.stdout).toBe(STARTED)
+  })
+
+  it('echoes nothing of a file that holds only hostile lines', () => {
+    const result = run(
+      [`${SENTINEL} $(touch /tmp/${SENTINEL}) \`id\``, `::error::${SENTINEL}`, `wiki_search ok ${SENTINEL}`, ''].join(
+        '\n',
+      ),
+    )
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toBe(STARTED)
+    expect(result.stdout).toBe(STARTED)
+    expect(result.stdout + result.stderr + (result.summary ?? '')).not.toContain(SENTINEL)
   })
 })
 
@@ -258,9 +301,8 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
   })
 
   it('appends the fixed line after what earlier steps wrote', () => {
-    const result = run('', {summaryBefore: 'earlier step\n'})
-
-    expect(result.summary).toBe(`earlier step\n${NO_CALLS}`)
+    expect(run('', {summaryBefore: 'earlier step\n'}).summary).toBe(`earlier step\n${STARTED}`)
+    expect(run(undefined, {summaryBefore: 'earlier step\n'}).summary).toBe(`earlier step\n${NO_LOG}`)
   })
 })
 
@@ -286,13 +328,13 @@ describe('knowledge-mcp-summary action: the step log', () => {
   })
 
   it.each([
-    ['an empty file', ''],
-    ['a missing file', undefined],
-  ] as const)('prints the fixed line for %s', (_label, content) => {
+    ['an empty file', '', STARTED],
+    ['a missing file', undefined, NO_LOG],
+  ] as const)('prints the fixed line for %s', (_label, content, line) => {
     const result = run(content)
 
-    expect(result.stdout).toBe(NO_CALLS)
-    expect(result.summary).toBe(NO_CALLS)
+    expect(result.stdout).toBe(line)
+    expect(result.summary).toBe(line)
   })
 
   it.each([
@@ -301,20 +343,24 @@ describe('knowledge-mcp-summary action: the step log', () => {
   ] as const)('still prints the table and the fixed line when %s', (_label, summaryPath) => {
     const withCalls = run('wiki_linked ok\n', {summaryPath})
     const empty = run('', {summaryPath})
+    const absent = run(undefined, {summaryPath})
 
     expect(withCalls.status).toBe(0)
     expect(withCalls.stdout).toBe(`${HEADING}${row('wiki_linked', 'ok', 1)}\n`)
     expect(withCalls.stderr).toBe('')
     expect(empty.status).toBe(0)
-    expect(empty.stdout).toBe(NO_CALLS)
+    expect(empty.stdout).toBe(STARTED)
     expect(empty.stderr).toBe('')
+    expect(absent.status).toBe(0)
+    expect(absent.stdout).toBe(NO_LOG)
+    expect(absent.stderr).toBe('')
   })
 
   it('never prints a line of the file that is not of the shape, so no workflow command can start a line', () => {
     const result = run(hostile.join('\n'))
 
     expect(result.status).toBe(0)
-    expect(result.stdout).toBe(NO_CALLS)
+    expect(result.stdout).toBe(STARTED)
     expect(result.stdout).not.toContain('::')
     expect(result.stdout).not.toContain('rm -rf')
     expect(result.stdout + result.stderr).not.toContain(SENTINEL)
@@ -343,7 +389,7 @@ describe('knowledge-mcp-summary action: it always succeeds', () => {
       const result = run(undefined, {input})
 
       expect(result.status, input).toBe(0)
-      expect(result.summary, input).toBe(NO_CALLS)
+      expect(result.summary, input).toBe(NO_LOG)
     }
   })
 })

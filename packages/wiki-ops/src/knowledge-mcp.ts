@@ -15,9 +15,13 @@
  * - Stderr carries `knowledge-mcp: ready` and one fixed `knowledge-mcp: error:<code>` line per error
  *   result, nothing else. OpenCode sends a local server's stderr to its debug log only, so a run shows
  *   no trace of a call there; the call log below is what the job summary reads.
- * - When `KNOWLEDGE_MCP_CALL_LOG` names an absolute path, each tool call appends one line, `<tool> <code>`,
- *   where the code is `ok` or the fixed error code. No argument, query, path or result is ever written,
- *   and a failed append changes nothing the caller sees.
+ * - When `KNOWLEDGE_MCP_CALL_LOG` names an absolute path, `serve` creates that file empty once the
+ *   transport is attached, so an existing empty file means the server started and nobody called a tool.
+ *   It does not prove the client initialized: `@goke/mcp` keeps its `Server` private, so there is no
+ *   `oninitialized` hook to wait for. Each tool
+ *   call then appends one line, `<tool> <code>`, where the code is `ok` or the fixed error code. No
+ *   argument, query, path or result is ever written, and a failed create or append changes nothing the
+ *   caller sees.
  * - There is no path argument. The handoff path comes from the server definition, as the
  *   `WIKI_CONTEXT_HANDOFF_PATH` variable, and the corpus is read relative to the working directory,
  *   which the definition sets to the checkout root.
@@ -64,6 +68,8 @@ export interface KnowledgeDeps {
   readonly writeStderr: (line: string) => void
   /** Appends one whole line, newline included, to the call log at `path`. May throw; the caller swallows it. */
   readonly appendCallLog: (path: string, line: string) => void
+  /** Creates the call log at `path` empty, or leaves it as it is. May throw; the caller swallows it. */
+  readonly createCallLog: (path: string) => void
   readonly expand: typeof runWikiContextExpandCli
   readonly searchSolutions: typeof searchSolutions
 }
@@ -79,6 +85,9 @@ export function defaultKnowledgeDeps(): KnowledgeDeps {
     },
     appendCallLog: (path, line) => {
       appendFileSync(path, line)
+    },
+    createCallLog: path => {
+      appendFileSync(path, '')
     },
     expand: runWikiContextExpandCli,
     searchSolutions,
@@ -100,14 +109,35 @@ function fail(deps: KnowledgeDeps, code: KnowledgeErrorCode): Outcome {
   return {code, result: {isError: true, content: [{type: 'text', text: JSON.stringify({error: code})}]}}
 }
 
+/** The call log the definition names, or `undefined` when the variable is unset, empty or not absolute. */
+function callLogPath(deps: KnowledgeDeps): string | undefined {
+  const path = deps.env.KNOWLEDGE_MCP_CALL_LOG
+  return path !== undefined && isAbsolute(path) ? path : undefined
+}
+
+/**
+ * Creates the call log empty when the definition names one, so a file with no lines means the server
+ * started and nobody called a tool. A failed create is dropped, as a failed append is: the first call
+ * that can write creates the file itself.
+ */
+function createCallLog(deps: KnowledgeDeps): void {
+  const path = callLogPath(deps)
+  if (path === undefined) return
+  try {
+    deps.createCallLog(path)
+  } catch {
+    // The server serves the same with or without the log.
+  }
+}
+
 /**
  * Appends `<tool> <code>` to the call log when the definition names one by absolute path, then hands
  * back the result. The line holds two fixed words and nothing else. A failed append is dropped: the log
  * is evidence for the job summary, never part of the tool's answer.
  */
 function respond(deps: KnowledgeDeps, tool: string, outcome: Outcome): KnowledgeToolResult {
-  const path = deps.env.KNOWLEDGE_MCP_CALL_LOG
-  if (path !== undefined && isAbsolute(path)) {
+  const path = callLogPath(deps)
+  if (path !== undefined) {
     try {
       deps.appendCallLog(path, `${tool} ${outcome.code}\n`)
     } catch {
@@ -268,7 +298,8 @@ export interface ServeOptions {
 /**
  * Starts the server and returns once it is connected. It calls the `createMcpAction` callback
  * directly (the server takes its name, `knowledge`, from the goke instance): with an empty argv goke would match no command, exit, and never speak JSON-RPC. A startup
- * failure writes one fixed line and sets the exit code; the agent then runs without the tools.
+ * failure writes one fixed line and sets the exit code; the agent then runs without the tools. The call
+ * log is created once the transport is attached, so an existing file means the server started.
  */
 export async function serve(options: ServeOptions = {}): Promise<void> {
   const deps = options.deps ?? defaultKnowledgeDeps()
@@ -280,6 +311,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       createTransport: options.createTransport,
     })
     await start()
+    createCallLog(deps)
     deps.writeStderr('knowledge-mcp: ready\n')
   } catch {
     deps.writeStderr('knowledge-mcp: error:startup\n')
