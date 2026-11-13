@@ -73,7 +73,7 @@ See origin: `docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements
   - an `answered` map records reads, not replies;
   - the `held` retry depends on agent wording;
   - a generic program may have no deploy.
-- Dashboard start, and the denylist gate on `/fro-bot dispatch`: fro-bot/agent#2130. Until #2130 lands, start programs from the CLI or the Actions UI.
+- The denylist gate on `/fro-bot dispatch` shipped in fro-bot/agent v0.137.0 (fro-bot/agent#2139). Dashboard start is not built: the gateway has `POST /operator/dispatch`, but the operator contract does not define it and the dashboard has no client for it. fro-bot/agent#2187 and fro-bot/dashboard#825 track that. Until they land, start programs from Discord, the CLI or the Actions UI.
 - Native repo-skill loading in CI: fro-bot/agent#2129.
 - Deleting the old 48,792-character marker comment `6721866155`. `findLatestMarkerComment` already ignores it.
 
