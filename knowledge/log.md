@@ -10507,3 +10507,23 @@ Run: https://github.com/fro-bot/.github/actions/runs/43246623734
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-11-13 06:40] manual-edit | repo:fro-bot/agent, repo:marcusrbrown/systematic
+
+Daily oversight pass (cross-project intelligence) added two dated, additive
+notes. fro-bot/agent: the experimental `isolate-agent` input (#2168), what the
+separate-uid boundary does and does not block, and its runner constraints.
+marcusrbrown/systematic: the new scheduled Connect workflow's four-job
+permission split, with the public-visibility check run both before the agent
+and again before posting. Workflow and documentation facts only; no
+production run with isolation enabled was observed. No other page, the index
+or metadata was touched.
+
+Sources: https://github.com/fro-bot/agent/commit/63d82e702d41704af1f81f7fcec6c9df40e591ee, https://github.com/marcusrbrown/systematic/blob/39e66b30214722c739e6f6b0ec17beef107bdec8/.github/workflows/connect.yaml
+Run: https://github.com/fro-bot/.github/actions/runs/43375062413
+
+## [2026-11-13 06:14] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@1557f67642473e90867a19324b166c7ea0a9a67a
