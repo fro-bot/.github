@@ -1,7 +1,7 @@
 ---
 title: Check the first live event before trusting an event-driven workflow
 date: 2026-11-11
-last_updated: 2026-11-12
+last_updated: 2026-11-14
 category: best-practices
 module: github-workflows
 problem_type: best_practice
@@ -72,6 +72,19 @@ Step 3 showed that GitHub counts the `fro-bot` user's approval as the required c
 
 `GET /repos/{owner}/{repo}/actions/runs?event=branch_protection_rule` lists the runs the event started, and each run's `actor` is the account that created, edited or deleted a rule. The event fires for every branch rule, so check which rule a run was about before naming an editor of `main`. The Scorecard workflow also runs on that event, so the history is older than the watcher. It showed two writes by `settings[bot]` (id 26100684) before each write by the declared settings automation, `fro-bot[bot]` (id 109017866), from 2026-11-09 on. The watcher matches the settings automation by actor type and numeric id.
 
+### Search the run history before you provoke a path
+
+Issue #4226 said the survey page-conflict re-run had never run in production, and proposed forcing it with overlapping surveys of two public repositories. The run history already held it. Run 42630239474 (2026-11-09) ended "Persist survey results" with exit code 3 and `a handed-off page changed after the agent job synced`. Its "Re-run survey after a page conflict" job succeeded, and the run it dispatched, 42630835133, persisted.
+
+#4189 (merged 2026-11-12) did not add that path. It made a second conflict kind, `CONFLICT_EXHAUSTED`, exit 3 as well (`scripts/wiki-ingest.ts:9-14` and `:21-23`). That kind needs another writer to commit in the seconds between the persist job's sync and its write, and a forced run cannot reach that window.
+
+Before you force a path that a report calls never run, list the jobs of past runs and search their logs for its exit code or marker. Separate the path from a new trigger of the path: here the path had run, and only the new trigger had not.
+
+```sh
+gh run view <run-id> --json jobs --jq '.jobs[] | "\(.name) \(.conclusion)"'
+gh run view <run-id> --log --job <job-id> | grep 'exit code 3'
+```
+
 ### Smaller rules from the same work
 
 - **Label descriptions stop at 100 characters.** A longer one makes `POST /repos/{owner}/{repo}/labels` answer 422 and fails every Update Repo Settings run (run 42847754180) until it is fixed. `scripts/settings-labels-effective-set.test.ts` holds every label in `common-settings.yaml` and `.github/settings.yml` to the limit.
@@ -89,6 +102,7 @@ The timestamp failed on the first live event and the label limit on the first pu
 - When a marker, comment or artifact format changes and runs created before the change can be re-run.
 - When automation gets a new write permission: ship it behind a switch that defaults to a dry run.
 - When a gate reads paths from `git diff`, `git ls-tree` or `git status`.
+- When a report says a code path has never run in production and proposes forcing it: search past runs for its exit code or marker first.
 - When `.github/settings.yml` or `common-settings.yaml` gains a label.
 
 ## Examples

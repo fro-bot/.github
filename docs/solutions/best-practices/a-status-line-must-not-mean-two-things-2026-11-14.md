@@ -92,3 +92,4 @@ renovate-approve: #4217 yielded to #4221
 - [Check the first live event before trusting an event-driven workflow](check-the-first-live-event-before-trusting-a-workflow-2026-11-11.md): rule 8, applied to a log line.
 - [Observability before structural change](observability-before-structural-change-2026-06-09.md): evidence first, then the fix.
 - [Separate the artifact path from stdout](separate-the-artifact-path-from-stdout-2026-08-25.md): which stream a result belongs in.
+- [An inventory handed to an agent must say when it is partial](an-inventory-handed-to-an-agent-must-say-when-it-is-partial-2026-11-14.md): the same rule for a list in a prompt: the first line gives listed and held counts, and the status line gives `skipped`.
