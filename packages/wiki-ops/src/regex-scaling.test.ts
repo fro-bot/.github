@@ -26,8 +26,8 @@ import {describe, expect, it} from 'vitest'
 import {assembleSolutionsContext} from './solutions-query.ts'
 import {validateQuery} from './wiki-context-expand.ts'
 import {parseGitStatusPorcelainZ} from './wiki-handoff-core.ts'
+import {openingSentence} from './wiki-index.ts'
 import {planIssueLifecycle} from './wiki-lint-issues.ts'
-import {assembleWikiContext} from './wiki-query.ts'
 
 const BEST_OF = 3
 const READABLE_MILLISECONDS = 50
@@ -94,7 +94,6 @@ function growthRatio(make: (size: number) => string, size: number, run: (input: 
 const repeat = (unit: string) => (size: number) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
 
 const SMALL = 20_000
-const FRONTMATTER = '---\ntype: topic\ntitle: T\ncreated: 2026-04-16\nupdated: 2026-04-16\n---\n\n'
 
 const REPORT = {
   schema_version: 1,
@@ -140,38 +139,35 @@ describe('the wiki-lint issue markers scale linearly', {timeout: SUITE_TIMEOUT_M
   })
 })
 
-describe('the query token and whitespace patterns scale linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
-  const query = (text: string) => {
-    assembleWikiContext({
-      files: {'knowledge/wiki/topics/a.md': `${FRONTMATTER}${text}`},
-      event: {eventName: 'issues', owner: 'o', repo: 'r', title: text, body: text},
-    })
+describe('the opening-sentence scan scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
+  const sentence = (text: string) => {
+    openingSentence(`# T\n\n${text}`)
   }
   it.each([
-    {name: 'a whitespace run then x', make: (size: number) => `${' '.repeat(size)}x`},
-    {name: 'alternating whitespace and x', make: repeat(' x')},
-    {name: 'a run of non-alphanumerics then a', make: (size: number) => `${'!'.repeat(size)}a`},
-    {name: 'dashes then x', make: (size: number) => `${'-'.repeat(size)}x`},
-    {name: 'alternating dash and x', make: repeat('-x')},
-  ])('wiki-query: $name', ({make}) => {
-    expect(growthRatio(make, SMALL, query)).toBeLessThan(CEILING)
-  })
-})
-
-describe('the repository slug trim scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
-  // `slugify` runs on the event's owner and repo, so the text goes in as both.
-  const slug = (text: string) => {
-    assembleWikiContext({files: {}, event: {eventName: 'issues', owner: text, repo: text}})
-  }
-  it.each([
-    {name: 'a dash run then x', make: (size: number) => `${'-'.repeat(size)}x`},
-    {name: 'alternating dash and x', make: repeat('-x')},
-    {name: 'x then a dash run', make: (size: number) => `x${'-'.repeat(size)}`},
-    {name: 'a dash run between two x', make: (size: number) => `x${'-'.repeat(size)}x`},
-    {name: 'alternating underscore and dash', make: repeat('_-')},
-    {name: 'a dash run and nothing else', make: (size: number) => '-'.repeat(size)},
-  ])('slugify: $name', ({make}) => {
-    expect(growthRatio(make, SMALL, slug)).toBeLessThan(CEILING)
+    {name: 'a long paragraph of periods', make: repeat('.')},
+    {name: 'periods each followed by a space and a capital', make: repeat('. A')},
+    {name: 'a long paragraph of periods and spaces', make: repeat('. ')},
+    {name: 'a long paragraph of opening brackets', make: repeat('[')},
+    {name: 'a long paragraph of double opening brackets', make: repeat('[[')},
+    {name: 'a long paragraph of link openers', make: repeat('](')},
+    {name: 'a long paragraph of backticks', make: repeat('`')},
+    {name: 'backtick runs of growing length', make: repeat('` `` ``` ')},
+    {name: 'a long run of one URL', make: (size: number) => `https://${'a'.repeat(size)}`},
+    {name: 'many URLs', make: repeat('https://a.b/c. ')},
+    {name: 'a long run of whitespace then text', make: (size: number) => `${' '.repeat(size)}x`},
+    {name: 'many short lines', make: repeat('ab\n')},
+    {name: 'many blank lines before the paragraph', make: (size: number) => `${'\n'.repeat(size)}x. Y`},
+    {name: 'a long paragraph of abbreviations', make: repeat('Dr. ')},
+    {name: 'an early backtick with a late closer', make: (size: number) => `a \`b. ${'x'.repeat(size)}\` c.`},
+    {name: 'an early backtick with no closer', make: (size: number) => `a \`b. ${'x'.repeat(size)} c.`},
+    {name: 'an early wikilink with a late closer', make: (size: number) => `a [[b. ${'x'.repeat(size)}]] c.`},
+    {name: 'an early wikilink with no closer', make: (size: number) => `a [[b. ${'x'.repeat(size)} c.`},
+    {name: 'an early link target with a late closer', make: (size: number) => `a [b](c. ${'x'.repeat(size)}) d.`},
+    {name: 'an early link target with no closer', make: (size: number) => `a [b](c. ${'x'.repeat(size)} d.`},
+    {name: 'many early openers with no closer', make: (size: number) => `${'` [[ ]( '.repeat(30)}${'x'.repeat(size)}`},
+    {name: 'many lines under an early opener', make: (size: number) => `a \`b. ${'ab\n'.repeat(Math.ceil(size / 3))}`},
+  ])('openingSentence: $name', ({make}) => {
+    expect(growthRatio(make, SMALL, sentence)).toBeLessThan(CEILING)
   })
 })
 

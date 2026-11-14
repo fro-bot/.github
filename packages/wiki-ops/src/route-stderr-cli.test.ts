@@ -400,13 +400,12 @@ function stubBin(): string {
 describe('each workflow step, with its real argv', () => {
   const steps = loadRouterSteps()
 
-  it('finds the seven steps', () => {
+  it('finds the six steps', () => {
     expect(steps.map(step => `${step.file}/${step.job}`)).toStrictEqual([
       'fro-bot.yaml/fro-bot-wiki-ingest',
       'fro-bot.yaml/fro-bot-observe-wiki-ingest',
       'survey-repo.yaml/survey-persist',
       'survey-repo.yaml/survey-repo',
-      'fro-bot.yaml/fro-bot',
       'fro-bot.yaml/fro-bot-remediate',
       'fro-bot.yaml/fro-bot-observe',
     ])

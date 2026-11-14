@@ -33,15 +33,12 @@ const VITEST_PAGE =
   '---\ntype: topic\ntitle: Vitest\ntags: [testing]\n---\n\nVitest is the repo runner fixture and a foo bar fixture.\n'
 const SOLUTION_DOC =
   '---\ntitle: Cache invalidation after a region rotation\nmodule: cache-layer\ntags: [cache]\n---\n\nClear region keys.\n'
-const HANDOFF_PATH = '/work/checkout/handoff.json'
-const HANDOFF = JSON.stringify({selectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md']})
 
 const FULL_CHECKOUT: Readonly<Record<string, string>> = {
   'knowledge/wiki/repos/fro-bot--agent.md': AGENT_PAGE,
   'knowledge/wiki/topics/vitest.md': VITEST_PAGE,
   'docs/solutions/best-practices/cache-invalidation.md': SOLUTION_DOC,
   'metadata/repos.yaml': 'repos: []\n',
-  [HANDOFF_PATH]: HANDOFF,
 }
 
 /** A file-system error as Node raises it: the `code` tells a missing path from an unreadable one. */
@@ -71,7 +68,7 @@ function memoryDeps(
   const logged: LoggedLine[] = []
   const created: string[] = []
   const deps: KnowledgeDeps = {
-    env: {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH},
+    env: {},
     readDir: async path => {
       const prefix = `${path}/`
       const names = Object.keys(files)
@@ -132,8 +129,8 @@ const QUERY_DESCRIPTION =
   'Plain words, at most 200 characters: no slashes, no shell characters (; & | ` $ ( ) { } < > \\), no [[ ]] or {{ }}, and not one generic word such as "wiki" or "docs". Example: "cache invalidation region rotation".'
 
 describe('knowledge tool surface', () => {
-  it('names exactly the three tools', () => {
-    expect(knowledgeToolNames()).toEqual(['wiki_search', 'wiki_linked', 'solutions_search'])
+  it('names exactly the two tools', () => {
+    expect(knowledgeToolNames()).toEqual(['wiki_search', 'solutions_search'])
   })
 
   it('never names a write-marked command, resolve-private or enumerate-existing-leaks', async () => {
@@ -189,12 +186,12 @@ describe('knowledge tool surface', () => {
     expect(cli.name).toBe('knowledge')
   })
 
-  it('lists three tools with model-facing descriptions and a required query on the two searches', async () => {
+  it('lists two tools with model-facing descriptions and a required query on both', async () => {
     const h = await harness()
 
     const {tools} = await h.session.listTools()
 
-    expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_linked', 'wiki_search'])
+    expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_search'])
     expect(h.session.getServerVersion()?.name).toBe('knowledge')
     for (const tool of tools) expect(tool.description?.length ?? 0).toBeGreaterThan(40)
     const byName = new Map(tools.map(tool => [tool.name, tool]))
@@ -204,9 +201,7 @@ describe('knowledge tool surface', () => {
       expect(JSON.stringify(schema?.properties)).toContain('"type":"string"')
       expect((schema?.properties as {query: {description: string}}).query.description).toBe(QUERY_DESCRIPTION)
     }
-    expect(byName.get('wiki_linked')?.inputSchema.required).toBeUndefined()
     expect(byName.get('wiki_search')?.description).toContain('wiki')
-    expect(byName.get('wiki_linked')?.description).toContain('link')
     expect(byName.get('solutions_search')?.description).toContain('solutions')
   })
 
@@ -241,7 +236,7 @@ describe('knowledge tool surface', () => {
     const {tools} = await session.listTools()
 
     // #then the extra command is not a tool and cannot be called
-    expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_linked', 'wiki_search'])
+    expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_search'])
     await expect(session.callTool({name: 'resolve-private', arguments: {}})).rejects.toBeInstanceOf(McpError)
     await expect(session.callTool({name: 'resolve_private', arguments: {}})).rejects.toBeInstanceOf(McpError)
     expect(stderr).toEqual(['knowledge-mcp: ready\n'])
@@ -297,7 +292,6 @@ describe('wiki_search', () => {
     expect(expand).toHaveBeenCalledTimes(1)
     const deps = expand.mock.calls[0]?.[0]
     expect(deps?.argv).toEqual(['query', '-foo bar'])
-    expect(deps?.env).toEqual({})
     expect(deps?.readDir).toBe(h.deps.readDir)
     expect(deps?.readFile).toBe(h.deps.readFile)
     // The tool answers in its response only: the expansion's own streams go nowhere.
@@ -388,8 +382,6 @@ describe('how an expansion outcome maps onto the tool contract', () => {
     ['invalid-query', 'invalid-query'],
     ['no-corpus', 'corpus-unavailable'],
     ['private-token-load-failed', 'corpus-unavailable'],
-    ['no-handoff', 'no-handoff'],
-    ['malformed-handoff', 'handoff-malformed'],
   ] as const)('maps the empty reason %s to the code %s', async (reason, code) => {
     const expand: KnowledgeDeps['expand'] = async () => ({exitCode: 0, result: empty(reason)})
     const h = await harness(FULL_CHECKOUT, {expand})
@@ -397,14 +389,14 @@ describe('how an expansion outcome maps onto the tool contract', () => {
     expect(await call(h, 'wiki_search', {query: 'runner fixture'})).toEqual({isError: true, text: errorText(code)})
   })
 
-  it.each(['no-match', 'no-links'] as const)('returns the empty reason %s as a result', async reason => {
-    const expand: KnowledgeDeps['expand'] = async () => ({exitCode: 0, result: empty(reason)})
+  it('returns the empty reason no-match as a result', async () => {
+    const expand: KnowledgeDeps['expand'] = async () => ({exitCode: 0, result: empty('no-match')})
     const h = await harness(FULL_CHECKOUT, {expand})
 
     const outcome = await call(h, 'wiki_search', {query: 'runner fixture'})
 
     expect(outcome.isError).toBe(false)
-    expect(JSON.parse(outcome.text)).toEqual(empty(reason))
+    expect(JSON.parse(outcome.text)).toEqual(empty('no-match'))
   })
 
   it('maps a non-zero exit to invalid-query whatever the result says', async () => {
@@ -447,63 +439,14 @@ describe('how an expansion outcome maps onto the tool contract', () => {
   })
 })
 
-describe('wiki_linked', () => {
-  it('returns the linked pages for a valid handoff and hands the expansion the configured path', async () => {
-    const expand = vi.fn(defaultKnowledgeDeps().expand)
-    const h = await harness(FULL_CHECKOUT, {expand})
+describe('a tool that is not offered', () => {
+  it.each(['wiki_linked', 'knowledge_wiki_linked'])('refuses a call to %s as an unknown tool', async name => {
+    const h = await harness(FULL_CHECKOUT, {env: {KNOWLEDGE_MCP_CALL_LOG: '/work/temp/calls.log'}})
 
-    const outcome = await call(h, 'wiki_linked')
+    await expect(h.session.callTool({name, arguments: {}})).rejects.toBeInstanceOf(McpError)
 
-    expect(outcome.isError).toBe(false)
-    expect(JSON.parse(outcome.text)).toMatchObject({
-      status: 'ok',
-      mode: 'linked',
-      selectedPaths: ['knowledge/wiki/topics/vitest.md'],
-    })
-    const deps = expand.mock.calls[0]?.[0]
-    expect(deps?.argv).toEqual(['linked'])
-    expect(deps?.env).toEqual({WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH})
-    expect(() => {
-      deps?.writeStdout('x')
-      deps?.writeStderr('y')
-    }).not.toThrow()
-  })
-
-  it.each([
-    ['unset', {}],
-    ['empty', {WIKI_CONTEXT_HANDOFF_PATH: ''}],
-  ])('answers no-handoff when the handoff path is %s, before touching the corpus', async (_label, env) => {
-    const expand = vi.fn<KnowledgeDeps['expand']>(async () => ({exitCode: 0}))
-    const readFile = vi.fn(async () => '')
-    const h = await harness(FULL_CHECKOUT, {env, expand, readFile})
-
-    expect(await call(h, 'wiki_linked')).toEqual({isError: true, text: errorText('no-handoff')})
-    expect(expand).not.toHaveBeenCalled()
-    expect(readFile).not.toHaveBeenCalled()
-  })
-
-  it('answers no-handoff for a missing file and names no path anywhere', async () => {
-    const h = await harness(FULL_CHECKOUT, {env: {WIKI_CONTEXT_HANDOFF_PATH: '/work/checkout/gone-handoff.json'}})
-
-    const outcome = await call(h, 'wiki_linked')
-
-    expect(outcome).toEqual({isError: true, text: errorText('no-handoff')})
-    expect(h.stderr.join('')).not.toContain('gone-handoff')
-  })
-
-  it.each([['not json'], ['[]'], ['{"selectedPaths": "x"}'], ['{"selectedPaths": [1]}']])(
-    'answers handoff-malformed for the file %j, even when the corpus is missing',
-    async content => {
-      const h = await harness({[HANDOFF_PATH]: content})
-
-      expect(await call(h, 'wiki_linked')).toEqual({isError: true, text: errorText('handoff-malformed')})
-    },
-  )
-
-  it('answers corpus-unavailable for a valid handoff when the wiki is missing', async () => {
-    const h = await harness({[HANDOFF_PATH]: HANDOFF, 'metadata/repos.yaml': 'repos: []\n'})
-
-    expect(await call(h, 'wiki_linked')).toEqual({isError: true, text: errorText('corpus-unavailable')})
+    expect(h.logged).toEqual([])
+    expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
   })
 })
 
@@ -614,7 +557,6 @@ describe('a handler never throws and never echoes what it was given', () => {
 
   it.each([
     ['wiki_search', {query: SECRET_QUERY}],
-    ['wiki_linked', {}],
     ['solutions_search', {query: SECRET_QUERY}],
   ] as const)(
     'turns a throwing dependency under %s into unexpected, with no path or query in the result',
@@ -656,13 +598,12 @@ describe('a handler never throws and never echoes what it was given', () => {
 
 describe('the call log', () => {
   const LOG = '/work/temp/knowledge-mcp-calls-1-1-fro-bot.log'
-  const WITH_LOG = {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: LOG}
+  const WITH_LOG = {KNOWLEDGE_MCP_CALL_LOG: LOG}
   const line = (tool: string, code: string): LoggedLine => ({path: LOG, line: `${tool} ${code}\n`})
 
   it.each([
     ['wiki_search', {query: 'runner fixture'}, FULL_CHECKOUT, 'ok'],
     ['wiki_search', {query: 'zzzzqqqq nonexistent'}, FULL_CHECKOUT, 'ok'],
-    ['wiki_linked', {}, FULL_CHECKOUT, 'ok'],
     ['solutions_search', {query: 'cache invalidation region rotation'}, FULL_CHECKOUT, 'ok'],
     ['wiki_search', {query: 'wiki'}, FULL_CHECKOUT, 'invalid-query'],
     ['solutions_search', {query: '../x'}, FULL_CHECKOUT, 'invalid-query'],
@@ -673,8 +614,6 @@ describe('the call log', () => {
       {'metadata/repos.yaml': 'repos: []\n'},
       'corpus-unavailable',
     ],
-    ['wiki_linked', {}, {[HANDOFF_PATH]: 'not json'}, 'handoff-malformed'],
-    ['wiki_linked', {}, {'metadata/repos.yaml': 'repos: []\n'}, 'no-handoff'],
   ] as const)('%s appends exactly one line, and the code is %s', async (tool, args, files, code) => {
     const h = await harness(files, {env: WITH_LOG})
 
@@ -683,17 +622,8 @@ describe('the call log', () => {
     expect(h.logged).toEqual([line(tool, code)])
   })
 
-  it('records no-handoff when the handoff path is unset', async () => {
-    const h = await harness(FULL_CHECKOUT, {env: {KNOWLEDGE_MCP_CALL_LOG: LOG}})
-
-    await call(h, 'wiki_linked')
-
-    expect(h.logged).toEqual([line('wiki_linked', 'no-handoff')])
-  })
-
   it.each([
     ['wiki_search', {query: 'runner fixture'}],
-    ['wiki_linked', {}],
     ['solutions_search', {query: 'cache region rotation'}],
   ] as const)('records unexpected when a dependency throws under %s', async (tool, args) => {
     const boom = async (): Promise<never> => {
@@ -711,21 +641,21 @@ describe('the call log', () => {
 
     await call(h, 'wiki_search', {query: 'runner fixture'})
     await call(h, 'wiki_search', {query: 'wiki'})
-    await call(h, 'wiki_linked')
+    await call(h, 'solutions_search', {query: 'cache region rotation'})
 
     expect(h.logged).toEqual([
       line('wiki_search', 'ok'),
       line('wiki_search', 'invalid-query'),
-      line('wiki_linked', 'ok'),
+      line('solutions_search', 'ok'),
     ])
   })
 
   it.each([
-    ['unset', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH}],
-    ['empty', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: ''}],
-    ['a bare file name', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: 'calls.log'}],
-    ['a relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: './tmp/calls.log'}],
-    ['a parent-relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: '../calls.log'}],
+    ['unset', {}],
+    ['empty', {KNOWLEDGE_MCP_CALL_LOG: ''}],
+    ['a bare file name', {KNOWLEDGE_MCP_CALL_LOG: 'calls.log'}],
+    ['a relative path', {KNOWLEDGE_MCP_CALL_LOG: './tmp/calls.log'}],
+    ['a parent-relative path', {KNOWLEDGE_MCP_CALL_LOG: '../calls.log'}],
   ])('writes no log when KNOWLEDGE_MCP_CALL_LOG is %s', async (_label, env) => {
     const h = await harness(FULL_CHECKOUT, {env})
 
@@ -760,14 +690,12 @@ describe('the call log', () => {
     await call(h, 'wiki_search', {query: `runner fixture ${sentinel}`})
     await call(h, 'solutions_search', {query: `cache ${sentinel} rotation`})
     await call(h, 'wiki_search', {query: `${sentinel}/etc`})
-    await call(h, 'wiki_linked')
 
-    expect(h.logged.length).toBe(4)
+    expect(h.logged.length).toBe(3)
     for (const entry of h.logged) {
-      expect(entry.line).toMatch(/^(wiki_search|wiki_linked|solutions_search) [a-z-]+\n$/u)
+      expect(entry.line).toMatch(/^(wiki_search|solutions_search) [a-z-]+\n$/u)
       expect(entry.line).not.toContain(sentinel)
       expect(entry.line).not.toContain('knowledge/')
-      expect(entry.line).not.toContain(HANDOFF_PATH)
     }
   })
 
@@ -795,7 +723,7 @@ describe('the call log', () => {
       },
     })
 
-    expect((await call(h, 'wiki_linked')).isError).toBe(false)
+    expect((await call(h, 'wiki_search', {query: 'runner fixture'})).isError).toBe(false)
   })
 
   it('appends to the file the variable names, line by line, through the default deps', () => {
@@ -805,9 +733,9 @@ describe('the call log', () => {
       const {appendCallLog} = defaultKnowledgeDeps()
 
       appendCallLog(path, 'wiki_search ok\n')
-      appendCallLog(path, 'wiki_linked no-handoff\n')
+      appendCallLog(path, 'solutions_search invalid-query\n')
 
-      expect(readFileSync(path, 'utf8')).toBe('wiki_search ok\nwiki_linked no-handoff\n')
+      expect(readFileSync(path, 'utf8')).toBe('wiki_search ok\nsolutions_search invalid-query\n')
     } finally {
       rmSync(dir, {recursive: true, force: true})
     }
@@ -816,7 +744,7 @@ describe('the call log', () => {
 
 describe('the call log at startup', () => {
   const LOG = '/work/temp/knowledge-mcp-calls-1-1-fro-bot.log'
-  const WITH_LOG = {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: LOG}
+  const WITH_LOG = {KNOWLEDGE_MCP_CALL_LOG: LOG}
 
   it('creates the file named by the variable once the server is up, before any call', async () => {
     const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
@@ -830,22 +758,22 @@ describe('the call log at startup', () => {
     const h = await harness(FULL_CHECKOUT, {env: WITH_LOG})
 
     await call(h, 'wiki_search', {query: 'runner fixture'})
-    await call(h, 'wiki_linked')
+    await call(h, 'solutions_search', {query: 'cache region rotation'})
 
     expect(h.created).toEqual([LOG])
     expect(h.logged).toHaveLength(2)
   })
 
   it.each([
-    ['unset', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH}],
-    ['empty', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: ''}],
-    ['a bare file name', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: 'calls.log'}],
-    ['a relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: './tmp/calls.log'}],
-    ['a parent-relative path', {WIKI_CONTEXT_HANDOFF_PATH: HANDOFF_PATH, KNOWLEDGE_MCP_CALL_LOG: '../calls.log'}],
+    ['unset', {}],
+    ['empty', {KNOWLEDGE_MCP_CALL_LOG: ''}],
+    ['a bare file name', {KNOWLEDGE_MCP_CALL_LOG: 'calls.log'}],
+    ['a relative path', {KNOWLEDGE_MCP_CALL_LOG: './tmp/calls.log'}],
+    ['a parent-relative path', {KNOWLEDGE_MCP_CALL_LOG: '../calls.log'}],
   ])('creates no file when KNOWLEDGE_MCP_CALL_LOG is %s, and still serves', async (_label, env) => {
     const h = await harness(FULL_CHECKOUT, {env})
 
-    const outcome = await call(h, 'wiki_linked')
+    const outcome = await call(h, 'wiki_search', {query: 'runner fixture'})
 
     expect(h.created).toEqual([])
     expect(outcome.isError).toBe(false)
@@ -879,14 +807,14 @@ describe('the call log at startup', () => {
       process.exitCode = undefined
       const h = await harness(FULL_CHECKOUT, {env: WITH_LOG, createCallLog})
 
-      const outcome = await call(h, 'wiki_linked')
+      const outcome = await call(h, 'wiki_search', {query: 'runner fixture'})
 
       expect(createCallLog).toHaveBeenCalledTimes(1)
       expect(createCallLog).toHaveBeenCalledWith(LOG)
       expect(h.stderr).toEqual(['knowledge-mcp: ready\n'])
       expect(process.exitCode).toBeUndefined()
       expect(outcome.isError).toBe(false)
-      expect(h.logged).toEqual([{path: LOG, line: 'wiki_linked ok\n'}])
+      expect(h.logged).toEqual([{path: LOG, line: 'wiki_search ok\n'}])
     } finally {
       process.exitCode = previous
     }
@@ -948,6 +876,6 @@ describe('the default deps', () => {
     const cli = buildKnowledgeCli(memoryDeps({}).deps)
 
     expect(cli).not.toBe(goke('knowledge'))
-    expect(cli.commands).toHaveLength(3)
+    expect(cli.commands).toHaveLength(2)
   })
 })

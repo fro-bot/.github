@@ -28,7 +28,7 @@ describe('main (hand-parsed: the goke runner would read free text that starts wi
   it('prints usage on stderr for --help and exits 0', async () => {
     const out = await runMain(['--help'])
     expect(out.stdout).toBe('')
-    expect(out.stderr).toBe('Usage: wiki-context-expand <linked|query> [query text]\n')
+    expect(out.stderr).toBe('Usage: wiki-context-expand query <query text>\n')
     expect(process.exitCode).toBe(0)
   })
 

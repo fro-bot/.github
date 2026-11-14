@@ -244,7 +244,7 @@ const CALLERS: readonly Caller[] = [
     paths: 'knowledge',
     ifAbsent: 'skip',
     follows: 'checkout',
-    precedes: {id: 'wiki-query'},
+    precedes: {id: 'wiki-index'},
   },
   {
     workflow: 'fro-bot.yaml',

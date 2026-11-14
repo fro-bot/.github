@@ -1,16 +1,9 @@
-import {mkdtemp, readFile, rm} from 'node:fs/promises'
-import {tmpdir} from 'node:os'
-import {join} from 'node:path'
-
 import {describe, expect, it} from 'vitest'
-
-import {writeSelectedPathsHandoff} from './wiki-query.ts'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const wikiContextExpandModulePromise: Promise<{
   assembleExpandedContext: typeof import('./wiki-context-expand.js').assembleExpandedContext
   validateQuery: typeof import('./wiki-context-expand.js').validateQuery
-  parseHandoffContent: typeof import('./wiki-context-expand.js').parseHandoffContent
   parsePrivateTokensFromReposYaml: typeof import('./wiki-context-expand.js').parsePrivateTokensFromReposYaml
   parseArgv: typeof import('./wiki-context-expand.js').parseArgv
   runWikiContextExpandCli: typeof import('./wiki-context-expand.js').runWikiContextExpandCli
@@ -20,7 +13,6 @@ const wikiContextExpandModulePromise: Promise<{
 const {
   assembleExpandedContext,
   validateQuery,
-  parseHandoffContent,
   parsePrivateTokensFromReposYaml,
   parseArgv,
   runWikiContextExpandCli,
@@ -69,141 +61,6 @@ const BASE_FILES: Record<string, string> = {
 
 const NO_PRIVATE_TOKENS = new Set<string>()
 
-describe('assembleExpandedContext — linked mode', () => {
-  it('returns first-hop cited pages from baseline-selected paths (happy path)', () => {
-    // #given a baseline that selected only the agent page, which links to vitest and octokit
-    // #when linked-mode expansion runs
-    const result = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'ok',
-      baselineSelectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md'],
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then both first-hop targets are returned, excluding the baseline page itself
-    expect(result.status).toBe('ok')
-    expect(result.mode).toBe('linked')
-    expect([...result.selectedPaths].sort()).toEqual(
-      ['knowledge/wiki/entities/octokit.md', 'knowledge/wiki/topics/vitest.md'].sort(),
-    )
-  })
-
-  it('excludes second-hop pages — never recurses through a resolved candidate page', () => {
-    // #given the agent page links to vitest, and vitest links to octokit (a second hop from agent)
-    // #when linked-mode expansion runs from the agent baseline
-    const result = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'ok',
-      baselineSelectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md'],
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then octokit is included because the agent page ALSO directly links it (first hop),
-    // but this must come from the agent page's own links, not by following vitest's links
-    expect(result.selectedPaths).toContain('knowledge/wiki/entities/octokit.md')
-
-    // #and a baseline that only selects vitest (which does NOT link the agent page back)
-    // #when linked-mode expansion runs from the vitest baseline
-    const secondHopResult = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'ok',
-      baselineSelectedPaths: ['knowledge/wiki/topics/vitest.md'],
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then only vitest's direct first-hop link (octokit) is returned — never a further hop
-    expect(secondHopResult.selectedPaths).toEqual(['knowledge/wiki/entities/octokit.md'])
-  })
-
-  it('excludes pages already present in the baseline selected-path set', () => {
-    // #given a baseline that already selected both the agent and vitest pages
-    // #when linked-mode expansion runs
-    const result = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'ok',
-      baselineSelectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md', 'knowledge/wiki/topics/vitest.md'],
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then vitest is never re-returned as a candidate even though the agent page links it
-    expect(result.selectedPaths).not.toContain('knowledge/wiki/topics/vitest.md')
-    expect(result.selectedPaths).toEqual(['knowledge/wiki/entities/octokit.md'])
-  })
-
-  it('caps output at 3 pages and 8 KiB', () => {
-    // #given a baseline page linking to more than 3 distinct targets, each with a large body
-    const bigBody = 'x'.repeat(4000)
-    const files: Record<string, string> = {
-      'knowledge/wiki/repos/hub.md': [
-        '---',
-        'type: repo',
-        'title: Hub',
-        '---',
-        '',
-        'Hub links [[page-a]] and [[page-b]] and [[page-c]] and [[page-d]].',
-        '',
-      ].join('\n'),
-      'knowledge/wiki/topics/page-a.md': `---\ntype: topic\ntitle: Page A\n---\n\n${bigBody}\n`,
-      'knowledge/wiki/topics/page-b.md': `---\ntype: topic\ntitle: Page B\n---\n\n${bigBody}\n`,
-      'knowledge/wiki/topics/page-c.md': `---\ntype: topic\ntitle: Page C\n---\n\n${bigBody}\n`,
-      'knowledge/wiki/topics/page-d.md': `---\ntype: topic\ntitle: Page D\n---\n\n${bigBody}\n`,
-    }
-
-    // #when linked-mode expansion runs
-    const result = assembleExpandedContext({
-      mode: 'linked',
-      files,
-      handoffStatus: 'ok',
-      baselineSelectedPaths: ['knowledge/wiki/repos/hub.md'],
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then both the page count and byte budget caps are respected
-    expect(result.pageCount).toBeLessThanOrEqual(MAX_EXPANDED_CONTEXT_PAGES)
-    expect(result.byteLength).toBeLessThanOrEqual(MAX_EXPANDED_CONTEXT_BYTES)
-  })
-
-  it('returns an empty result when the baseline handoff is missing', () => {
-    // #given no handoff was available
-    // #when linked-mode expansion runs
-    const result = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'missing',
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then the result is an explicit, non-fatal empty result
-    expect(result.status).toBe('empty')
-    expect(result.selectedPaths).toEqual([])
-    expect(result.excerpt).toBe('')
-    expect(result.byteLength).toBe(0)
-    expect(result.pageCount).toBe(0)
-  })
-
-  it('returns an empty result when the baseline handoff is malformed', () => {
-    // #given a handoff file that failed to parse as a valid selected-paths array
-    // #when linked-mode expansion runs
-    const result = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'malformed',
-      privateTokens: NO_PRIVATE_TOKENS,
-    })
-
-    // #then the result has the SAME empty shape as the missing-handoff case — not a crash
-    expect(result.status).toBe('empty')
-    expect(result.selectedPaths).toEqual([])
-    expect(result.excerpt).toBe('')
-    expect(result.byteLength).toBe(0)
-    expect(result.pageCount).toBe(0)
-  })
-})
-
 describe('assembleExpandedContext — query mode', () => {
   it('returns ranked cited pages from a grounded query (happy path)', () => {
     // #given a corpus containing a page about octokit
@@ -219,6 +76,29 @@ describe('assembleExpandedContext — query mode', () => {
     expect(result.status).toBe('ok')
     expect(result.mode).toBe('query')
     expect(result.selectedPaths).toContain('knowledge/wiki/entities/octokit.md')
+  })
+
+  it('caps output at 3 pages and 8 KiB', () => {
+    // #given four pages matching the query, each with a large body
+    const bigBody = `gadget ${'x'.repeat(4000)}`
+    const files: Record<string, string> = Object.fromEntries(
+      ['a', 'b', 'c', 'd'].map(letter => [
+        `knowledge/wiki/topics/page-${letter}.md`,
+        `---\ntype: topic\ntitle: Page ${letter.toUpperCase()}\n---\n\n${bigBody}\n`,
+      ]),
+    )
+
+    // #when a query that matches all of them runs
+    const result = assembleExpandedContext({
+      mode: 'query',
+      files,
+      query: 'gadget',
+      privateTokens: NO_PRIVATE_TOKENS,
+    })
+
+    // #then both the page count and byte budget caps are respected
+    expect(result.pageCount).toBe(MAX_EXPANDED_CONTEXT_PAGES)
+    expect(result.byteLength).toBeLessThanOrEqual(MAX_EXPANDED_CONTEXT_BYTES)
   })
 
   it('returns empty for a query with no corpus match', () => {
@@ -328,14 +208,7 @@ describe('assembleExpandedContext — query mode', () => {
 describe('assembleExpandedContext — shared invariants', () => {
   it('fails closed, not silently, when private-token load failed', () => {
     // #given the private-token loader could not load tokens at all (null, not empty set)
-    // #when either mode runs
-    const linkedResult = assembleExpandedContext({
-      mode: 'linked',
-      files: BASE_FILES,
-      handoffStatus: 'ok',
-      baselineSelectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md'],
-      privateTokens: null,
-    })
+    // #when a query runs
     const queryResult = assembleExpandedContext({
       mode: 'query',
       files: BASE_FILES,
@@ -343,10 +216,8 @@ describe('assembleExpandedContext — shared invariants', () => {
       privateTokens: null,
     })
 
-    // #then both fail closed to the same explicit empty shape — the safety gate is never
+    // #then it fails closed to an explicit empty shape — the safety gate is never
     // silently disabled by a token-load failure
-    expect(linkedResult.status).toBe('empty')
-    expect(linkedResult.reason).toBe('private-token-load-failed')
     expect(queryResult.status).toBe('empty')
     expect(queryResult.reason).toBe('private-token-load-failed')
   })
@@ -462,29 +333,6 @@ describe('validateQuery', () => {
   })
 })
 
-describe('parseHandoffContent', () => {
-  it('parses a well-formed handoff JSON array', () => {
-    const result = parseHandoffContent(JSON.stringify({selectedPaths: ['knowledge/wiki/topics/vitest.md']}))
-    expect(result.status).toBe('ok')
-    expect(result.selectedPaths).toEqual(['knowledge/wiki/topics/vitest.md'])
-  })
-
-  it('treats non-JSON content as malformed', () => {
-    const result = parseHandoffContent('not json{{{')
-    expect(result.status).toBe('malformed')
-  })
-
-  it('treats a JSON value without a selectedPaths array as malformed', () => {
-    const result = parseHandoffContent(JSON.stringify({wrong: 'shape'}))
-    expect(result.status).toBe('malformed')
-  })
-
-  it('treats a selectedPaths array with non-string entries as malformed', () => {
-    const result = parseHandoffContent(JSON.stringify({selectedPaths: [1, 2]}))
-    expect(result.status).toBe('malformed')
-  })
-})
-
 describe('parsePrivateTokensFromReposYaml', () => {
   it('builds a token set from private repo entries', () => {
     const yaml = ['repos:', '  - owner: marcusrbrown', '    name: secret-repo', '    private: true'].join('\n')
@@ -521,17 +369,9 @@ describe('parsePrivateTokensFromReposYaml', () => {
 })
 
 describe('parseArgv', () => {
-  it('parses linked mode with no extra arguments', () => {
-    const result = parseArgv(['linked'])
-    expect(result.ok).toBe(true)
-    if (result.ok) {
-      expect(result.mode).toBe('linked')
-    }
-  })
-
-  it('rejects linked mode with extra arguments', () => {
-    const result = parseArgv(['linked', 'extra'])
-    expect(result.ok).toBe(false)
+  it('rejects the removed linked mode, with or without extra arguments', () => {
+    expect(parseArgv(['linked']).ok).toBe(false)
+    expect(parseArgv(['linked', 'extra']).ok).toBe(false)
   })
 
   it('parses query mode with a query argument', () => {
@@ -570,7 +410,6 @@ interface FakeDirEntry {
 
 function makeCliDeps(overrides: {
   argv: string[]
-  env?: Record<string, string | undefined>
   dirs?: Record<string, FakeDirEntry[]>
   files?: Record<string, string>
 }): {
@@ -586,7 +425,6 @@ function makeCliDeps(overrides: {
   return {
     deps: {
       argv: overrides.argv,
-      env: overrides.env ?? {},
       readDir: async (path: string) => {
         const entries = dirs[path]
         if (entries === undefined) {
@@ -612,45 +450,6 @@ function makeCliDeps(overrides: {
 const fileEntry = (name: string): FakeDirEntry => ({name, isFile: () => true})
 
 describe('runWikiContextExpandCli', () => {
-  it('runs the linked happy path against a real handoff produced by writeSelectedPathsHandoff', async () => {
-    // #given a real handoff file written by the baseline producer (wiki-query.ts)
-    const dir = await mkdtemp(join(tmpdir(), 'wiki-context-expand-cli-'))
-    const handoffPath = join(dir, 'handoff.json')
-    try {
-      await writeSelectedPathsHandoff(handoffPath, ['knowledge/wiki/repos/fro-bot--agent.md'])
-      const handoffContent = await readFile(handoffPath, 'utf8')
-
-      const {deps, stdout, stderr} = makeCliDeps({
-        argv: ['linked'],
-        env: {WIKI_CONTEXT_HANDOFF_PATH: handoffPath},
-        dirs: {
-          'knowledge/wiki/repos': [fileEntry('fro-bot--agent.md')],
-          'knowledge/wiki/topics': [fileEntry('vitest.md')],
-          'knowledge/wiki/entities': [fileEntry('octokit.md')],
-        },
-        files: {
-          [handoffPath]: handoffContent,
-          'metadata/repos.yaml': 'repos: []\n',
-          'knowledge/wiki/repos/fro-bot--agent.md': AGENT_PAGE,
-          'knowledge/wiki/topics/vitest.md': VITEST_PAGE,
-          'knowledge/wiki/entities/octokit.md': OCTOKIT_PAGE,
-        },
-      })
-
-      // #when the CLI runner consumes it (producer -> consumer integration seam)
-      const outcome = await runWikiContextExpandCli(deps)
-
-      // #then the linked expansion runs successfully with success exit code
-      expect(outcome.exitCode).toBe(0)
-      expect(outcome.result?.status).toBe('ok')
-      expect(outcome.result?.mode).toBe('linked')
-      expect(stdout).toHaveLength(1)
-      expect(stderr.some(line => line.includes('linked:ok'))).toBe(true)
-    } finally {
-      await rm(dir, {recursive: true, force: true})
-    }
-  })
-
   it('runs the query happy path', async () => {
     const {deps, stdout} = makeCliDeps({
       argv: ['query', 'octokit github api access'],
@@ -698,12 +497,12 @@ describe('runWikiContextExpandCli', () => {
   })
 
   it('returns a non-zero exit code and closed-vocabulary bad-args reason for bad argv', async () => {
-    const {deps, stdout, stderr} = makeCliDeps({argv: ['linked', 'extra']})
+    const {deps, stdout, stderr} = makeCliDeps({argv: ['linked']})
 
     const outcome = await runWikiContextExpandCli(deps)
 
     expect(outcome.exitCode).not.toBe(0)
-    expect(outcome.result?.mode).toBe('linked')
+    expect(outcome.result?.mode).toBe('query')
     expect(outcome.result?.reason).toBe('bad-args')
     expect(stderr.some(line => line.includes('bad-args'))).toBe(true)
     expect(stdout).toHaveLength(1)
@@ -742,11 +541,9 @@ describe('runWikiContextExpandCli', () => {
 
   it('returns a structured empty result/status token on a top-level unexpected error', async () => {
     const {deps} = makeCliDeps({
-      argv: ['linked'],
-      env: {WIKI_CONTEXT_HANDOFF_PATH: 'handoff.json'},
+      argv: ['query', 'octokit github api access'],
       dirs: {'knowledge/wiki/entities': [fileEntry('octokit.md')]},
       files: {
-        'handoff.json': JSON.stringify({selectedPaths: ['knowledge/wiki/entities/octokit.md']}),
         'metadata/repos.yaml': 'repos: []\n',
         'knowledge/wiki/entities/octokit.md': OCTOKIT_PAGE,
       },
@@ -775,7 +572,7 @@ describe('runWikiContextExpandCli', () => {
     // #then it still returns a structured empty result and success status, never a crash
     expect(outcome.exitCode).toBe(0)
     expect(outcome.result?.status).toBe('empty')
-    expect(outcome.result?.mode).toBe('linked')
+    expect(outcome.result?.mode).toBe('query')
     expect(stdoutChunks).toHaveLength(1)
     expect(stderrChunks.some(line => line.includes('unexpected'))).toBe(true)
   })

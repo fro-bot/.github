@@ -4,24 +4,15 @@
  * and the production module with its default dependencies. Nothing is mocked inside the CLI, so a broken
  * shim, runner config, env wiring or output path fails here.
  *
- * The workflows read `changed=`, `hash=`, `excerpt`, `selected-paths`, `byte-length` and the five lint
- * counters from `$GITHUB_OUTPUT`, the handoff artifact bytes between build and apply, the repair result
- * file, and the stdout JSON of the handoff steps, the query steps and `wiki-context-expand`. The tests pin
- * each of those, and the usage code of every CLI on the runner.
+ * The workflows read `changed=`, `hash=`, `index`, `excerpt`, `selected-paths`, `byte-length` and the five
+ * lint counters from `$GITHUB_OUTPUT`, the handoff artifact bytes between build and apply, the repair result
+ * file, and the stdout of the handoff steps, the wiki index step, the solutions query step and
+ * `wiki-context-expand`. The tests pin each of those, and the usage code of every CLI on the runner.
  */
 
+import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  symlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {dirname, join, resolve} from 'node:path'
 import {createFakeGithub, route, type FakeGithub, type FakeRoute} from '@fro-bot/test-kit/fake-github'
@@ -427,7 +418,7 @@ describe('the handoff chain: baseline, build and apply (survey-repo.yaml:261,513
   })
 })
 
-// ─── wiki-query and solutions-query ──────────────────────────────────────────────────────────────
+// ─── wiki-index and solutions-query ───────────────────────────────────────────────────────────────
 
 const SOLUTION = `---\ntitle: Build breaks on release\nmodule: release\ntags: [build]\nproblem_type: build_error\nlast_updated: 2026-10-01\n---\n\nThe build breaks when release automation runs.\n`
 const SOLUTIONS = {
@@ -439,91 +430,61 @@ const SOLUTIONS = {
 const PRIVATE_REPOS =
   'version: 1\nrepos:\n  - owner: secretco\n    name: vault\n    private: true\n    node_id: R_x\n    database_id: 1\n'
 
-describe('wiki-query (bun; fro-bot.yaml:592)', () => {
-  const EVENT = {
-    WIKI_QUERY_EVENT_NAME: 'issues',
-    WIKI_QUERY_OWNER: 'acme',
-    WIKI_QUERY_REPO: 'widgets',
-    WIKI_QUERY_TITLE: 'build system',
-  }
+describe('wiki-index (bun; fro-bot.yaml, the two daily-pass jobs)', () => {
+  const COUNT_LINE = 'Wiki index: 2 of 2 pages listed.'
+  const LINES = [
+    'knowledge/wiki/repos/acme--widgets.md | acme/widgets | repo | Widgets has a build system and links [[polyglot-monorepo]].',
+    'knowledge/wiki/topics/polyglot-monorepo.md | Polyglot Monorepo | topic | Monorepo patterns for a shared build.',
+  ]
+  const INDEX_TEXT = [COUNT_LINE, ...LINES].join('\n')
 
-  it('prints the result JSON and writes the three outputs the agent step reads, which parse back to the same excerpt', async () => {
-    const cwd = checkout(WIKI)
-    const handoff = join(root, 'wiki-handoff-selected.json')
-    const result = await run('wiki-query', {cwd, env: {...EVENT, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+  it('prints one status line and writes the index output, which parses back to the same text', async () => {
+    const result = await run('wiki-index', {cwd: checkout(WIKI)})
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('')
-    const printed = JSON.parse(result.stdout) as {excerpt: string; selectedPaths: string[]; byteLength: number}
-    expect(printed.selectedPaths).toEqual([
-      'knowledge/wiki/repos/acme--widgets.md',
-      'knowledge/wiki/topics/polyglot-monorepo.md',
-    ])
-    const outputs = parseOutputs(result.githubOutput)
-    expect(outputs.excerpt).toBe(printed.excerpt)
-    expect(JSON.parse(outputs['selected-paths'] ?? '')).toEqual(printed.selectedPaths)
-    expect(outputs['byte-length']).toBe(String(printed.byteLength))
-    expect(JSON.parse(readFileSync(handoff, 'utf8'))).toEqual({selectedPaths: printed.selectedPaths})
-    expect(statSync(handoff).mode & 0o777).toBe(0o600)
+    expect(result.stdout).toBe(
+      `wiki-index: listed=2 held=2 skipped=0 sentences=kept bytes=${Buffer.byteLength(INDEX_TEXT)}\n`,
+    )
+    expect(parseOutputs(result.githubOutput)).toEqual({index: INDEX_TEXT})
   })
 
-  it('an empty excerpt is an empty output value, not a missing one', async () => {
-    const result = await run('wiki-query', {
-      cwd: checkout(WIKI),
-      env: {WIKI_QUERY_EVENT_NAME: 'issues', WIKI_QUERY_TITLE: 'zzzz qqqq'},
-    })
-    expect(result.exitCode).toBe(0)
-    expect(parseOutputs(result.githubOutput)).toEqual({excerpt: '', 'selected-paths': '[]', 'byte-length': '0'})
-    expect(JSON.parse(result.stdout)).toEqual({excerpt: '', selectedPaths: [], byteLength: 0})
-  })
-
-  it('skips a malformed page and builds the rest: one warning with its path and a fixed reason, exit 0', async () => {
-    const clean = await run('wiki-query', {cwd: checkout(WIKI), env: EVENT})
-    const handoff = join(root, 'wiki-handoff-broken.json')
+  it('skips a malformed page and lists the rest: one warning with its path and a fixed reason, exit 0', async () => {
     const cwd = checkout({...WIKI, 'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n'})
-    const result = await run('wiki-query', {cwd, env: {...EVENT, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+    const result = await run('wiki-index', {cwd})
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe(
-      'wiki-query:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\n',
+      'wiki-index:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\n',
     )
-    expect(result.stdout).toBe(clean.stdout)
-    expect(parseOutputs(result.githubOutput)).toEqual(parseOutputs(clean.githubOutput))
-    expect(JSON.parse(readFileSync(handoff, 'utf8'))).toEqual({
-      selectedPaths: (JSON.parse(clean.stdout) as {selectedPaths: string[]}).selectedPaths,
-    })
+    expect(result.stdout).toMatch(/^wiki-index: listed=2 held=3 skipped=1 sentences=kept bytes=\d+\n$/u)
+    expect(parseOutputs(result.githubOutput).index).toBe(
+      ['Wiki index: 2 of 3 pages listed. 1 could not be read.', ...LINES].join('\n'),
+    )
   })
 
-  it('fails soft when no page is readable: warning, empty outputs, an empty handoff and exit 0', async () => {
-    const handoff = join(root, 'wiki-handoff-all-broken.json')
-    const cwd = checkout({
-      'knowledge/index.md': INDEX,
-      'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n',
-    })
-    const result = await run('wiki-query', {cwd, env: {...EVENT, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+  it.each([
+    ['a checkout with no wiki', {'knowledge/index.md': INDEX}, 'wiki-index:warn:index-unavailable\n'],
+    [
+      'a wiki where no page is readable',
+      {'knowledge/index.md': INDEX, 'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n'},
+      'wiki-index:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\nwiki-index:warn:index-unavailable\n',
+    ],
+  ])('for %s: an empty index output, the unavailable line, a warning and exit 0', async (_name, files, stderr) => {
+    const result = await run('wiki-index', {cwd: checkout(files)})
     expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe('wiki-query:warn:baseline-query-failed\n')
-    expect(parseOutputs(result.githubOutput)['selected-paths']).toBe('[]')
-    expect(JSON.parse(readFileSync(handoff, 'utf8'))).toEqual({selectedPaths: []})
-  })
-
-  it('a handoff write failure warns and still exits 0 with the outputs written', async () => {
-    const result = await run('wiki-query', {
-      cwd: checkout(WIKI),
-      env: {...EVENT, WIKI_CONTEXT_HANDOFF_PATH: join(root, 'missing-dir/handoff.json')},
-    })
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe('wiki-query:warn:handoff-write-failed\n')
-    expect(parseOutputs(result.githubOutput).excerpt).not.toBe('')
+    expect(result.stdout).toBe('wiki-index: unavailable\n')
+    expect(result.stderr).toBe(stderr)
+    expect(parseOutputs(result.githubOutput)).toEqual({index: ''})
   })
 
   it('works without GITHUB_OUTPUT', async () => {
-    const result = await run('wiki-query', {cwd: checkout(WIKI), env: EVENT, githubOutput: 'unset'})
+    const result = await run('wiki-index', {cwd: checkout(WIKI), githubOutput: 'unset'})
     expect(result.exitCode).toBe(0)
     expect(result.githubOutput).toBe('')
-    expect(JSON.parse(result.stdout)).toHaveProperty('selectedPaths')
+    expect(result.stdout).toMatch(/^wiki-index: listed=2 /u)
   })
 
-  it.each(USAGE_ARGV)('argv %s is a usage error that queries nothing', async arg => {
-    const result = await run('wiki-query', {argv: [arg], cwd: checkout(WIKI), env: EVENT})
+  it.each(USAGE_ARGV)('argv %s is a usage error that indexes nothing', async arg => {
+    const result = await run('wiki-index', {argv: [arg], cwd: checkout(WIKI)})
     expect(result).toMatchObject({exitCode: 1, stdout: '', githubOutput: ''})
     expect(result.stderr).not.toBe('')
   })
@@ -570,26 +531,6 @@ describe('solutions-query (bun; fro-bot.yaml:614)', () => {
 // ─── wiki-context-expand (hand-parsed) ───────────────────────────────────────────────────────────
 
 describe('wiki-context-expand (operator CLI; the knowledge server calls the same module in-process)', () => {
-  const HANDOFF = JSON.stringify({selectedPaths: ['knowledge/wiki/repos/acme--widgets.md']})
-
-  it('linked reads the handoff the baseline query wrote and returns the linked page', async () => {
-    const cwd = checkout({...WIKI, 'handoff.json': HANDOFF})
-    const result = await run('wiki-context-expand', {
-      argv: ['linked'],
-      cwd,
-      env: {WIKI_CONTEXT_HANDOFF_PATH: join(cwd, 'handoff.json')},
-    })
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe('wiki-context-expand:linked:ok\n')
-    const parsed = JSON.parse(result.stdout) as {status: string; mode: string; selectedPaths: string[]; excerpt: string}
-    expect(parsed).toMatchObject({
-      status: 'ok',
-      mode: 'linked',
-      selectedPaths: ['knowledge/wiki/topics/polyglot-monorepo.md'],
-    })
-    expect(parsed.excerpt).toContain('## Polyglot Monorepo')
-  })
-
   it('query text that starts with a dash is the query, not a flag', async () => {
     const result = await run('wiki-context-expand', {argv: ['query', '-build system'], cwd: checkout(WIKI)})
     expect(result.exitCode).toBe(0)
@@ -605,7 +546,7 @@ describe('wiki-context-expand (operator CLI; the knowledge server calls the same
       expect(help).toMatchObject({
         exitCode: 0,
         stdout: '',
-        stderr: 'Usage: wiki-context-expand <linked|query> [query text]\n',
+        stderr: 'Usage: wiki-context-expand query <query text>\n',
       })
     }
     const bad = await run('wiki-context-expand', {argv: ['query'], cwd: checkout(WIKI)})
@@ -615,12 +556,8 @@ describe('wiki-context-expand (operator CLI; the knowledge server calls the same
   })
 
   it('returns the same empty shape when the private token list cannot be read', async () => {
-    const cwd = checkout({...WIKI, 'handoff.json': HANDOFF, 'metadata/repos.yaml': 'repos: [oops\n'})
-    const result = await run('wiki-context-expand', {
-      argv: ['linked'],
-      cwd,
-      env: {WIKI_CONTEXT_HANDOFF_PATH: join(cwd, 'handoff.json')},
-    })
+    const cwd = checkout({...WIKI, 'metadata/repos.yaml': 'repos: [oops\n'})
+    const result = await run('wiki-context-expand', {argv: ['query', 'build system'], cwd})
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toContain('wiki-context-expand:warn:private-token-load-failed')
     expect(JSON.parse(result.stdout)).toMatchObject({
@@ -1010,7 +947,7 @@ describe('the shims run nothing on import', () => {
     'wiki-handoff-baseline',
     'wiki-handoff-build',
     'wiki-handoff-apply',
-    'wiki-query',
+    'wiki-index',
     'solutions-query',
     'wiki-context-expand',
     'correction-lifecycle',
