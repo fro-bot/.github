@@ -424,13 +424,12 @@ function levenshteinDistance(a: string, b: string): number {
  * account for it having consumed one or more physical lines, so a two-line annotation
  * immediately above the fence is exactly one "step" of this walk, and a comment plus a
  * following blank line still breaks contiguity (an annotation must sit directly above the
- * fence). Stops at the first comment that doesn't match the annotation grammar. One that
- * mentions `verify` but doesn't match it is reported as a `DirectiveFinding` rather than
- * silently skipped, and also stops the walk — a malformed directive is exactly the kind of
- * comment a reader (or a script) should not read past as if it weren't there. A comment
- * unrelated to `verify` stops the walk silently, same as before. Comments that end on one line are one
- * step: every marker among them attaches, and the walk goes on from the earliest of them; a malformed
- * one among them is reported, and the walk stops only when no marker is on the line.
+ * fence). Comments that end on one line are one step: every marker among them attaches, and the
+ * walk goes on from the earliest of them. The walk stops at the first line that carries no marker.
+ * A comment that mentions `verify` but doesn't match the grammar is reported as a
+ * `DirectiveFinding` rather than silently skipped. It stops the walk when it is alone on its
+ * line, and so does a comment unrelated to `verify`; neither stops it when a marker shares the
+ * line.
  */
 interface RawDirectiveFinding {
   readonly line: number
