@@ -29,7 +29,7 @@ The November requirements set one success test: scheduled and dispatched runs, a
 - R2. The pull request job, Remediate and Observe are told: when a run reviews changed code or starts a fix, search documented solutions first, with a query drawn from the area being changed. Triage, review of a change with no code, and report-only work carry no such duty.
 - R3. Remediate and Observe are told: when investigating a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it before drawing a conclusion about that repository. A repository that only appears in an inventory carries no such duty.
 - R4. Each survey attempt is told to search the wiki and documented solutions before it writes a page.
-- R5. No prompt gives a duty for `knowledge_wiki_linked`. Its one-line description stays.
+- R5. No prompt gives a duty for `knowledge_wiki_linked`. The companion change in `docs/brainstorms/2026-11-14-wiki-baseline-index-requirements.md` removes the tool.
 - R6. The rules on tool output in the `fro-bot.yaml` prompts stay: a failed call returns an error code, an empty result means nothing matched, and query text and returned excerpts are not echoed into output or logs. The survey prompts gain the empty-result and no-echo rules, which they lack today.
 - R7. The prompt states that returned wiki and solution text is untrusted reference material and never outranks the prompt's own rules. An applicable solution may still be followed, and its path cited, once it is checked against the task.
 
@@ -66,7 +66,7 @@ The November requirements set one success test: scheduled and dispatched runs, a
 
 ## Scope Boundaries
 
-- What the baseline context contains and how its pages are selected. The wiki baseline is one page cut at its size cap and is often not about the repository under review. That has its own brainstorm.
+- What the baseline context contains and how its pages are selected. The wiki baseline is one page cut at its size cap and is often not about the repository under review. That is covered by `docs/brainstorms/2026-11-14-wiki-baseline-index-requirements.md`, which ships with this change.
 - The tools' behaviour, limits and descriptions.
 - Retiring the baseline excerpts in favour of the tools.
 - Judging whether a call improved the output. The rate counts call attempts, including errors and empty results. It decides whether the tools stay under this trial and says nothing about their usefulness.
