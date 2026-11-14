@@ -141,14 +141,14 @@ States of the index step and what each consumer sees:
 
 | State | `index` output | Step-log line | Agent sees in `<wiki_context>` |
 | --- | --- | --- | --- |
-| Full, sentences kept | count line, then all readable pages with sentences | `wiki-index: listed=L held=H sentences=kept bytes=B` | the index |
-| Full, sentences dropped | count line, then all readable pages, no sentences | `wiki-index: listed=L held=H sentences=dropped bytes=B` | the index |
-| Incomplete | count line, the lines that fit, then a line saying it is incomplete | `wiki-index: listed=L held=H sentences=dropped incomplete bytes=B` | the index, marked incomplete |
+| Full, sentences kept | count line, then all readable pages with sentences | `wiki-index: listed=L held=H skipped=S sentences=kept bytes=B` | the index |
+| Full, sentences dropped | count line, then all readable pages, no sentences | `wiki-index: listed=L held=H skipped=S sentences=dropped bytes=B` | the index |
+| Incomplete | count line, the lines that fit, then a line saying it is incomplete | `wiki-index: listed=L held=H skipped=S sentences=dropped incomplete bytes=B` | the index, marked incomplete |
 | Unavailable | empty | `wiki-index: unavailable` | the fixed unavailable note |
 
-`L` equals `H` when every file was readable and fitted. `L` is lower when pages were skipped or cut off.
+`S` is the number of pages that could not be read (a file that failed to read, or frontmatter that could not be parsed). `incomplete` means the size limit cut pages off. The numbers add up: `H = L + S + C`, where `C` is the number of pages cut off, and `C` is zero unless `incomplete` is present. Both can be true at once. The status line has `skipped=0` when nothing was skipped.
 
-Index line shape: `path | title | type | opening sentence`, with the last field absent when a page has none. Order: type, then path, by code unit. The first line of the index gives `L` and `H`.
+Index line shape: `path | title | type | opening sentence`, with the last field absent when a page has none. Order: type, then path, by code unit. The first line of the index is `Wiki index: L of H pages listed.`, followed by ` S could not be read.` when `S` is above zero.
 
 ## Implementation Units
 
@@ -211,18 +211,18 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 **Approach:**
 
-- Load pages from the wiki directories through the shared splitter. Do not read `knowledge/index.md`. Skip an unreadable page with the existing encoded warning, under the new prefix.
+- Load pages from the wiki directories through the shared splitter, after removing one leading U+FEFF from each file. Do not read `knowledge/index.md`. Skip an unreadable page with the existing encoded warning, under the new prefix.
 - One line per page: path, title, type, opening sentence.
 - Opening sentence, by one linear scan:
   - The first non-blank body line must be an ATX top heading (`# `). A body with no such heading, or a setext heading, has no sentence.
   - Skip blank lines after the heading. The paragraph is the following non-blank lines up to the next blank line, joined by single spaces.
   - There is no sentence when the paragraph's first line starts with `#`, a list marker, `|`, `>`, a code fence, `<`, a tab or four spaces. A line that starts with bold text or a link is prose.
-  - While scanning, text inside a closed code span, a `[[wikilink]]`, a link target `](...)` or a bare URL is skipped. An unclosed span or bracket is ordinary text.
+  - While scanning, text inside a closed code span, a `[[wikilink]]` or a link target `](...)` is skipped. Whether a span that opens inside the sentence closes is decided by looking to the end of the paragraph, and a span that closes beyond 200 characters gives no sentence. A span or bracket with no closer anywhere in the paragraph is ordinary text. A bare URL needs no rule: it holds no space, so no sentence can end inside it.
   - A `.`, `!` or `?`, with any closing quote or bracket after it, ends the sentence when the paragraph ends there, or when a space and then a capital, a digit or an opening mark follow.
   - A period after a single capital letter does not end it. Nor does a period after `e.g`, `i.e`, `vs`, `etc`, `dr`, `mr`, `mrs`, `ms`, `inc`, `ltd`, `co` or `st`, compared without case.
   - No terminator, or more than 200 characters, gives no sentence.
 - Encode every field to one line as the Key Technical Decisions state.
-- Size rule, in UTF-8 bytes of the whole value: build with sentences; over 12 KiB, rebuild without; still over, admit lines in order while the count line, the admitted lines and the incomplete marker fit together. The count line is recomputed for the final listed count.
+- Size rule, in UTF-8 bytes of the whole value: build with sentences; over 12 KiB, rebuild without; still over, admit lines in order while the count line, the admitted lines and the incomplete marker fit together. The count line carries `S could not be read.` when `S` is above zero and is recomputed for the final listed count.
 - Loader outcomes as the Key Technical Decisions state.
 - Write the `index` output and print the one status line. When the index is unavailable, write an empty `index`, warn under the unavailable prefix, print `wiki-index: unavailable`, and exit 0.
 - The route test builds its own router invocation with the routes Unit 3 will use. The workflow fixture and the prefix guard still describe the old steps until Unit 3.
@@ -246,6 +246,10 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - Edge case: a tree that would be 15 KiB with sentences and 9 KiB without gives all pages, no sentences, equal counts. (Origin AE4.)
 - Edge case: a tree that is 14 KiB without sentences gives the pages that fit, the incomplete line, and unequal counts, and the whole value is at most 12 KiB. (Origin AE5.)
 - Edge case: the limit holds with multi-byte titles, and when admitting one more line changes the width of the count.
+- Edge case: one valid page and one page with invalid frontmatter give `Wiki index: 1 of 2 pages listed. 1 could not be read.` and `skipped=1`; so do one valid page and one file that cannot be read. With no skipped page the count line has no extra sentence and the status line says `skipped=0`. A title cannot forge the new sentence.
+- Edge case: skipped pages and a size-limited index together keep `held = listed + skipped + cut off`, and the count line is measured with its extra sentence.
+- Edge case: a page that starts with U+FEFF keeps its title and sentence.
+- Edge case: a code span, wikilink or link target that opens inside the first sentence and closes beyond 200 characters gives no sentence; one that closes nowhere in the paragraph does not hide the sentence.
 - Edge case: the same tree read twice gives byte-identical output.
 - Error path: one page with unclosed frontmatter and one with invalid frontmatter are each skipped with an encoded warning naming the right reason, the others are listed, and listed is two below held.
 - Error path: a file that cannot be read is skipped with a warning and counted in held.
@@ -253,14 +257,14 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - Edge case: a missing optional directory beside readable ones is not an error.
 - Error path: a closed stderr does not stop the output or change the exit code.
 - Integration: run behind `route-stderr`, the command's stdout, outputs and exit code equal a bare run, and the two warning kinds reach the summary under their headings.
-- Integration: scaling cases show linear growth for a long paragraph of periods, of brackets and of backticks.
+- Integration: scaling cases show linear growth for a long paragraph of periods, of brackets and of backticks, and for an early opener with a late closer or none.
 
 **Verification:**
 
 - Type check, lint and tests pass. The mutation gate runs, because a command module was added.
 - `packages/wiki-ops` exports resolve, `scripts/package-layout.test.ts` passes, and the new modules load under Node's strip-only mode as the `Test Scripts Load` job requires.
 - One manual run against a checkout of the wiki at a named `data` commit: record the commit, the status line and the number of pages with a sentence in this plan. It is not a test, because `data` moves.
-- Recorded: `data` at `07793befb79c72f2dae9c5e71e75f9b2193dfbd3`, status line `wiki-index: listed=48 held=48 sentences=kept bytes=7374`, 38 of 48 pages with a sentence.
+- Recorded: `data` at `07793befb79c72f2dae9c5e71e75f9b2193dfbd3`, status line `wiki-index: listed=48 held=48 skipped=0 sentences=kept bytes=7374`, 38 of 48 pages with a sentence.
 
 - [x] **Unit 3: Wire the workflow and delete the query**
 

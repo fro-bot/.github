@@ -63,7 +63,7 @@ describe('main', () => {
       }
       expect(process.exitCode).toBe(0)
       expect(stdout.mock.calls.map(call => String(call[0]))).toEqual([
-        expect.stringMatching(/^wiki-index: listed=1 held=1 sentences=kept bytes=\d+\n$/u),
+        expect.stringMatching(/^wiki-index: listed=1 held=1 skipped=0 sentences=kept bytes=\d+\n$/u),
       ])
       expect(exit).not.toHaveBeenCalled()
     } finally {

@@ -442,7 +442,9 @@ describe('wiki-index (bun; fro-bot.yaml, the two daily-pass jobs)', () => {
     const result = await run('wiki-index', {cwd: checkout(WIKI)})
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('')
-    expect(result.stdout).toBe(`wiki-index: listed=2 held=2 sentences=kept bytes=${Buffer.byteLength(INDEX_TEXT)}\n`)
+    expect(result.stdout).toBe(
+      `wiki-index: listed=2 held=2 skipped=0 sentences=kept bytes=${Buffer.byteLength(INDEX_TEXT)}\n`,
+    )
     expect(parseOutputs(result.githubOutput)).toEqual({index: INDEX_TEXT})
   })
 
@@ -453,8 +455,10 @@ describe('wiki-index (bun; fro-bot.yaml, the two daily-pass jobs)', () => {
     expect(result.stderr).toBe(
       'wiki-index:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\n',
     )
-    expect(result.stdout).toMatch(/^wiki-index: listed=2 held=3 sentences=kept bytes=\d+\n$/u)
-    expect(parseOutputs(result.githubOutput).index).toBe(['Wiki index: 2 of 3 pages listed.', ...LINES].join('\n'))
+    expect(result.stdout).toMatch(/^wiki-index: listed=2 held=3 skipped=1 sentences=kept bytes=\d+\n$/u)
+    expect(parseOutputs(result.githubOutput).index).toBe(
+      ['Wiki index: 2 of 3 pages listed. 1 could not be read.', ...LINES].join('\n'),
+    )
   })
 
   it.each([

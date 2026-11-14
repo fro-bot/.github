@@ -26,9 +26,6 @@ export const MAX_INDEX_BYTES = 12 * 1024
 /** The longest opening sentence kept, in characters. A longer one is omitted, not cut. */
 const MAX_SENTENCE_LENGTH = 200
 
-/** The paragraph text read for a sentence: the limit plus the characters that decide where a sentence ends. */
-const PARAGRAPH_WINDOW = MAX_SENTENCE_LENGTH + 10
-
 const INCOMPLETE_LINE = 'Index incomplete: pages that did not fit the size limit are not listed.'
 
 const WIKI_DIRECTORIES = ['repos', 'topics', 'entities', 'comparisons'] as const
@@ -118,12 +115,12 @@ function paragraphLineAfter(body: string, read: LineRead): LineRead | undefined 
   return following.line.trim() === '' ? undefined : following
 }
 
-/** The paragraph beginning at `first`, lines joined by single spaces and runs of whitespace collapsed, cut at the window. */
+/** The paragraph beginning at `first` to its last line, lines joined by single spaces and runs of whitespace collapsed. */
 function readParagraph(body: string, first: LineRead): string {
   let text = ''
   let pendingSpace = false
   let read: LineRead | undefined = first
-  while (read !== undefined && text.length < PARAGRAPH_WINDOW) {
+  while (read !== undefined) {
     for (const char of read.line) {
       if (char.trim() === '') {
         pendingSpace = text !== ''
@@ -132,7 +129,6 @@ function readParagraph(body: string, first: LineRead): string {
       if (pendingSpace) text += ' '
       pendingSpace = false
       text += char
-      if (text.length >= PARAGRAPH_WINDOW) return text
     }
     pendingSpace = text !== ''
     read = paragraphLineAfter(body, read)
@@ -175,24 +171,11 @@ function bracketEnd(text: string, at: number): number {
   return at
 }
 
-/** The end of a bare URL that starts at `at`, without the punctuation that closes the sentence, or `at`. */
-function urlEnd(text: string, at: number): number {
-  const scheme = text.startsWith('https://', at) ? 8 : text.startsWith('http://', at) ? 7 : 0
-  if (scheme === 0) return at
-  const before = at === 0 ? ' ' : text.charAt(at - 1)
-  if (isLetter(before) || isDigit(before)) return at
-  let end = at + scheme
-  while (end < text.length && text.charAt(end).trim() !== '') end += 1
-  while (end > at + scheme && '.,;:!?)]\'"*_'.includes(text.charAt(end - 1))) end -= 1
-  return end
-}
-
 /** The offset after the span that opens at `at` and hides its punctuation, or `at` when none opens there. */
 function maskedEnd(text: string, at: number): number {
   const char = text.charAt(at)
   if (char === '`') return codeSpanEnd(text, at)
   if (char === '[' || char === ']') return bracketEnd(text, at)
-  if (char === 'h') return urlEnd(text, at)
   return at
 }
 
@@ -237,7 +220,11 @@ function hasLetterOrDigit(text: string): boolean {
   return false
 }
 
-/** The first sentence of `text`, or `undefined` when it does not end within the limit. */
+/**
+ * The first sentence of `text`, the whole paragraph, or `undefined` when it does not end within the limit. A span
+ * that opens inside the sentence is closed by looking to the end of the paragraph, so a span that closes beyond
+ * the limit ends the scan with no sentence.
+ */
 function firstSentence(text: string): string | undefined {
   let index = 0
   while (index < text.length && index < MAX_SENTENCE_LENGTH) {
@@ -265,8 +252,8 @@ function firstSentence(text: string): string | undefined {
 /**
  * The one complete prose sentence directly after a page's top heading, or `undefined`. The first non-blank line
  * of the body must be a `# ` heading, and the paragraph after it must be prose. A sentence over 200 characters
- * is omitted, not cut. Only the first 210 characters of the paragraph are read, so the scan takes the same time
- * for a paragraph of any length.
+ * is omitted, not cut. The paragraph is read to its last line, and the scan stops after the first 200 characters
+ * of it, each opener looking for its closer at most once.
  */
 export function openingSentence(body: string): string | undefined {
   const heading = nextNonBlankLine(body, 0)
@@ -334,6 +321,8 @@ export interface WikiIndexResult {
   readonly sentences: 'kept' | 'dropped'
   readonly incomplete: boolean
   readonly bytes: number
+  /** The number of pages left out because they could not be read: `held` is `listed` plus `skipped` plus the pages cut off. */
+  readonly skipped: number
   readonly skippedPages: readonly SkippedPage[]
 }
 
@@ -369,11 +358,19 @@ interface ReadTree {
   readonly skippedPages: readonly SkippedPage[]
 }
 
+/** One leading U+FEFF removed, so the parser sees the frontmatter fence at the start of the file. */
+function withoutByteOrderMark(content: string): string {
+  return content.startsWith('\uFEFF') ? content.slice(1) : content
+}
+
 function readTree(tree: WikiTree): ReadTree {
   const entries: Entry[] = []
   const skipped: SkippedPage[] = tree.unreadable.map(path => ({path, reason: 'unreadable-file'}))
 
-  for (const page of collectWikiPages({...tree.files})) {
+  const files = Object.fromEntries(
+    Object.entries(tree.files).map(([path, content]) => [path, withoutByteOrderMark(content)]),
+  )
+  for (const page of collectWikiPages(files)) {
     if (page.frontmatterError !== undefined) {
       skipped.push({path: page.path, reason: skippedPageReason(page.frontmatterErrorKind)})
       continue
@@ -398,8 +395,9 @@ export function skippedPagesOf(tree: WikiTree): readonly SkippedPage[] {
   return readTree(tree).skippedPages
 }
 
-function countLine(listed: number, held: number): string {
-  return `Wiki index: ${listed} of ${held} pages listed.`
+/** The first line: the counts, and how many pages could not be read when there are any. */
+function countLine(listed: number, held: number, skipped: number): string {
+  return `Wiki index: ${listed} of ${held} pages listed.${skipped === 0 ? '' : ` ${skipped} could not be read.`}`
 }
 
 /** The index of `tree`, or `undefined` when no page could be listed. */
@@ -419,10 +417,11 @@ export function assembleWikiIndex(tree: WikiTree): WikiIndexResult | undefined {
     sentences,
     incomplete,
     bytes: byteLength(index),
+    skipped: skippedPages.length,
     skippedPages,
   })
   const render = (lines: readonly string[], marker: boolean): string =>
-    [countLine(lines.length, tree.held), ...lines, ...(marker ? [INCOMPLETE_LINE] : [])].join('\n')
+    [countLine(lines.length, tree.held, skippedPages.length), ...lines, ...(marker ? [INCOMPLETE_LINE] : [])].join('\n')
 
   const withSentences = render(
     entries.map(entry => (entry.sentence === undefined ? entry.bare : `${entry.bare} | ${entry.sentence}`)),
@@ -441,7 +440,7 @@ export function assembleWikiIndex(tree: WikiTree): WikiIndexResult | undefined {
   let used = 0
   while (admitted < lines.length) {
     const next = used + 1 + byteLength(lines[admitted] ?? '')
-    if (byteLength(countLine(admitted + 1, tree.held)) + next + fixed > MAX_INDEX_BYTES) break
+    if (byteLength(countLine(admitted + 1, tree.held, skippedPages.length)) + next + fixed > MAX_INDEX_BYTES) break
     used = next
     admitted += 1
   }
@@ -452,7 +451,7 @@ export function assembleWikiIndex(tree: WikiTree): WikiIndexResult | undefined {
 export function statusLine(result: WikiIndexResult | undefined): string {
   if (result === undefined) return 'wiki-index: unavailable'
   const incomplete = result.incomplete ? ' incomplete' : ''
-  return `wiki-index: listed=${result.listed} held=${result.held} sentences=${result.sentences}${incomplete} bytes=${result.bytes}`
+  return `wiki-index: listed=${result.listed} held=${result.held} skipped=${result.skipped} sentences=${result.sentences}${incomplete} bytes=${result.bytes}`
 }
 
 // ─── Reading the checkout ────────────────────────────────────────────────────────────────────────

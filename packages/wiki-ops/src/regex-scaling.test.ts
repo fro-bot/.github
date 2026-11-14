@@ -158,6 +158,14 @@ describe('the opening-sentence scan scales linearly', {timeout: SUITE_TIMEOUT_MI
     {name: 'many short lines', make: repeat('ab\n')},
     {name: 'many blank lines before the paragraph', make: (size: number) => `${'\n'.repeat(size)}x. Y`},
     {name: 'a long paragraph of abbreviations', make: repeat('Dr. ')},
+    {name: 'an early backtick with a late closer', make: (size: number) => `a \`b. ${'x'.repeat(size)}\` c.`},
+    {name: 'an early backtick with no closer', make: (size: number) => `a \`b. ${'x'.repeat(size)} c.`},
+    {name: 'an early wikilink with a late closer', make: (size: number) => `a [[b. ${'x'.repeat(size)}]] c.`},
+    {name: 'an early wikilink with no closer', make: (size: number) => `a [[b. ${'x'.repeat(size)} c.`},
+    {name: 'an early link target with a late closer', make: (size: number) => `a [b](c. ${'x'.repeat(size)}) d.`},
+    {name: 'an early link target with no closer', make: (size: number) => `a [b](c. ${'x'.repeat(size)} d.`},
+    {name: 'many early openers with no closer', make: (size: number) => `${'` [[ ]( '.repeat(30)}${'x'.repeat(size)}`},
+    {name: 'many lines under an early opener', make: (size: number) => `a \`b. ${'ab\n'.repeat(Math.ceil(size / 3))}`},
   ])('openingSentence: $name', ({make}) => {
     expect(growthRatio(make, SMALL, sentence)).toBeLessThan(CEILING)
   })

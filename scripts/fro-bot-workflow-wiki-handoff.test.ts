@@ -43,9 +43,10 @@ const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_solutions_search'] as cons
 const DAILY_PASS_JOBS = ['fro-bot-remediate', 'fro-bot-observe'] as const
 const OPENING_SENTENCE = 'The `knowledge` tools search the wiki and the documented solutions.'
 const INDEX_GUIDANCE =
-  'The wiki index above lists the pages the wiki holds: each line gives the path, title and type of a page, and its opening sentence when it has one. Read a page from disk, or find one with `knowledge_wiki_search`.'
+  "When the wiki index above is available, each line gives a page's path, title and type, and its opening sentence when it has one, and the first line says how many pages it lists out of how many the wiki holds. Read a page from disk, or find one with `knowledge_wiki_search`."
+const READ_OR_SEARCH_SENTENCE = 'Read a page from disk, or find one with `knowledge_wiki_search`.'
 const OLDER_CHECKOUT_SENTENCE =
-  'The index reflects the wiki on `data`. The checkout may hold an older copy of a listed page, or lack it.'
+  'The index reflects the wiki on `data`. In this job both reading a page from disk and `knowledge_wiki_search` use the checkout, which may hold an older copy of a listed page or lack it; a miss there does not mean the page is absent from the wiki.'
 const NO_WIKI_CONTEXT_SENTENCE = 'No wiki context is provided for this run.'
 
 /** Wording the old block used to keep runs on the baseline; no knowledge block may carry any of it. */
@@ -186,6 +187,19 @@ describe('fro-bot.yaml agent prompts', () => {
       )
       if (!isDailyPass) {
         expect(block).not.toMatch(/\bindex\b/iu)
+      }
+    })
+
+    it('does not claim the index is there or complete, and keeps the read-or-search instruction unconditional', () => {
+      const block = flat(expansionBlock(wiring.prompt))
+      const isDailyPass = (DAILY_PASS_JOBS as readonly string[]).includes(wiring.jobKey)
+
+      expect(block, `job ${wiring.jobKey}`).not.toMatch(/lists the pages the wiki holds/iu)
+      if (isDailyPass) {
+        expect(block).toContain('When the wiki index above is available,')
+        expect(block.split(/(?<=\.)\s+/u)).toContain(READ_OR_SEARCH_SENTENCE)
+      } else {
+        expect(block).not.toContain(READ_OR_SEARCH_SENTENCE)
       }
     })
 

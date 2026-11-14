@@ -1074,11 +1074,13 @@ jobs:
             <wiki_context_expansion>
             The `knowledge` tools search the wiki and the documented solutions.
 
-            The wiki index above lists the pages the wiki holds: each line gives the path, title
-            and type of a page, and its opening sentence when it has one. Read a page from disk,
-            or find one with `knowledge_wiki_search`.
-            The index reflects the wiki on `data`. The checkout may hold an older copy of a listed
-            page, or lack it.
+            When the wiki index above is available, each line gives a page's path, title and
+            type, and its opening sentence when it has one, and the first line says how many
+            pages it lists out of how many the wiki holds. Read a page from disk, or find one
+            with `knowledge_wiki_search`.
+            The index reflects the wiki on `data`. In this job both reading a page from disk and
+            `knowledge_wiki_search` use the checkout, which may hold an older copy of a listed
+            page or lack it; a miss there does not mean the page is absent from the wiki.
 
             When this run reviews changed code or starts a fix, first search the documented
             solutions with `knowledge_solutions_search`, using a query drawn from the area being
@@ -1282,9 +1284,10 @@ jobs:
             <wiki_context_expansion>
             The `knowledge` tools search the wiki and the documented solutions.
 
-            The wiki index above lists the pages the wiki holds: each line gives the path, title
-            and type of a page, and its opening sentence when it has one. Read a page from disk,
-            or find one with `knowledge_wiki_search`.
+            When the wiki index above is available, each line gives a page's path, title and
+            type, and its opening sentence when it has one, and the first line says how many
+            pages it lists out of how many the wiki holds. Read a page from disk, or find one
+            with `knowledge_wiki_search`.
 
             When this run reviews changed code or starts a fix, first search the documented
             solutions with `knowledge_solutions_search`, using a query drawn from the area being

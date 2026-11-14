@@ -113,7 +113,7 @@ describe('wrapped and unwrapped wiki index', () => {
   it('writes the status line to stdout and nothing to the summary when no page is bad', async () => {
     const {plain, summary} = await runBoth(GOOD_PAGES)
 
-    expect(plain.stdout).toMatch(/^wiki-index: listed=2 held=2 sentences=kept bytes=\d+\n$/u)
+    expect(plain.stdout).toMatch(/^wiki-index: listed=2 held=2 skipped=0 sentences=kept bytes=\d+\n$/u)
     expect(plain.stderr).toBe('')
     expect(plain.githubOutput).toMatch(
       /^index<<<delimiter>\nWiki index: 2 of 2 pages listed\.\n[\s\S]*\n<delimiter>\n$/u,
@@ -123,6 +123,8 @@ describe('wrapped and unwrapped wiki index', () => {
 
   it('lifts one skipped page into the summary: its path and the fixed reason', async () => {
     const {plain, summary} = await runBoth({...GOOD_PAGES, 'knowledge/wiki/topics/bad.md': UNCLOSED_PAGE})
+
+    expect(plain.stdout).toMatch(/^wiki-index: listed=2 held=3 skipped=1 sentences=kept bytes=\d+\n$/u)
 
     expect(plain.stderr).toBe(
       'wiki-index:warn:page-skipped path="knowledge/wiki/topics/bad.md" reason=unclosed-frontmatter\n',
