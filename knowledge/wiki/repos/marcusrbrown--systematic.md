@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-11-13
+updated: 2026-11-14
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: b4010b3b9edc0af0831c9a19b2a26e56e4891d88
+    accessed: 2026-11-14
   - url: https://github.com/marcusrbrown/systematic
     sha: 39e66b30214722c739e6f6b0ec17beef107bdec8
     accessed: 2026-11-13
@@ -90,6 +93,36 @@ node_id: R_kgDORAJegA
 Compound-engineering workflow system for AI coding harnesses. Published to npm as `@fro.bot/systematic`. Adapted from the [Compound Engineering Plugin (CEP)](https://github.com/EveryInc/compound-engineering-plugin) for Claude Code, now evolving independently.
 
 **As of v3 this is no longer "an OpenCode plugin."** It is a single content source with three shipped harness adapters (OpenCode, Pi, Claude Code) and three documented portability targets. Everything below the 2026-09-05 section that says "OpenCode plugin" is v2-era framing retained for history.
+
+## 2026-11-14 — a hung agent step still leaves a posted report (oversight note)
+
+Observed from the daily oversight pass, not a full survey. At `b4010b3b`, the
+`run` job of `.github/workflows/connect.yaml` keeps its 50-minute job timeout
+as a backstop but gives the agent step its own, shorter bound:
+`continue-on-error: true` plus a step `timeout-minutes` read from a repository
+variable with a fallback of 40 (#1393). The `prepare` job rejects a variable
+that is not a whole number of minutes below the job limit, so the variable
+cannot push the step past the backstop. The reasoning, recorded in the repo's
+own solution doc for 2026-11-13: cancelling or timing out the *job* skips
+every later step, so `render` and `post` never run and nothing is posted; a
+*step* that times out fails on its own and the next step still reads the run
+record and hands it on. The doc notes that actionlint rejects the bare
+`vars.X || 40` form in a numeric field, and that `fromJSON(vars.X || '40')`
+passes.
+
+The same change narrows the report lookup to one author login,
+`github-actions[bot]`, because the post job writes with the job token. The doc
+records that the REST API reports that author as `github-actions[bot]` while
+`gh issue list --json author` shows `app/github-actions` for the same issue:
+match on the form the lookup actually reads. #1396 then moved the agent step
+of both `fro-bot.yaml` and `connect.yaml` into one local composite action
+(`.github/actions/fro-bot-agent/action.yml`), so the two callers cannot drift
+apart in how they configure the agent.
+
+For [[github-actions-ci]]: the general rule is to bound a long agent step below
+its job whenever a later step in the same job must run to deliver the result.
+These are workflow-file and repository-doc facts; a real timeout firing was not
+observed.
 
 ## 2026-11-13 — scheduled ce:connect splits the agent away from the write (oversight note)
 

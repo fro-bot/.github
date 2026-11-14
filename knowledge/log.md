@@ -10576,3 +10576,23 @@ Run: https://github.com/fro-bot/.github/actions/runs/43431596429
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-11-14 06:30] manual-edit | repo:fro-bot/agent, repo:marcusrbrown/systematic
+
+Daily oversight pass (categories 5–8). Added a dated section to the fro-bot/agent
+page: at v0.141.0 (#2190) `isolate-agent` keeps provider keys in a runner-owned
+proxy outside the sandbox, revising the 2026-11-13 note that the key stayed
+readable; the earlier note is kept. Added a dated section to the
+marcusrbrown/systematic page: the connect workflow bounds its agent step below
+the job timeout with `continue-on-error` so a hung run still reads its record
+and posts (#1393), matches its own reports by the REST author login, and shares
+one composite agent step between its two workflows (#1396). Additive only.
+
+Sources: https://github.com/fro-bot/agent/pull/2190, https://github.com/fro-bot/agent/releases/tag/v0.141.0, https://github.com/marcusrbrown/systematic/tree/b4010b3b9edc0af0831c9a19b2a26e56e4891d88
+Run: https://github.com/fro-bot/.github/actions/runs/43562899904
+
+## [2026-11-14 06:01] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@4fedcbbc99e3a8d1c2442b927299554542808a16
