@@ -195,7 +195,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 - Type check, lint and tests pass. The mutation gate runs and `knowledge-mcp.ts` stays at 100%.
 
-- [ ] **Unit 2: Add the index builder**
+- [x] **Unit 2: Add the index builder**
 
 **Goal:** A module and command that build the index from a wiki tree and report one status line. Not yet called by a workflow.
 
@@ -260,6 +260,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - Type check, lint and tests pass. The mutation gate runs, because a command module was added.
 - `packages/wiki-ops` exports resolve, `scripts/package-layout.test.ts` passes, and the new modules load under Node's strip-only mode as the `Test Scripts Load` job requires.
 - One manual run against a checkout of the wiki at a named `data` commit: record the commit, the status line and the number of pages with a sentence in this plan. It is not a test, because `data` moves.
+- Recorded: `data` at `07793befb79c72f2dae9c5e71e75f9b2193dfbd3`, status line `wiki-index: listed=48 held=48 sentences=kept bytes=7374`, 38 of 48 pages with a sentence.
 
 - [ ] **Unit 3: Wire the workflow and delete the query**
 

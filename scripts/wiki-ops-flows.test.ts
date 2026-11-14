@@ -10,6 +10,7 @@
  * each of those, and the usage code of every CLI on the runner.
  */
 
+import {Buffer} from 'node:buffer'
 import {execFileSync} from 'node:child_process'
 import {chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
@@ -500,6 +501,62 @@ describe('wiki-query (bun; fro-bot.yaml:592)', () => {
   })
 })
 
+describe('wiki-index (bun; fro-bot.yaml, the two daily-pass jobs)', () => {
+  const COUNT_LINE = 'Wiki index: 2 of 2 pages listed.'
+  const LINES = [
+    'knowledge/wiki/repos/acme--widgets.md | acme/widgets | repo | Widgets has a build system and links [[polyglot-monorepo]].',
+    'knowledge/wiki/topics/polyglot-monorepo.md | Polyglot Monorepo | topic | Monorepo patterns for a shared build.',
+  ]
+  const INDEX_TEXT = [COUNT_LINE, ...LINES].join('\n')
+
+  it('prints one status line and writes the index output, which parses back to the same text', async () => {
+    const result = await run('wiki-index', {cwd: checkout(WIKI)})
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(result.stdout).toBe(`wiki-index: listed=2 held=2 sentences=kept bytes=${Buffer.byteLength(INDEX_TEXT)}\n`)
+    expect(parseOutputs(result.githubOutput)).toEqual({index: INDEX_TEXT})
+  })
+
+  it('skips a malformed page and lists the rest: one warning with its path and a fixed reason, exit 0', async () => {
+    const cwd = checkout({...WIKI, 'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n'})
+    const result = await run('wiki-index', {cwd})
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe(
+      'wiki-index:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\n',
+    )
+    expect(result.stdout).toMatch(/^wiki-index: listed=2 held=3 sentences=kept bytes=\d+\n$/u)
+    expect(parseOutputs(result.githubOutput).index).toBe(['Wiki index: 2 of 3 pages listed.', ...LINES].join('\n'))
+  })
+
+  it.each([
+    ['a checkout with no wiki', {'knowledge/index.md': INDEX}, 'wiki-index:warn:index-unavailable\n'],
+    [
+      'a wiki where no page is readable',
+      {'knowledge/index.md': INDEX, 'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n'},
+      'wiki-index:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\nwiki-index:warn:index-unavailable\n',
+    ],
+  ])('for %s: an empty index output, the unavailable line, a warning and exit 0', async (_name, files, stderr) => {
+    const result = await run('wiki-index', {cwd: checkout(files)})
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toBe('wiki-index: unavailable\n')
+    expect(result.stderr).toBe(stderr)
+    expect(parseOutputs(result.githubOutput)).toEqual({index: ''})
+  })
+
+  it('works without GITHUB_OUTPUT', async () => {
+    const result = await run('wiki-index', {cwd: checkout(WIKI), githubOutput: 'unset'})
+    expect(result.exitCode).toBe(0)
+    expect(result.githubOutput).toBe('')
+    expect(result.stdout).toMatch(/^wiki-index: listed=2 /u)
+  })
+
+  it.each(USAGE_ARGV)('argv %s is a usage error that indexes nothing', async arg => {
+    const result = await run('wiki-index', {argv: [arg], cwd: checkout(WIKI)})
+    expect(result).toMatchObject({exitCode: 1, stdout: '', githubOutput: ''})
+    expect(result.stderr).not.toBe('')
+  })
+})
+
 describe('solutions-query (bun; fro-bot.yaml:614)', () => {
   const EVENT = {
     SOLUTIONS_QUERY_EVENT_NAME: 'issues',
@@ -958,6 +1015,7 @@ describe('the shims run nothing on import', () => {
     'wiki-handoff-build',
     'wiki-handoff-apply',
     'wiki-query',
+    'wiki-index',
     'solutions-query',
     'wiki-context-expand',
     'correction-lifecycle',

@@ -513,6 +513,14 @@
       "reason": "The goke entrypoint of wiki-query: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and runs no query. Pinned by packages/wiki-ops/src/wiki-query-cli.test.ts (the config, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
     },
     {
+      "path": "packages/wiki-ops/src/wiki-index.ts",
+      "reason": "The wiki index for the daily passes: it reads the four wiki directories through the shared page parser, writes one line per page (path, title, type, opening sentence) with every field on one line, finds the opening sentence by one linear scan, fits the whole value to 12 KiB by dropping sentences and then lines, appends the `index` output to `$GITHUB_OUTPUT`, prints one status line, warns once per skipped page by encoded path and a fixed reason, and fails soft to an empty index and an unavailable status line. Pinned by packages/wiki-ops/src/wiki-index.test.ts (the sentence rule, the one-line fields, the order, the size rule and the loader outcomes), by packages/wiki-ops/src/wiki-index-route.test.ts (the run behind the stderr router), by packages/wiki-ops/src/regex-scaling.test.ts (linear growth) and by scripts/wiki-ops-flows.test.ts (the real shim). It writes only caller-supplied paths and has no rejection path that gates a write, so it is not in the mutation set."
+    },
+    {
+      "path": "packages/wiki-ops/src/wiki-index-cli.ts",
+      "reason": "The goke entrypoint of wiki-index: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and runs no index. Pinned by packages/wiki-ops/src/wiki-index-cli.test.ts (the config, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
+    },
+    {
       "path": "packages/wiki-ops/src/solutions-query.ts",
       "reason": "The baseline docs/solutions retrieval: the loader that skips a malformed or unclosed doc with a closed-vocabulary stderr line (the block comes from the shared splitter in frontmatter-block.ts, mutated at 100%), the fail-closed private-name scan, the scorer, the staleness note and the byte budget. Best-effort by design: any error becomes an empty result on stdout and exit 0. Pinned by packages/wiki-ops/src/solutions-query.test.ts, including the privacy exclusion, the malformed and unclosed frontmatter skips and a seeded differential against the regex it replaced, and by scripts/wiki-ops-flows.test.ts. It is not in the mutation set: it only ranks context for a prompt and gates no write."
     },
@@ -559,6 +567,10 @@
     {
       "path": "scripts/wiki-query.ts",
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-query-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-query.ts, pinned by packages/wiki-ops/src/wiki-query.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
+    },
+    {
+      "path": "scripts/wiki-index.ts",
+      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-index-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-index.ts, pinned by packages/wiki-ops/src/wiki-index.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     },
     {
       "path": "scripts/knowledge-mcp.ts",

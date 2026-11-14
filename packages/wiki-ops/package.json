@@ -30,6 +30,8 @@
     "./wiki-handoff-build": "./src/wiki-handoff-build.ts",
     "./wiki-handoff-build-cli": "./src/wiki-handoff-build-cli.ts",
     "./wiki-handoff-core": "./src/wiki-handoff-core.ts",
+    "./wiki-index": "./src/wiki-index.ts",
+    "./wiki-index-cli": "./src/wiki-index-cli.ts",
     "./wiki-lint-issues": "./src/wiki-lint-issues.ts",
     "./wiki-lint-issues-cli": "./src/wiki-lint-issues-cli.ts",
     "./wiki-query": "./src/wiki-query.ts",

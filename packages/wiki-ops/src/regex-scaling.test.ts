@@ -26,6 +26,7 @@ import {describe, expect, it} from 'vitest'
 import {assembleSolutionsContext} from './solutions-query.ts'
 import {validateQuery} from './wiki-context-expand.ts'
 import {parseGitStatusPorcelainZ} from './wiki-handoff-core.ts'
+import {openingSentence} from './wiki-index.ts'
 import {planIssueLifecycle} from './wiki-lint-issues.ts'
 import {assembleWikiContext} from './wiki-query.ts'
 
@@ -155,6 +156,30 @@ describe('the query token and whitespace patterns scale linearly', {timeout: SUI
     {name: 'alternating dash and x', make: repeat('-x')},
   ])('wiki-query: $name', ({make}) => {
     expect(growthRatio(make, SMALL, query)).toBeLessThan(CEILING)
+  })
+})
+
+describe('the opening-sentence scan scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
+  const sentence = (text: string) => {
+    openingSentence(`# T\n\n${text}`)
+  }
+  it.each([
+    {name: 'a long paragraph of periods', make: repeat('.')},
+    {name: 'periods each followed by a space and a capital', make: repeat('. A')},
+    {name: 'a long paragraph of periods and spaces', make: repeat('. ')},
+    {name: 'a long paragraph of opening brackets', make: repeat('[')},
+    {name: 'a long paragraph of double opening brackets', make: repeat('[[')},
+    {name: 'a long paragraph of link openers', make: repeat('](')},
+    {name: 'a long paragraph of backticks', make: repeat('`')},
+    {name: 'backtick runs of growing length', make: repeat('` `` ``` ')},
+    {name: 'a long run of one URL', make: (size: number) => `https://${'a'.repeat(size)}`},
+    {name: 'many URLs', make: repeat('https://a.b/c. ')},
+    {name: 'a long run of whitespace then text', make: (size: number) => `${' '.repeat(size)}x`},
+    {name: 'many short lines', make: repeat('ab\n')},
+    {name: 'many blank lines before the paragraph', make: (size: number) => `${'\n'.repeat(size)}x. Y`},
+    {name: 'a long paragraph of abbreviations', make: repeat('Dr. ')},
+  ])('openingSentence: $name', ({make}) => {
+    expect(growthRatio(make, SMALL, sentence)).toBeLessThan(CEILING)
   })
 })
 
