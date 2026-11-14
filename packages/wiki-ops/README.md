@@ -1,6 +1,6 @@
 # `@fro-bot/wiki-ops`
 
-The wiki handoff, change detection, context, query, repair, index and corrections tools of the Fro Bot control plane: the build and apply halves of the agent-to-trusted handoff, the survey change detector, the wiki and solutions queries that feed the agent prompt, `wiki-context-expand`, the integrity repair and lint-issue sync, the index rebuild, and the corrections lifecycle and context. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
+The wiki handoff, change detection, context, index, query, repair, lint-issue and corrections tools of the Fro Bot control plane: the build and apply halves of the agent-to-trusted handoff, the survey change detector, the wiki index and solutions query that feed the agent prompts, `wiki-context-expand`, the integrity repair and lint-issue sync, the index rebuild, and the corrections lifecycle and context. The package is private (`"private": true`), is never published, and exports `.ts` source with no build step, so Bun, Node strip-only loading, `tsc` and Vitest all load it as written.
 
 It depends on `@fro-bot/core` (guards, env, output, JSON lines, retry, the Octokit client factory and the goke runner), `@fro-bot/privacy` (the wiki-presence gate that `wiki-repair` runs before it commits), `@fro.bot/wiki-write-core` (the `wiki-ingest`, `wiki-lint`, `wiki-slug`, `wiki-utils`, `corrections` and `schemas` subpaths), `@octokit/rest` (a type), `yaml`, and for the MCP server `goke`, `@goke/mcp` and `zod`. Tests also import `@fro-bot/test-kit` and `@modelcontextprotocol/sdk` (a dev dependency, the test client).
 
@@ -15,12 +15,12 @@ Nothing here holds a credential of its own. `wiki-handoff-build` runs in the unt
 | `@fro-bot/wiki-ops/wiki-handoff-build`, `-cli` | `runWikiHandoffBuild`; `wikiHandoffBuildCli`, `main` | Writes `manifest.json` and `files/`, appends `changed=` to `$GITHUB_OUTPUT`, prints `{"changed":n,"deleted":n}`. |
 | `@fro-bot/wiki-ops/wiki-handoff-apply`, `-cli` | `runWikiHandoffApply`, `formatWikiHandoffApplyError`; `wikiHandoffApplyCli`, `main` | Validates, then applies into the workspace. Stdout `{applied,deleted,skipped}`; stderr `::error::wiki-handoff-apply: <message>`. |
 | `@fro-bot/wiki-ops/wiki-change-detect-core`, `wiki-change-detect`, `-cli` | `computeWikiChangeHash`, `captureWikiScopeSnapshot`, `hashWikiScopeSnapshot`; `runWikiChangeDetect`, `formatWikiChangeDetectError`; `wikiChangeDetectCli`, `main` | The survey change detector: `hash=` for `baseline`, `changed=` for `detect`. The core is mutated at full kills. |
-| `@fro-bot/wiki-ops/wiki-query`, `-cli` | `assembleWikiContext`, `writeSelectedPathsHandoff`, `runWikiQuery`; `wikiQueryCli`, `main` | The baseline wiki excerpt, selected paths and byte length, plus the owner-only handoff file. |
+| `@fro-bot/wiki-ops/wiki-index`, `-cli` | `openingSentence`, `assembleWikiIndex`, `runWikiIndex`, `MAX_INDEX_BYTES`; `wikiIndexCli`, `main` | The wiki index for the Remediate and Observe prompts: one line per page (path, title, type, opening sentence), at most 12 KiB, and one status line. |
 | `@fro-bot/wiki-ops/solutions-query`, `-cli` | `assembleSolutionsContext`, `runSolutionsQuery`; `solutionsQueryCli`, `main` | The `docs/solutions` excerpt. Falls back to an empty result on any error. |
-| `@fro-bot/wiki-ops/knowledge-mcp` | `serve`, `buildKnowledgeCli`, `knowledgeToolNames`, `defaultKnowledgeDeps` | The `knowledge` MCP server: `wiki_search`, `wiki_linked` and `solutions_search` over `@goke/mcp`, calling the `wiki-context-expand` and `solutions-query` code in-process. Mutated at full kills. See [MCP server](#mcp-server). |
+| `@fro-bot/wiki-ops/knowledge-mcp` | `serve`, `buildKnowledgeCli`, `knowledgeToolNames`, `defaultKnowledgeDeps` | The `knowledge` MCP server: `wiki_search` and `solutions_search` over `@goke/mcp`, calling the `wiki-context-expand` and `solutions-query` code in-process. Mutated at full kills. See [MCP server](#mcp-server). |
 | `@fro-bot/wiki-ops/solution-docs-paths` | `SOLUTION_SUBDIRS` | The canonical category list; a leaf. |
 | `@fro-bot/wiki-ops/wiki-context-safety` | `evaluateCandidateSafety`, `filterSafeCandidates` | The candidate safety filter. Mutated at full kills. |
-| `@fro-bot/wiki-ops/wiki-context-expand`, `-cli` | `runWikiContextExpandCli`, `assembleExpandedContext`, `validateQuery`, `parseHandoffContent`, ...; `main` | The `linked` and `query` expansion the `knowledge` server calls in-process; the CLI stays for operators and tests. Hand-parsed, because the query text may start with `-`. |
+| `@fro-bot/wiki-ops/wiki-context-expand`, `-cli` | `runWikiContextExpandCli`, `assembleExpandedContext`, `validateQuery`, ...; `main` | The `query` expansion the `knowledge` server calls in-process; the CLI stays for operators and tests. Hand-parsed, because the query text may start with `-`. |
 | `@fro-bot/wiki-ops/correction-lifecycle`, `-cli` | `main`, `buildHelp`, `findRepositoryRoot`, `CorrectionLifecycleCliError`, ...; `main` | Records, retires, reconfirms and supersedes entries in `knowledge/corrections.yaml`. Hand-parsed, because an option value such as `--text --help` must stay a value. |
 | `@fro-bot/wiki-ops/render-corrections-context`, `-cli` | `renderCorrectionsContext`, `formatCorrectionsContext`; `renderCorrectionsContextCli`, `main` | Writes `.github/corrections-context.json`. The `corrections:warning:` lines go to stderr before the error is rethrown. |
 | `@fro-bot/wiki-ops/route-stderr`, `-cli` | `parseRoute`, `buildSummary`, `runRouteStderr`, `RouteStderrUsageError`; `routeStderrCli`, `main` | The warning router: runs a command with no shell, replays its stderr unchanged and lifts routed prefixes into the job summary. `route-stderr` is mutated at full kills. |
@@ -38,12 +38,12 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `wiki-handoff-baseline` | `survey-repo.yaml`, `fro-bot.yaml`: no argv | `true` | Stdout `{"files":N}`; the baseline file is read later by the build. |
 | `wiki-handoff-build` | `survey-repo.yaml`, `fro-bot.yaml`: no argv | `true` | `changed=` and stdout `{"changed":n,"deleted":n}`. |
 | `wiki-handoff-apply` | `survey-repo.yaml`, `fro-bot.yaml`: no argv | `false` | Stdout `{applied,deleted,skipped}`; stderr `::error::wiki-handoff-apply: <message>`; exit 1. Writes the workspace tree. |
-| `wiki-query` | `fro-bot.yaml`: no argv | `true` | `excerpt`, `selected-paths`, `byte-length`; a 0600 handoff file; stderr `wiki-query:warn:page-skipped path="<path>" reason=<unclosed-frontmatter\|invalid-frontmatter>` once per page left out for unreadable frontmatter (path order; the path, percent-encoded outside `A-Za-z0-9._/-` so a file name cannot carry Markdown, HTML or a line break, and the fixed reason only, no page or parser text), `wiki-query:warn:handoff-write-failed` and `wiki-query:warn:baseline-query-failed` (the wiki cannot be read, or no page is readable); all exit 0. The three `Query wiki context` steps in `fro-bot.yaml` run it behind `route-stderr`, so `page-skipped` lines appear in the job summary under `Wiki pages skipped` and `baseline-query-failed` under `Wiki context unavailable`; `handoff-write-failed` stays in the step log only. The router replays stderr after the command exits and leaves stdout, `$GITHUB_OUTPUT`, the handoff file and the exit code as they were. |
+| `wiki-index` | `fro-bot.yaml` (Remediate and Observe): no argv | `true` | `index` on `$GITHUB_OUTPUT` (empty when unavailable) and one stdout status line: `wiki-index: listed=<L> held=<H> sentences=<kept\|dropped> bytes=<B>`, with `incomplete` after `sentences` when lines were cut, or `wiki-index: unavailable`. The `index` value is a count line (`Wiki index: <L> of <H> pages listed.`) and one `path \| title \| type \| opening sentence` line per page, ordered by type then path; the sentence is absent when the page has none. It stays within 12 KiB: the sentences go first, then lines from the end, and an incomplete index ends with a line that says so. The opening sentence is the first sentence of the paragraph under the page's `#` heading, omitted when it is over 200 characters. Stderr: `wiki-index:warn:page-skipped path="<path>" reason=<unclosed-frontmatter\|invalid-frontmatter>` once per page left out for unreadable frontmatter (path order; the path percent-encoded outside `A-Za-z0-9._/-`, and the fixed reason only), and `wiki-index:warn:index-unavailable` when the wiki cannot be read or holds no readable page; every case exits 0. `knowledge/index.md` is not read. The two `Build wiki index` steps in `fro-bot.yaml` run it behind `route-stderr`, so `page-skipped` lines appear in the job summary under `Wiki pages skipped` and `index-unavailable` under `Wiki index unavailable`. The router replays stderr after the command exits and leaves stdout, `$GITHUB_OUTPUT` and the exit code as they were. |
 | `solutions-query` | `fro-bot.yaml`: no argv | `true` | `excerpt`, `selected-paths`, `byte-length`; exit 0 on every error. |
-| `wiki-context-expand` | Operators and tests (the agent prompts use the `knowledge_*` tools): `linked`, `query "<text>"`, `--help`, `-h` | `true` | Stdout JSON. Bad arguments give a structured result and exit 1, not a throw. Hand-parsed. |
+| `wiki-context-expand` | Operators and tests (the agent prompts use the `knowledge_*` tools): `query "<text>"`, `--help`, `-h` | `true` | Stdout JSON. Bad arguments give a structured result and exit 1, not a throw. Hand-parsed. |
 | `correction-lifecycle` | The agent through bash: `record`, `retire`, `reconfirm`, `supersede`, `help`, per-command `--help` | `false` | JSON; the exit code is the lifecycle `main()`. Hand-parsed. |
 | `render-corrections-context` | `survey-repo.yaml`: wrapped by `route-stderr`, which reads its `corrections:warning:` lines | `false` | `corrections:warning:` lines on stderr, then the error and exit 1. Writes `.github/corrections-context.json`. |
-| `route-stderr` | `fro-bot.yaml` (both ingest steps and the three `Query wiki context` steps) and `survey-repo.yaml` (the wiki commit and the corrections load): router flags, then the wrapped command as the trailing positional, no `--`. `--route <prefix>=<heading>` (one or more), `--summary filtered\|all`, `--conflict-exit <code> --conflict-output <name>` | `false` | The wrapped command's exit code. Its stderr is replayed unchanged, as bytes. A job summary that cannot be written does not change the exit code: after the replay the router writes the fixed line `route-stderr: summary-write-failed` (no path, no error text) and goes on; only that append is caught. A summary section is written only when a line starts with a routed prefix: `filtered` writes the matching lines as bullets, `all` the heading and the whole stderr. `<name>=true` is appended to `$GITHUB_OUTPUT` on the conflict exit code only. A missing route or command, an unknown flag, a `--`, a half-declared conflict and any dash-led token after the command (the command takes no flags of its own; `main` checks the raw argv before the runner reads it) are usage errors (exit 1) and the command never starts. `--help` prints one complete example and the syntax. A command that cannot start exits 127 (not found) or 126 with a fixed line naming only the error code. No line it writes names the command, its arguments or the environment. |
+| `route-stderr` | `fro-bot.yaml` (both ingest steps and the two `Build wiki index` steps) and `survey-repo.yaml` (the wiki commit and the corrections load): router flags, then the wrapped command as the trailing positional, no `--`. `--route <prefix>=<heading>` (one or more), `--summary filtered\|all`, `--conflict-exit <code> --conflict-output <name>` | `false` | The wrapped command's exit code. Its stderr is replayed unchanged, as bytes. A job summary that cannot be written does not change the exit code: after the replay the router writes the fixed line `route-stderr: summary-write-failed` (no path, no error text) and goes on; only that append is caught. A summary section is written only when a line starts with a routed prefix: `filtered` writes the matching lines as bullets, `all` the heading and the whole stderr. `<name>=true` is appended to `$GITHUB_OUTPUT` on the conflict exit code only. A missing route or command, an unknown flag, a `--`, a half-declared conflict and any dash-led token after the command (the command takes no flags of its own; `main` checks the raw argv before the runner reads it) are usage errors (exit 1) and the command never starts. `--help` prints one complete example and the syntax. A command that cannot start exits 127 (not found) or 126 with a fixed line naming only the error code. No line it writes names the command, its arguments or the environment. |
 | `wiki-repair` | `wiki-lint.yaml`: no argv | `false` | The result file read by the `if: always()` summary; exit 1 on an abort. Dry-run capable. |
 | `wiki-lint-issues` | `wiki-lint.yaml`: no argv, or the report path as the one optional positional | `false` | `opened`, `updated`, `reopened`, `closed`, `failed` and the summary table, then exit 1 on a failed issue call. |
 | `rebuild-wiki-index` | No workflow caller: no argv, or `--merge-logs <path> [path...]` | `false` | Stdout `rebuilt ...` or `merged ...`. |
@@ -57,14 +57,13 @@ Argv that matches nothing declared, `--help` included, is a usage error on every
 | Tool | Argument | Backed by | Errors |
 | --- | --- | --- | --- |
 | `wiki_search` | `query` (required) | `runWikiContextExpandCli` in query mode | `invalid-query`, `corpus-unavailable` |
-| `wiki_linked` | none | `runWikiContextExpandCli` in linked mode, with the handoff path from the server definition | `no-handoff`, `handoff-malformed`, `corpus-unavailable` |
 | `solutions_search` | `query` (required) | `searchSolutions` in `solutions-query` | `invalid-query`, `corpus-unavailable` |
 
 - The exposure is an allowlist (`knowledgeToolNames`), pinned by `knowledge-mcp.test.ts`, which also checks that no write-marked command, `resolve-private` or `enumerate-existing-leaks` is on it. `readOnly` alone is not the control: nothing enforces it.
 - A query is JSON, never argv, so `-foo bar` is text. Both searches validate it with `validateQuery`.
-- A handler never throws. It returns the JSON result, or `isError` with `{"error":"<code>"}` and one of five fixed codes (`no-handoff`, `handoff-malformed`, `invalid-query`, `corpus-unavailable`, `unexpected`). A missing corpus is `corpus-unavailable`, never an empty match. No query, path or error message leaves the server.
+- A handler never throws. It returns the JSON result, or `isError` with `{"error":"<code>"}` and one of three fixed codes (`invalid-query`, `corpus-unavailable`, `unexpected`). A missing corpus is `corpus-unavailable`, never an empty match. No query, path or error message leaves the server.
 - Stdout is JSON-RPC only. Stderr is `knowledge-mcp: ready`, `knowledge-mcp: error:startup` and one `knowledge-mcp: error:<code>` line per error result.
-- There is no path argument. The handoff path is the `WIKI_CONTEXT_HANDOFF_PATH` the server definition sets, and the corpus is read relative to the checkout root.
+- There is no path argument. The corpus is read relative to the checkout root.
 - When `KNOWLEDGE_MCP_CALL_LOG` names an absolute path (the composite sets one under `RUNNER_TEMP`, per job and attempt), the server creates that file empty once its transport is attached (before the client initializes, so it proves the server started, not that the agent saw the tools) and appends one `<tool> <code>` line per call its handlers complete, `ok` or a fixed error code and never an argument, query, path or result, and a failed create or append changes nothing. A request the MCP adapter rejects before a handler runs (for example a missing or mistyped argument) is not logged, so the counts are best-effort usage, not an audit trail. The `knowledge-mcp-summary` composite turns that file into a job-summary table and prints the same text to the step log (the job summary is not readable with `gh run view --log` or the REST API), with one of three outcomes: the table when the file holds calls, `Knowledge tools: server started, no calls.` when it exists and holds none, and `Knowledge tools: no call log found (the server did not start, or the run had no log path).` when it does not exist, because OpenCode keeps a local server's stderr in its debug log only.
 - Apart from that log the server writes no file, and it needs no credential. The shim removes `OPENCODE_PASSWORD` and `OPENCODE_CONFIG_CONTENT` from the process before it imports anything. That narrows what the server's own code can read; it is not an isolation boundary.
 - The server owns a private goke instance. It cannot sit on `@fro-bot/core/cli`, whose runner builds its instance per call and replaces command actions.
@@ -78,7 +77,7 @@ C4Component
   Container_Boundary(wikiops, "@fro-bot/wiki-ops") {
     Component(correction_lifecycle, "correction-lifecycle", "TypeScript", "record, retire, reconfirm and supersede in the corrections sidecar; hand-parsed")
     Component(correction_lifecycle_cli, "correction-lifecycle-cli", "TypeScript", "Process wiring: exit code from the lifecycle main; hand-parsed")
-    Component(knowledge_mcp, "knowledge-mcp", "TypeScript", "The knowledge MCP server: wiki_search, wiki_linked, solutions_search; allowlisted; never throws; mutated at full kills")
+    Component(knowledge_mcp, "knowledge-mcp", "TypeScript", "The knowledge MCP server: wiki_search, solutions_search; allowlisted; never throws; mutated at full kills")
     Component(rebuild_wiki_index, "rebuild-wiki-index", "TypeScript", "Rebuild index.md from disk, or merge log.md files")
     Component(rebuild_wiki_index_cli, "rebuild-wiki-index-cli", "TypeScript", "goke CLI; writing")
     Component(render_corrections_context, "render-corrections-context", "TypeScript", "corrections-context.json for one page; warns before it rethrows")
@@ -91,7 +90,7 @@ C4Component
     Component(wiki_change_detect, "wiki-change-detect", "TypeScript", "baseline and detect modes; throwing output writer")
     Component(wiki_change_detect_cli, "wiki-change-detect-cli", "TypeScript", "goke CLI; optional mode positional")
     Component(wiki_change_detect_core, "wiki-change-detect-core", "TypeScript", "Content hash of the eligible wiki scope; fails closed; mutated at full kills")
-    Component(wiki_context_expand, "wiki-context-expand", "TypeScript", "linked and query expansion for the agent; hand-parsed; free text may start with a dash")
+    Component(wiki_context_expand, "wiki-context-expand", "TypeScript", "query expansion for the agent; hand-parsed; free text may start with a dash")
     Component(wiki_context_expand_cli, "wiki-context-expand-cli", "TypeScript", "Process wiring: Node readers and exit code; hand-parsed")
     Component(wiki_context_safety, "wiki-context-safety", "TypeScript", "Candidate safety filter; mutated at full kills")
     Component(wiki_handoff_apply, "wiki-handoff-apply", "TypeScript", "Trusted apply step")
@@ -103,8 +102,8 @@ C4Component
     Component(wiki_handoff_core, "wiki-handoff-core", "TypeScript", "The handoff contract: policies, build, validating apply")
     Component(wiki_lint_issues, "wiki-lint-issues", "TypeScript", "Lint findings to issues; typed exit, counters before the exit code")
     Component(wiki_lint_issues_cli, "wiki-lint-issues-cli", "TypeScript", "goke CLI; writing; optional report-path positional")
-    Component(wiki_query, "wiki-query", "TypeScript", "Baseline wiki context query for the agent prompt")
-    Component(wiki_query_cli, "wiki-query-cli", "TypeScript", "goke CLI; read-only")
+    Component(wiki_index, "wiki-index", "TypeScript", "One line per wiki page for the daily-pass prompts, within 12 KiB")
+    Component(wiki_index_cli, "wiki-index-cli", "TypeScript", "goke CLI; read-only")
     Component(wiki_repair, "wiki-repair", "TypeScript", "Wiki integrity repair, one commit to data")
     Component(wiki_repair_cli, "wiki-repair-cli", "TypeScript", "goke CLI; writing")
   }
@@ -128,7 +127,7 @@ C4Component
   Rel(entrypoints, wiki_handoff_baseline_cli, "main")
   Rel(entrypoints, wiki_handoff_build_cli, "main")
   Rel(entrypoints, wiki_lint_issues_cli, "main")
-  Rel(entrypoints, wiki_query_cli, "main")
+  Rel(entrypoints, wiki_index_cli, "main")
   Rel(entrypoints, wiki_repair_cli, "main")
   Rel(correction_lifecycle_cli, correction_lifecycle, "imports")
   Rel(knowledge_mcp, solutions_query, "imports")
@@ -151,7 +150,7 @@ C4Component
   Rel(wiki_handoff_build_cli, wiki_handoff_build, "imports")
   Rel(wiki_handoff_core, solution_docs_paths, "imports")
   Rel(wiki_lint_issues_cli, wiki_lint_issues, "imports")
-  Rel(wiki_query_cli, wiki_query, "imports")
+  Rel(wiki_index_cli, wiki_index, "imports")
   Rel(wiki_repair_cli, wiki_repair, "imports")
   Rel(rebuild_wiki_index_cli, core, "runs on")
   Rel(render_corrections_context_cli, core, "runs on")
@@ -162,7 +161,7 @@ C4Component
   Rel(wiki_handoff_baseline_cli, core, "runs on")
   Rel(wiki_handoff_build_cli, core, "runs on")
   Rel(wiki_lint_issues_cli, core, "runs on")
-  Rel(wiki_query_cli, core, "runs on")
+  Rel(wiki_index_cli, core, "runs on")
   Rel(wiki_repair_cli, core, "runs on")
   Rel(correction_lifecycle, core, "imports")
   Rel(correction_lifecycle, wwc, "imports")
@@ -179,8 +178,8 @@ C4Component
   Rel(wiki_handoff_core, wwc, "imports")
   Rel(wiki_lint_issues, core, "imports")
   Rel(wiki_lint_issues, wwc, "imports")
-  Rel(wiki_query, core, "imports")
-  Rel(wiki_query, wwc, "imports")
+  Rel(wiki_index, core, "imports")
+  Rel(wiki_index, wwc, "imports")
   Rel(wiki_repair, core, "imports")
   Rel(wiki_repair, privacy, "imports")
   Rel(wiki_repair, wwc, "imports")
@@ -198,7 +197,7 @@ C4Component
   UpdateRelStyle(entrypoints, wiki_handoff_baseline_cli, $offsetX="3", $offsetY="-41")
   UpdateRelStyle(entrypoints, wiki_handoff_build_cli, $offsetX="-17", $offsetY="45")
   UpdateRelStyle(entrypoints, wiki_lint_issues_cli, $offsetX="12", $offsetY="-45")
-  UpdateRelStyle(entrypoints, wiki_query_cli, $offsetX="27", $offsetY="-33")
+  UpdateRelStyle(entrypoints, wiki_index_cli, $offsetX="27", $offsetY="-33")
   UpdateRelStyle(entrypoints, wiki_repair_cli, $offsetX="74", $offsetY="-5")
   UpdateRelStyle(correction_lifecycle_cli, correction_lifecycle, $offsetX="17", $offsetY="3")
   UpdateRelStyle(rebuild_wiki_index_cli, rebuild_wiki_index, $offsetX="-8", $offsetY="36")
@@ -218,7 +217,7 @@ C4Component
   UpdateRelStyle(wiki_handoff_build_cli, wiki_handoff_build, $offsetX="-19", $offsetY="-10")
   UpdateRelStyle(wiki_handoff_core, solution_docs_paths, $offsetX="60", $offsetY="7")
   UpdateRelStyle(wiki_lint_issues_cli, wiki_lint_issues, $offsetX="31", $offsetY="10")
-  UpdateRelStyle(wiki_query_cli, wiki_query, $offsetX="-64", $offsetY="33")
+  UpdateRelStyle(wiki_index_cli, wiki_index, $offsetX="-64", $offsetY="33")
   UpdateRelStyle(wiki_repair_cli, wiki_repair, $offsetX="69", $offsetY="-9")
   UpdateRelStyle(rebuild_wiki_index_cli, core, $offsetX="48", $offsetY="-30")
   UpdateRelStyle(render_corrections_context_cli, core, $offsetX="-23", $offsetY="2")
@@ -229,7 +228,7 @@ C4Component
   UpdateRelStyle(wiki_handoff_baseline_cli, core, $offsetX="-62", $offsetY="18")
   UpdateRelStyle(wiki_handoff_build_cli, core, $offsetX="-60", $offsetY="-31")
   UpdateRelStyle(wiki_lint_issues_cli, core, $offsetX="18", $offsetY="22")
-  UpdateRelStyle(wiki_query_cli, core, $offsetX="15", $offsetY="26")
+  UpdateRelStyle(wiki_index_cli, core, $offsetX="15", $offsetY="26")
   UpdateRelStyle(wiki_repair_cli, core, $offsetX="-42", $offsetY="-36")
   UpdateRelStyle(correction_lifecycle, core, $offsetX="-56", $offsetY="6")
   UpdateRelStyle(correction_lifecycle, wwc, $offsetX="-38", $offsetY="-26")
@@ -246,8 +245,8 @@ C4Component
   UpdateRelStyle(wiki_handoff_core, wwc, $offsetX="-35", $offsetY="11")
   UpdateRelStyle(wiki_lint_issues, core, $offsetX="8", $offsetY="-9")
   UpdateRelStyle(wiki_lint_issues, wwc, $offsetX="31", $offsetY="-22")
-  UpdateRelStyle(wiki_query, core, $offsetX="-79", $offsetY="19")
-  UpdateRelStyle(wiki_query, wwc, $offsetX="-69", $offsetY="-8")
+  UpdateRelStyle(wiki_index, core, $offsetX="-79", $offsetY="19")
+  UpdateRelStyle(wiki_index, wwc, $offsetX="-69", $offsetY="-8")
   UpdateRelStyle(wiki_repair, core, $offsetX="1", $offsetY="-19")
   UpdateRelStyle(wiki_repair, privacy, $offsetX="-60", $offsetY="-17")
   UpdateRelStyle(wiki_repair, wwc, $offsetX="34", $offsetY="1")

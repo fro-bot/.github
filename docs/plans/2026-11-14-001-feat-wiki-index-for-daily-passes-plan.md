@@ -313,7 +313,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - The link check passes with the module deleted.
 - A search of code, workflows, tests and configuration finds no reference to the deleted files. Prose in current documents is corrected in Unit 4. `docs/plans/`, `docs/brainstorms/`, `docs/solutions/` and `docs/archive/` are history and keep theirs.
 
-- [ ] **Unit 4: Documentation**
+- [x] **Unit 4: Documentation**
 
 **Goal:** Current documentation describes the index, the two tools and the missing excerpt.
 

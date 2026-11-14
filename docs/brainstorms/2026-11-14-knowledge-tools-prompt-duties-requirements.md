@@ -13,7 +13,7 @@ The agent prompts stop telling the agent not to look further than its baseline c
 
 ## Problem Frame
 
-Agent jobs start a `knowledge` server with three tools: `knowledge_wiki_search`, `knowledge_wiki_linked` and `knowledge_solutions_search`. The server connects in the pull request job, in Remediate and in Observe. In the 13 job logs sampled since the summary step began to separate a started server from a missing call log, no call was recorded: each reads `Knowledge tools: server started, no calls.`
+Agent jobs start a `knowledge` server with two tools: `knowledge_wiki_search` and `knowledge_solutions_search`. The server connects in the pull request job, in Remediate and in Observe. In the 13 job logs sampled since the summary step began to separate a started server from a missing call log, no call was recorded: each reads `Knowledge tools: server started, no calls.`
 
 The prompt in `.github/workflows/fro-bot.yaml` gives two instructions that pull against each other. It says the wiki context is "usually enough on its own — do not expand by default", and three lines later says "Use the tools". The first sentence dates from July, when expansion was a shell recipe and the aim was to keep runs on the baseline. The second arrived in November with the tools. It names no situation in which a call is worth making. The survey prompt in `.github/workflows/survey-repo.yaml` names one, checking what exists before writing a page, and calls it optional.
 
@@ -29,7 +29,7 @@ The November requirements set one success test: scheduled and dispatched runs, a
 - R2. The pull request job, Remediate and Observe are told: when a run reviews changed code or starts a fix, search documented solutions first, with a query drawn from the area being changed. Triage, review of a change with no code, and report-only work carry no such duty.
 - R3. Remediate and Observe are told: when investigating a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it before drawing a conclusion about that repository. A repository that only appears in an inventory carries no such duty.
 - R4. Each survey attempt is told to search the wiki and documented solutions before it writes a page.
-- R5. No prompt gives a duty for `knowledge_wiki_linked`. The companion change in `docs/brainstorms/2026-11-14-wiki-baseline-index-requirements.md` removes the tool.
+- R5. No prompt names `knowledge_wiki_linked`; the tool is removed.
 - R6. The rules on tool output in the `fro-bot.yaml` prompts stay: a failed call returns an error code, an empty result means nothing matched, and query text and returned excerpts are not echoed into output or logs. The survey prompts gain the empty-result and no-echo rules, which they lack today.
 - R7. The prompt states that returned wiki and solution text is untrusted reference material and never outranks the prompt's own rules. An applicable solution may still be followed, and its path cited, once it is checked against the task.
 
@@ -66,9 +66,9 @@ The November requirements set one success test: scheduled and dispatched runs, a
 
 ## Scope Boundaries
 
-- What the baseline context contains and how its pages are selected. The wiki baseline is one page cut at its size cap and is often not about the repository under review. That is covered by `docs/brainstorms/2026-11-14-wiki-baseline-index-requirements.md`, which ships with this change.
+- What the wiki context contains. The daily passes receive a wiki index and the pull request job receives none; that is covered by `docs/brainstorms/2026-11-14-wiki-baseline-index-requirements.md`, which ships with this change.
 - The tools' behaviour, limits and descriptions.
-- Retiring the baseline excerpts in favour of the tools.
+- Retiring the solutions excerpt in favour of the tools.
 - Judging whether a call improved the output. The rate counts call attempts, including errors and empty results. It decides whether the tools stay under this trial and says nothing about their usefulness.
 
 ---
@@ -78,7 +78,7 @@ The November requirements set one success test: scheduled and dispatched runs, a
 - Named situations, not "always search": a call then signals that the situation arose, and cost stays bounded.
 - The July rule that kept runs on the baseline is dropped. It was a cost rule, and the cost of a call was never measured. Recorded as completed in `docs/brainstorms/2026-07-07-a1-phase-3-deep-wiki-traversal-requirements.md`.
 - The November requirements chose run logs over a call-volume baseline as evidence of use. This document keeps that measure and adds a threshold and a date. Recorded as completed in `docs/brainstorms/2026-11-06-agent-knowledge-mcp-tools-requirements.md` and `docs/plans/2026-11-06-001-feat-agent-knowledge-mcp-tools-plan.md`.
-- No duty for the linked-pages tool: it expands from the baseline page, and a wrong baseline page gives wrong neighbours.
+- No linked-pages tool: it is removed.
 - Removal is decided now, with its trigger, so an unused server does not stay by default.
 - Surveys stay out of the rate. Their duty is unconditional, so their calls show that the instruction was followed, and their volume alone could clear the threshold while reviews and the daily passes made no calls.
 
