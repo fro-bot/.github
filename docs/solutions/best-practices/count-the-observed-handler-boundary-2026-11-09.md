@@ -39,7 +39,7 @@ shell source, and prints only lines matching its restricted tool/code format.
 
 The summary separates three outcomes ([#4219](https://github.com/fro-bot/.github/pull/4219)). A missing or
 unreadable log prints `Knowledge tools: no call log found (the server did not start, or the run had no log path).`
-A log with no matching line prints `Knowledge tools: server started, no calls.` Recorded calls print a table.
+A log with no matching line prints `Knowledge tools: server started, no calls.` Matching call records print a table.
 An empty log still does not prove that no request arrived: adapter rejections and failed appends stay outside
 the count. [A status line must not mean two things](a-status-line-must-not-mean-two-things-2026-11-14.md)
 covers why the three outcomes are three lines.
@@ -61,13 +61,11 @@ execution, especially when logging is optional or fail-soft.
 - A request missing the required query can be rejected by the adapter with no handler log line.
 - An unwritable log still leaves the tool's returned result unchanged.
 
-The PR's spawned-server test exercises a real request-to-log seam. Review accepted that evidence,
-but explicitly left live GitHub summary delivery unverified. A live run has since printed the step-log line:
-[run 43509825059](https://github.com/fro-bot/.github/actions/runs/43509825059) shows
-`Knowledge tools: server started, no calls.` (2026-11-13T21:22:19Z). Neither proves all requests are logged.
+The PR's spawned-server test exercises the request-to-log seam. It does not establish live job-summary
+delivery. A later run printed the step-log line: [run 43509825059](https://github.com/fro-bot/.github/actions/runs/43509825059)
+shows `Knowledge tools: server started, no calls.` (2026-11-13T21:22:19Z). Neither shows that every request is logged.
 
 ## Related
 
 - Source PR #4136: merge `3e69886432ac401cb39a924f1fe224d5d4bfa08d`.
-- [A status line must not mean two things](a-status-line-must-not-mean-two-things-2026-11-14.md): the three summary outcomes and the live line.
 - [Test the integration seam, not the endpoints](test-the-integration-seam-not-the-endpoints-2026-07-06.md) — `docs/solutions/best-practices/test-the-integration-seam-not-the-endpoints-2026-07-06.md`.

@@ -29,18 +29,18 @@ Tracker [fro-bot/.github#3512](https://github.com/fro-bot/.github/issues/3512) l
 
 ## Guidance
 
-1. **Open the test at the tag the release ships, through a permalink (`blob/<tag>/<path>#L<n>`), not at `main`.** Without it the line number names a different test after the next commit.
-2. **Split the requirement into clauses and mark each one asserted or not asserted by this test.** A name match covers the clause the name mentions. The unknown-reason line below has two clauses, and only a test that checks both closes it.
-3. **Read the setup, the fault and the assertions, then follow the production function the test drives.** A mock at the boundary proves the code behind it, not the boundary.
-4. **Write the proof level beside every link: unit, registry or run level; injected or live; read or executed.** `packages/gateway/src/execute/run.quarantine-cancel.test.ts:99-101` in `fro-bot/agent` at `v0.138.0` builds the record store with `makeRecordStore(failPhases)`, and line 126 installs fake timers, so a line that says "live quarantine cancel" keeps a live remainder.
-5. **Do not accept a shared word as a shared subject.** `packages/gateway/src/approvals/registry.test.ts:698` is named "closes a sibling card from its own echo" and sits in the describe block for a reject that upstream applies to every pending ask. It covers a reject cascade. The Always-grant siblings are covered by `run-grants.test.ts:91-156` and `coordinator.test.ts:692-734` in the same package.
+1. **Find the test at the deployed release tag and link the file and line at that tag (`blob/<tag>/<path>#L<n>`).** A link through `main` names different code after the next commit.
+2. **Split the requirement into clauses and mark each one asserted or not asserted by this test.** A name match identifies a candidate test; only its setup and assertions show which clauses it covers. The unknown-reason line below has two clauses, and only a test that checks both closes it.
+3. **Read the setup, the fault and the assertions, then follow the production function the test drives.** A mock shows how the code under test responds to the mock; it does not prove the real component behaves that way.
+4. **Beside each link, name the tested scope, whether the fault was injected or live, and whether the test was read or run.** `packages/gateway/src/execute/run.quarantine-cancel.test.ts:99-101` in `fro-bot/agent` at `v0.138.0` supplies the failure through a test store (`makeRecordStore(failPhases)`), so it does not observe a live persistence failure, and a line that says "live quarantine cancel" keeps a live remainder.
+5. **Check that the test exercises the same actor and behaviour as the requirement.** `packages/gateway/src/approvals/registry.test.ts:698` is named "closes a sibling card from its own echo" (a sibling card is another approval still pending in the same session) and sits in the describe block for a reject that upstream applies to every pending ask, so it covers a reject cascade. Tests for Always grants in the same package assert other things: `run-grants.test.ts:91-184` asserts resource and action matching, grant teardown and run isolation, and `coordinator.test.ts:692-796` asserts that nothing is auto-answered once a run starts ending, that one run's grant does not apply to another run, and that an ask arriving during an in-flight Always is not answered early and gets one reply. A line about Always grants is covered only for the clauses those assertions state.
 6. **Check that the cited range runs in the release's CI job.** A `skipIf` or an environment gate removes the case from the run that matters. In this repository `scripts/knowledge-mcp-summary-action.test.ts:146-147` skips the unreadable-file case as root.
-7. **Tick a line only when every clause is asserted at the level the line names. Otherwise reword the line to the remainder, add no line, drop no requirement and keep the proof links in a comment.** The 19 narrowed lines end with a pointer to the comment that holds the links, and each comment entry reads `Proven: … (level) (links). Still open: …`.
-8. **List each sub-requirement the old wording named and the new wording drops, and get a decision.** The reply flagged six such groups (the unreadable-live-run exclusion, the terminal SSE notification and four more) that were absent after the rewording.
+7. **Tick a line only when every clause is asserted at the level the line names; otherwise keep every unproven clause in the open line and keep the proof links beside it.** In the November 13 round the proof links sat in a comment, each entry read `Proven: … (level) (links). Still open: …`, and each of the 19 narrowed lines ended with a pointer to that comment.
+8. **Compare the reworded line with the original clause by clause before applying it; a shorter "still open" sentence drops whatever it does not repeat.** The narrowing wording named none of six groups of sub-requirements: the unreadable-live-run exclusion and the first-actor and one-notice races, the live-owner, CAS and recent-hour safeguards with the terminal SSE notification and bounded terminal-write retries, the latest-turn terminal confirmation and the unsaved-child-notice residual, no log disclosure for approval resources, the proxy half of provider headers and proxy, and the rule that preserve-and-recover evidence tells apart the cancel request, the actual session stop and safe checkout reuse. The tracker's reply flagged them as absent from the body, and [a later comment](https://github.com/fro-bot/.github/issues/3512#issuecomment-6868099789) asked for all six to be restored, unticked, in their original wording.
 
 ## Why This Matters
 
-A tick that credits more than the test asserts closes a gate that was never checked, and the remainder disappears from the tracker. Here 19 of 22 lines had a remainder under a matching name. An injected fault (rule 4), one clause of several (rule 2) and a mocked boundary (rule 3) each hide behind a green test and a correct title. A narrowed line keeps the open part visible and keeps the proof where a reader can audit it.
+A tick that credits more than the test asserts closes a gate that was never checked, and the remainder disappears from the tracker. Here 19 of 22 lines had a remainder under a matching name. An injected fault (rule 4), one clause of several (rule 2) and a mocked boundary (rule 3) each hide behind a green test and a correct title. A narrowed line keeps the open part visible and keeps the proof where a reader can audit it. A reworded line can also lose requirements that the original named (rule 8).
 
 ## When to Apply
 
@@ -51,24 +51,27 @@ A tick that credits more than the test asserts closes a gate that was never chec
 
 ## Examples
 
-A name that matches and a test that proves the other field, for the line "unknown waitReason values behave as absent detail":
+A name that matches one test and a test that asserts both clauses, for the line "unknown waitReason values behave as absent detail":
 
 ```text
+Line      unknown waitReason values behave as absent detail
+Clauses   (1) no reason label shows  (2) the frame is not discarded: the card still shows Running
 Name hit  agent v0.138.0 packages/gateway/src/operator-contract/run-status.test.ts:642
           "(edge) empty string '' maps to 'unknown'": asserts toOperatorFailureKind(''), a failure kind.
+          A different field, so not a candidate.
 Read      dashboard 2026.11.18 web/src/operator/wait-reason-label.test.ts:232-241
-          pushes a running frame with reason 'future-reason'; asserts the card text is "Running"
-          (:239) and that no label shows (:240): the reason is absent detail and the frame is applied.
-Verdict   covered. Ticked with the permalink at the tag.
+          stubs the stream fetch and pushes a running frame with reason 'future-reason'; asserts the
+          card text is "Running" (:239) and that no label shows (:240).
+Verdict   both clauses asserted. Ticked with the permalink at the tag.
 ```
 
 A line whose test injects the fault is narrowed, not ticked (comment 6862944679):
 
 ```text
-Line      live quarantine cancel with failed FAILED persistence
-Proven    a cancel on a quarantined run writes no CANCELLED, releases nothing and announces nothing
-          (injected store, unit level): run.quarantine-cancel.test.ts:133, :155 at v0.138.0
-Body now  the same on a live quarantined run, and quarantine starting during settlement; <proof comment link>
+Line        live quarantine cancel with failed FAILED persistence
+Proven      a cancel on a quarantined run writes no CANCELLED, releases nothing and announces nothing
+            (injected store, unit level): run.quarantine-cancel.test.ts:133, :155 at v0.138.0
+Still open  the same cancel on a live quarantined run, and quarantine that starts during settlement.
 ```
 
 ## Related
