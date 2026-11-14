@@ -110,7 +110,12 @@ Requirement IDs are the origin document's.
 - **Opening sentence by a single linear scan, in `wiki-ops`.** No regular expression per terminator, and no change to `wiki-write-core`. The rule is in Unit 2.
 - **A sentence over 200 characters is omitted, not cut.** R5 asks for a complete sentence.
 - **The index is data, the guidance is prompt.** Index lines go inside `<wiki_context>`. The sentences for R10–R12 go in `<wiki_context_expansion>`, outside the untrusted text.
-- **Unavailable is carried by an empty output.** The agent env reads the step's `index` output or a fixed note from the top-level `env:`. A step that failed outright gives the same note.
+- **Unavailable is carried by an empty output.** The agent env reads the step's `index` output or a fixed note from the top-level `env:`. The command exits 0 whenever it can write its output, as the query does today, so the step needs no `continue-on-error`. An output file that cannot be written fails the step and the job, as for any other step.
+- **Loader outcomes are fixed.** `held` is the number of `.md` files found in the wiki directories. A missing wiki root, a directory that cannot be listed, or zero files found makes the index unavailable. A file that cannot be read, or whose frontmatter is unreadable, counts in `held`, is skipped with a warning, and is not listed. A missing optional directory is not an error.
+- **Every field is one line.** The path uses the existing percent-encoding. In the title and the sentence, each control character and line break becomes a space, runs of spaces collapse, and `<`, `>` and the field separator are replaced. One page gives exactly one line.
+- **Title and type come from the shared page parser.** That is the frontmatter title, falling back to the slug, and the frontmatter type, falling back to the directory.
+- **The limit is UTF-8 bytes of the whole `index` value,** counting the count line, every separator and newline, and the incomplete marker.
+- **The summary action is not changed.** A rerun of an older run uses that run's own copy of the action, so no log with a `wiki_linked` row reaches the new one.
 - **The step log gets one fixed line of counts.** It replaces the JSON line that printed excerpt text. It holds integers and fixed words only.
 - **The pull request job loses its wiki query step.** Its wiki sync stays, because the search tools and the wiki hand-off baseline read the checkout.
 
@@ -126,8 +131,6 @@ Requirement IDs are the origin document's.
 
 ### Deferred to Implementation
 
-- The exact abbreviation list for the sentence rule. Start from the list in Unit 2 and pin the measured count in a test.
-- Whether `held` counts pages that were skipped as unreadable. The plan says it does; confirm against the loader.
 - Final wording of the prompt sentences, within the meanings fixed in Unit 3.
 
 ## High-Level Technical Design
@@ -138,12 +141,14 @@ States of the index step and what each consumer sees:
 
 | State | `index` output | Step-log line | Agent sees in `<wiki_context>` |
 | --- | --- | --- | --- |
-| Full, sentences kept | all lines, with sentences | `wiki-index: listed=N held=N sentences=kept bytes=B` | the index |
-| Full, sentences dropped | all lines, no sentences | `wiki-index: listed=N held=N sentences=dropped bytes=B` | the index |
-| Incomplete | the lines that fit, then a line saying it is incomplete | `wiki-index: listed=M held=N sentences=dropped bytes=B` | the index, marked incomplete |
+| Full, sentences kept | count line, then all readable pages with sentences | `wiki-index: listed=L held=H sentences=kept bytes=B` | the index |
+| Full, sentences dropped | count line, then all readable pages, no sentences | `wiki-index: listed=L held=H sentences=dropped bytes=B` | the index |
+| Incomplete | count line, the lines that fit, then a line saying it is incomplete | `wiki-index: listed=L held=H sentences=dropped incomplete bytes=B` | the index, marked incomplete |
 | Unavailable | empty | `wiki-index: unavailable` | the fixed unavailable note |
 
-Index line shape: `path | title | type | opening sentence`, with the last field absent when a page has none. Order: type, then path, by code unit.
+`L` equals `H` when every file was readable and fitted. `L` is lower when pages were skipped or cut off.
+
+Index line shape: `path | title | type | opening sentence`, with the last field absent when a page has none. Order: type, then path, by code unit. The first line of the index gives `L` and `H`.
 
 ## Implementation Units
 
@@ -158,17 +163,19 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 **Files:**
 
 - Modify: `packages/wiki-ops/src/knowledge-mcp.ts`, `packages/wiki-ops/src/wiki-context-expand.ts`, `packages/wiki-ops/src/wiki-context-expand-cli.ts`, `packages/wiki-ops/src/wiki-query.ts` (hand-off writer only)
-- Modify: `.github/actions/knowledge-mcp-config/action.yaml`, `.github/actions/knowledge-mcp-summary/action.yaml`
+- Modify: `.github/actions/knowledge-mcp-config/action.yaml`
 - Modify: `.github/workflows/fro-bot.yaml` (the `handoff-path` inputs, every `WIKI_CONTEXT_HANDOFF_PATH`, the `knowledge_wiki_linked` sentence in three prompts), `.github/workflows/survey-repo.yaml` (one comment)
 - Modify: `mutation-guards.json` (the `wiki-context-expand.ts` reason)
-- Test: `packages/wiki-ops/src/knowledge-mcp.test.ts`, `packages/wiki-ops/src/wiki-context-expand.test.ts`, `scripts/knowledge-mcp-server.test.ts`, `scripts/knowledge-mcp-callers.test.ts`, `scripts/knowledge-mcp-config-action.test.ts`, `scripts/knowledge-mcp-summary-action.test.ts`, `scripts/fro-bot-workflow-wiki-handoff.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/survey-repo-workflow.test.ts`
+- Test: `packages/wiki-ops/src/knowledge-mcp.test.ts`, `packages/wiki-ops/src/wiki-context-expand.test.ts`, `packages/wiki-ops/src/wiki-query.test.ts`, `packages/wiki-ops/src/wiki-query-route.test.ts`, `packages/wiki-ops/src/route-stderr-prefixes.test.ts`, `scripts/wiki-ops-flows.test.ts`, `scripts/knowledge-mcp-server.test.ts`, `scripts/knowledge-mcp-callers.test.ts`, `scripts/knowledge-mcp-config-action.test.ts`, `scripts/fro-bot-workflow-wiki-handoff.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/survey-repo-workflow.test.ts`
 
 **Approach:**
 
 - Remove the tool's registration, handler, allowlist entry, hand-off import and the two error codes only it produced. Shrink `fromExpand` to the reasons query mode can return.
 - Remove linked mode from the expansion module and its command. Keep query mode, the shared assembly and the safety filter.
-- Drop the config action's `handoff-path` input and the server env it set. Drop the tool name from the summary action's pattern.
-- The wiki query step still runs in this unit. It stops writing the hand-off.
+- Drop the config action's `handoff-path` input and the server env it set.
+- The wiki query step still runs in this unit. It stops writing the hand-off, so the `handoff-write-failed` warning kind goes, and the prefix guard that reads warning kinds from the query module's source is updated with it.
+- In the query tests, the route test and the flow test, remove the hand-off and linked-mode cases and keep the output and router cases.
+- The prompt tests added with the knowledge-tool duties assert a `knowledge_wiki_linked` description sentence. Remove that assertion here. The three blocks stay identical apart from the repository-duty paragraph.
 
 **Execution note:** Test-first. Start from the server test's tool list.
 
@@ -181,7 +188,6 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - Error path: a call to `wiki_linked` is refused as an unknown tool.
 - Edge case: every expansion reason query mode can return maps to a tool error code; no case for the removed reasons remains.
 - Integration: the config action's output has no hand-off env, with and without a fork.
-- Integration: the summary action counts a `wiki_search` row and a `solutions_search` row, and ignores a `wiki_linked` row in an old log.
 - Integration: in each of the three `fro-bot.yaml` prompts, the tool descriptions name two tools; in each survey prompt, the same two.
 - Integration: no step in either workflow sets `WIKI_CONTEXT_HANDOFF_PATH` or passes `handoff-path`.
 
@@ -200,17 +206,26 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 **Files:**
 
 - Create: `packages/wiki-ops/src/wiki-index.ts`, `packages/wiki-ops/src/wiki-index-cli.ts`, `scripts/wiki-index.ts`
-- Modify: `packages/wiki-ops/package.json` (exports), `mutation-guards.json` (`not-mutated` entries for the three new files), `packages/wiki-ops/fixtures/route-stderr-workflow-steps.ts`
-- Test: `packages/wiki-ops/src/wiki-index.test.ts`, `packages/wiki-ops/src/wiki-index-cli.test.ts`, `packages/wiki-ops/src/wiki-index-route.test.ts`, `packages/wiki-ops/src/regex-scaling.test.ts`, `scripts/wiki-ops-flows.test.ts`, `scripts/route-stderr-prefixes.test.ts`
+- Modify: `packages/wiki-ops/package.json` (exports), `mutation-guards.json` (`not-mutated` entries, each with a reason, for the three new files)
+- Test: `packages/wiki-ops/src/wiki-index.test.ts`, `packages/wiki-ops/src/wiki-index-cli.test.ts`, `packages/wiki-ops/src/wiki-index-route.test.ts`, `packages/wiki-ops/src/regex-scaling.test.ts`, `scripts/wiki-ops-flows.test.ts`
 
 **Approach:**
 
 - Load pages from the wiki directories through the shared splitter. Do not read `knowledge/index.md`. Skip an unreadable page with the existing encoded warning, under the new prefix.
 - One line per page: path, title, type, opening sentence.
-- Opening sentence: the first non-blank body line must be the top heading. Take the first paragraph after it. There is no sentence when that paragraph starts with a heading, list marker, table, quote, code fence, HTML or indentation. Mask code spans, wikilinks, link targets and bare URLs while scanning. A `.`, `!` or `?`, with any closing quote or bracket, ends the sentence when the paragraph ends there or a space and a capital, digit or opening mark follow. A single capital letter before the period does not end it, nor does a listed abbreviation (`e.g`, `i.e`, `vs`, `etc`, `dr`, `mr`, `mrs`, `ms`, `inc`, `ltd`, `co`, `st`). No terminator, or more than 200 characters, gives no sentence.
-- Neutralise `<` and `>` in every field, and the field separator inside a field, so a page cannot close the prompt's wrapper or forge a field.
-- Size rule: build with sentences; over 12 KiB, rebuild without; still over, keep the lines that fit in order and add a line saying the index is incomplete. The index always states listed and held counts.
-- Write the `index` output and print the one status line. On any failure to build, write an empty `index`, warn under the unavailable prefix, print `wiki-index: unavailable`, and exit 0.
+- Opening sentence, by one linear scan:
+  - The first non-blank body line must be an ATX top heading (`# `). A body with no such heading, or a setext heading, has no sentence.
+  - Skip blank lines after the heading. The paragraph is the following non-blank lines up to the next blank line, joined by single spaces.
+  - There is no sentence when the paragraph's first line starts with `#`, a list marker, `|`, `>`, a code fence, `<`, a tab or four spaces. A line that starts with bold text or a link is prose.
+  - While scanning, text inside a closed code span, a `[[wikilink]]`, a link target `](...)` or a bare URL is skipped. An unclosed span or bracket is ordinary text.
+  - A `.`, `!` or `?`, with any closing quote or bracket after it, ends the sentence when the paragraph ends there, or when a space and then a capital, a digit or an opening mark follow.
+  - A period after a single capital letter does not end it. Nor does a period after `e.g`, `i.e`, `vs`, `etc`, `dr`, `mr`, `mrs`, `ms`, `inc`, `ltd`, `co` or `st`, compared without case.
+  - No terminator, or more than 200 characters, gives no sentence.
+- Encode every field to one line as the Key Technical Decisions state.
+- Size rule, in UTF-8 bytes of the whole value: build with sentences; over 12 KiB, rebuild without; still over, admit lines in order while the count line, the admitted lines and the incomplete marker fit together. The count line is recomputed for the final listed count.
+- Loader outcomes as the Key Technical Decisions state.
+- Write the `index` output and print the one status line. When the index is unavailable, write an empty `index`, warn under the unavailable prefix, print `wiki-index: unavailable`, and exit 0.
+- The route test builds its own router invocation with the routes Unit 3 will use. The workflow fixture and the prefix guard still describe the old steps until Unit 3.
 
 **Execution note:** Test-first. Begin with the sentence rule against fixture pages.
 
@@ -225,20 +240,26 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - Edge case: a paragraph ending in a colon, a paragraph with no terminator, and a 201-character sentence each yield none.
 - Edge case: a title or sentence containing `</wiki_context>` or the field separator is neutralised.
 - Edge case: page tags never appear in a line.
+- Edge case: a paragraph that opens with bold text or a link yields its sentence; a body with a setext heading or no heading yields none; an unclosed backtick does not hide the rest of the paragraph.
+- Edge case: a title containing a line break, and a file name containing a line break or a control character, each give exactly one line and cannot forge a count line or an incomplete marker.
+- Edge case: a page with no frontmatter type takes its type from its directory, and a page with no frontmatter title takes its slug.
 - Edge case: a tree that would be 15 KiB with sentences and 9 KiB without gives all pages, no sentences, equal counts. (Origin AE4.)
-- Edge case: a tree that is 14 KiB without sentences gives the pages that fit, the incomplete line, and unequal counts. (Origin AE5.)
+- Edge case: a tree that is 14 KiB without sentences gives the pages that fit, the incomplete line, and unequal counts, and the whole value is at most 12 KiB. (Origin AE5.)
+- Edge case: the limit holds with multi-byte titles, and when admitting one more line changes the width of the count.
 - Edge case: the same tree read twice gives byte-identical output.
-- Error path: one page with unclosed frontmatter is skipped with an encoded warning, and the others are listed.
-- Error path: an unreadable wiki tree gives an empty `index`, the unavailable status line and exit 0. (Origin AE6.)
+- Error path: one page with unclosed frontmatter and one with invalid frontmatter are each skipped with an encoded warning naming the right reason, the others are listed, and listed is two below held.
+- Error path: a file that cannot be read is skipped with a warning and counted in held.
+- Error path: a missing wiki root, a directory that cannot be listed, and a tree with no pages each give an empty `index`, the unavailable status line and exit 0. (Origin AE6.)
+- Edge case: a missing optional directory beside readable ones is not an error.
 - Error path: a closed stderr does not stop the output or change the exit code.
 - Integration: run behind `route-stderr`, the command's stdout, outputs and exit code equal a bare run, and the two warning kinds reach the summary under their headings.
 - Integration: scaling cases show linear growth for a long paragraph of periods, of brackets and of backticks.
-- Integration: against a copy of the wiki at `data`, the status line reads `listed=48 held=48 sentences=kept` and the size is under 12 KiB. Pin the sentence count the final rule gives.
 
 **Verification:**
 
 - Type check, lint and tests pass. The mutation gate runs, because a command module was added.
-- `packages/wiki-ops` exports resolve, and `scripts/package-layout.test.ts` passes.
+- `packages/wiki-ops` exports resolve, `scripts/package-layout.test.ts` passes, and the new modules load under Node's strip-only mode as the `Test Scripts Load` job requires.
+- One manual run against a checkout of the wiki at a named `data` commit: record the commit, the status line and the number of pages with a sentence in this plan. It is not a test, because `data` moves.
 
 - [ ] **Unit 3: Wire the workflow and delete the query**
 
@@ -253,7 +274,8 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - Modify: `.github/workflows/fro-bot.yaml`
 - Delete: `packages/wiki-ops/src/wiki-query.ts`, `packages/wiki-ops/src/wiki-query-cli.ts`, `scripts/wiki-query.ts`, and their tests (`wiki-query.test.ts`, `wiki-query-bad-page.test.ts`, `wiki-query-reason.test.ts`, `wiki-query-slugify.test.ts`, `wiki-query-cli.test.ts`, `wiki-query-route.test.ts`)
 - Modify: `packages/wiki-ops/package.json` (exports), `mutation-guards.json` (remove the query entries)
-- Test: `scripts/fro-bot-workflow-wiki-query.test.ts` (becomes the index-step test), `scripts/fro-bot-workflow-wiki-handoff.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/data-sync-callers.test.ts`, `scripts/route-stderr-prefixes.test.ts`, `scripts/knowledge-mcp-callers.test.ts`
+- Modify: `packages/wiki-ops/fixtures/route-stderr-workflow-steps.ts`, `packages/wiki-ops/src/wiki-context-expand.ts` (a comment naming the query tokenizer), `llms.txt` (its link to the deleted module)
+- Test: `scripts/fro-bot-workflow-wiki-query.test.ts` (becomes the index-step test), `scripts/fro-bot-workflow-wiki-handoff.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/data-sync-callers.test.ts`, `packages/wiki-ops/src/route-stderr-prefixes.test.ts`, `packages/wiki-ops/src/route-stderr-cli.test.ts`, `packages/wiki-ops/src/regex-scaling.test.ts`, `scripts/wiki-ops-flows.test.ts`, `scripts/knowledge-mcp-callers.test.ts`
 
 **Approach:**
 
@@ -262,7 +284,9 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - In `<wiki_context_expansion>` for both daily jobs: the index lists what the wiki holds; read a page from disk or find it with `knowledge_wiki_search`. Replace "reach past the baseline context above" in all three jobs with wording that fits a job with no wiki context.
 - Remediate only: the index reflects the wiki on `data`; the checkout may hold an older copy of a listed page or lack it.
 - Keep the index step before Remediate's restore of `knowledge/`, and update the restore step's comment.
-- Any reason test that still applies moves to the index module's tests in Unit 2; the rest go with the files.
+- The workflow fixture and the prefix guard now expect two index steps and read warning kinds from the index module. Tests that counted three query steps count two index steps.
+- Remove the remaining old-command cases from the flow test and the old import from the scaling test.
+- The identical-blocks test compares a shared core and then checks each job's own sentences.
 
 **Execution note:** Test-first. Change the workflow tests, watch them fail, then edit the YAML.
 
@@ -272,6 +296,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 - Happy path: the pull request job has no wiki step, its rendered prompt says no wiki context is provided, and its solutions excerpt is still wired. (Origin AE1.)
 - Happy path: Remediate and Observe each have one `wiki-index` step behind the router, and each agent env reads its `index` output.
+- Happy path: the rendered prompt of each daily job, on the schedule and on a custom dispatch, carries the index inside `<wiki_context>`. (Origin AE2.)
 - Edge case: with an empty `index` output, the env expression evaluates to the unavailable note. With a non-empty output, it evaluates to the output. Neither note says the wiki is empty.
 - Edge case: the daily prompts carry the read-from-disk-or-search sentence; the pull request prompt does not.
 - Edge case: only Remediate's prompt carries the older-checkout sentence.
@@ -284,7 +309,8 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 **Verification:**
 
 - Type check, lint, tests and `actionlint` pass. The mutation gate runs.
-- A search of the tree finds no reference to the deleted files outside `docs/plans/`, `docs/brainstorms/` and `docs/solutions/` history.
+- The link check passes with the module deleted.
+- A search of code, workflows, tests and configuration finds no reference to the deleted files. Prose in current documents is corrected in Unit 4. `docs/plans/`, `docs/brainstorms/`, `docs/solutions/` and `docs/archive/` are history and keep theirs.
 
 - [ ] **Unit 4: Documentation**
 
@@ -296,7 +322,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 **Files:**
 
-- Modify: `README.md` (Knowledge Wiki paragraph), `packages/wiki-ops/README.md` (module list, C4 diagram, tool section), `.github/copilot-instructions.md` (the `packages/wiki-ops` sentence: module names, two tools, the daily index steps), `llms.txt`
+- Modify: `README.md` (Knowledge Wiki paragraph), `packages/wiki-ops/README.md` (module list, C4 diagram, tool section), `.github/copilot-instructions.md` (the `packages/wiki-ops` sentence: module names, two tools, the daily index steps), `llms.txt` (its descriptions)
 - Modify: `docs/solutions/best-practices/a-status-line-must-not-mean-two-things-2026-11-14.md` and `docs/solutions/best-practices/an-import-closure-does-not-see-what-a-test-reads-at-run-time-2026-11-14.md` (cited line numbers in `knowledge-mcp.ts` and its test)
 - Modify: `docs/brainstorms/2026-11-14-knowledge-tools-prompt-duties-requirements.md` (its description of the baseline, if still stale)
 
@@ -355,7 +381,8 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 | A page's opening text carries instructions | Index lines sit inside the untrusted wrapper; fields are neutralised; one sentence of at most 200 characters per page. |
 | The sentence rule cuts a sentence wrongly | Unit tests on abbreviations, links and code spans; the count on the real wiki is pinned; a wrong cut costs one index line, not correctness. |
 | The wiki grows past the limit | Sentences drop first; then the index says it is incomplete and gives both counts. The status line shows it. |
-| Removing a tool breaks a run that expects three | The prompt and the server change together in Unit 1; the summary action tolerates an old row. |
+| Removing a tool breaks a run that expects three | The prompt and the server change together in Unit 1. The summary action is unchanged. |
+| The wiki is public-only by rule, enforced for repository pages and by authoring discipline elsewhere | Unchanged by this work. The index exposes paths, titles and one sentence, where the excerpt exposed 5 KiB of body. |
 | A rerun of a run created before the merge executes the old workflow | It runs the old code from its own commit, which still exists there. No shared state is involved. |
 | The mutation gate adds time to each unit | Expected. Run it once per unit, after the unit's tests are green. |
 
