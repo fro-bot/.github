@@ -10596,3 +10596,28 @@ Run: https://github.com/fro-bot/.github/actions/runs/43562899904
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@4fedcbbc99e3a8d1c2442b927299554542808a16
+
+## [2026-11-14 12:00] ingest | repo:marcusrbrown/sparkle
+
+Limited re-survey of marcusrbrown/sparkle at `1a6b44e`, 42 commits after `b611620`
+(2026-10-29). 41 of the 42 are Renovate, including 25 `fro-bot/agent` bump PRs
+taking the pin from v0.129.0 to v0.141.0. Other changes: pnpm 11.28.11, Node
+24.22.3, vite 8.3.8, playwright 1.65.0, and a new root `.systematic.jsonc`
+(#2219, body not read). The Fro Bot workflow is present, so no onboarding draft
+is needed. The prompt, fork-guard, README-floor and regeneration discrepancies
+from earlier surveys are unchanged in source. New finding: astro 7.4.7
+`[SECURITY]` (#2242) changed only the lockfile, and docs still declares
+`^7.0.0`. Added a dated section and a Survey History row to the repo page, and
+a dated section to the security-remediation-integration topic separating
+lockfile-only fixes from range or override floors. Additive only. Reads were
+limited to directory listings, the compare file list, and manifest and
+workflow diffs. Corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/sparkle/compare/b6116202d97cef5c6a535ffa9555f745729772e8...1a6b44ef092a5c0fac52497250bf1e65edfa55d2
+Run: https://github.com/fro-bot/.github/actions/runs/43593828571
+
+## [2026-11-14 12:17] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle

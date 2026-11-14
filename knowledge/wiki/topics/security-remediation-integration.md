@@ -2,8 +2,13 @@
 type: topic
 title: Security remediation integration and evidence boundaries
 created: 2026-09-30
-updated: 2026-10-06
+updated: 2026-11-14
 sources:
+  - url: https://github.com/marcusrbrown/sparkle/commit/414b5d7
+    accessed: 2026-11-14
+  - url: https://github.com/marcusrbrown/sparkle/blob/1a6b44ef092a5c0fac52497250bf1e65edfa55d2/docs/package.json
+    sha: 1a6b44ef092a5c0fac52497250bf1e65edfa55d2
+    accessed: 2026-11-14
   - url: https://github.com/fro-bot/.github/pull/3954
     sha: b23f85ebb60f114c5f42a2c8aad680234e382be1
     accessed: 2026-10-06
@@ -71,3 +76,10 @@ The next [remediation pass](https://github.com/fro-bot/.github/pull/3954#issueco
 Dedicated [PR #3954](https://github.com/fro-bot/.github/pull/3954) at `b23f85e` adds a `source-map-js >=1.2.2` floor and resolves only that package from 1.2.1 to 1.2.2 in `pnpm-workspace.yaml` and `pnpm-lock.yaml`. Registry version/integrity checks, installation, types, 4,079 tests, and independent ESLint passed. The patched branch removes this advisory and reduces high audit findings from six to five; its global Lint gate still fails on the undici/brace-expansion findings already covered by #3941/#3942. A patch delivered as an open PR has not repaired main.
 
 The September 30 combined-tree result above remains valid historical evidence for that day's advisory population. It is **not current proof** that combining only those two original fixes yields zero high findings: the October 6 scan introduces a third independent remediation target. A whole-tree advisory gate can change its answer without a repository commit, so record both the tested revision and the advisory observation time. Revalidate the approved integrated tree containing all currently required dedicated fixes; do not carry an old green integration result forward, suppress a newly observed advisory, or repeatedly rerun an unchanged blocked branch. [[github-actions-ci]] records the broader distinction between execution evidence and delivered outcomes.
+
+## 2026-11-14 — a `[SECURITY]` bump can raise the lockfile and leave the range alone
+
+In [[marcusrbrown--sparkle]], Renovate's [#2242](https://github.com/marcusrbrown/sparkle/commit/414b5d7), "update dependency astro to v7.4.7 [SECURITY]", changed only `pnpm-lock.yaml`. The [docs manifest](https://github.com/marcusrbrown/sparkle/blob/1a6b44ef092a5c0fac52497250bf1e65edfa55d2/docs/package.json) still declares `"astro": "^7.0.0"`. That range already allowed the patched version, so Renovate's range-preserving policy had no reason to touch it. As a result, the lockfile is the only thing that enforces 7.4.7.
+
+That is a different claim from the floors described above. A `pnpm-workspace.yaml` override like `>=1.2.2` *excludes* the vulnerable versions for every resolution. A lockfile-only bump just *records* one safe resolution. To verify a security fix, check which of the two you have: the commit title, a green check, and a closed alert all hold up under either one. For a caret range on an unpublished app, the remaining risk is small, because a fresh resolution picks the newest minor. It matters more where the manifest is the contract, such as a published library or a workspace whose consumers resolve from scratch.
+
