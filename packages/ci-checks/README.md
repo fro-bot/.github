@@ -95,7 +95,7 @@ Everything in this package that reads text a pull request controls is linear in 
 | `@fro-bot/ci-checks/mutation-shard`, `-cli` | `runMutationShard`, `parseShardEnv`, `parseShardManifest`, `defaultShardDeps`, `shardArtifactName`; `mutationShardCli`, `main` | `mutation-shard` is mutated; the CLI is not. One PR shard: applicability from the full config, Stryker on the shard list, `manifest.json` and `mutation.json` out. |
 | `@fro-bot/ci-checks/mutation-shard-lists` | `readMutationShards`, `parseMutationShards`, `findShardPartitionViolations` | Mutated. The `shards` key of `mutation-guards.json`: three ordered `mutate` lists, one per PR shard job. The reader checks the shape; `findShardPartitionViolations` checks that the lists are an exact partition of `mutate`. |
 | `@fro-bot/ci-checks/repository-root` | `findRepositoryRoot` | Mutated. |
-| `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md` and `docs/**/*.md` of the working directory. |
+| `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md`, `docs/**/*.md` and the root `llms.txt` of the working directory. |
 | `@fro-bot/ci-checks/check-override-floors`, `-cli` | `checkOverrideFloors`, `parseAuditOutput`, `runBunAudit`, `formatProblem`, `runCheckOverrideFloors`; `checkOverrideFloorsCli`, `main` | `bun audit --json`; anything it cannot interpret is a failure. |
 | `@fro-bot/ci-checks/check-solutions-examples`, `-cli` | `checkSolutionsExamples`, `extractCodeBlocks`, `findCommentSpans`, `runCheckSolutionsExamples`, ...; `checkSolutionsExamplesCli`, `main` | Imports `typescript`, so no barrel re-exports it. |
 | `@fro-bot/ci-checks/install-renovate`, `-cli` | `runInstallRenovate`; `installRenovateCli`, `main` | Runs under Node. |
@@ -129,7 +129,7 @@ C4Component
 
   Container_Boundary(cichecks, "@fro-bot/ci-checks") {
     Component(barrel_exports, "barrel-exports", "TypeScript", "Strips the re-export statements of a module in linear time")
-    Component(check_md_links, "check-md-links", "TypeScript", "Finds broken relative links in root and docs/ markdown")
+    Component(check_md_links, "check-md-links", "TypeScript", "Finds broken relative links in root and docs/ markdown and the root llms.txt")
     Component(check_md_links_cli, "check-md-links-cli", "TypeScript", "goke CLI; read-only")
     Component(check_mutation_guards, "check-mutation-guards", "TypeScript", "The mutation gate: trigger set, Stryker spawn, report classifier, verdict and exit code")
     Component(check_mutation_guards_cli, "check-mutation-guards-cli", "TypeScript", "goke CLI; read-only; exit from exitCodeFor")

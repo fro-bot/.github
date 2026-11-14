@@ -52,7 +52,7 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 - [Main CI](/.github/workflows/main.yaml): lint, type-check, test, load production scripts under Node strip-only, and actionlint workflow YAML
 - [Setup Action](/.github/actions/setup/action.yaml): reusable composite action for Bun setup and a frozen-lockfile dependency install
 - [Fro Bot agent](/.github/workflows/fro-bot.yaml): reusable agent entrypoint for issue interaction, PR review, scheduled oversight, and manual dispatch with persona injection
-- [Fro Bot autoheal](/.github/workflows/fro-bot-autoheal.yaml): self-healing oversight pass that produces daily autoheal reports
+- [Fro Bot daily pass](/.github/workflows/fro-bot.yaml): the scheduled oversight and self-healing pass (Remediate, then Observe) in the same workflow, which produces the daily report issue
 - [Poll Invitations](/.github/workflows/poll-invitations.yaml): scheduled allowlist-gated repository invitation handler
 - [Reconcile Repos](/.github/workflows/reconcile-repos.yaml): daily reconciliation of `metadata/repos.yaml` with GitHub collaborator access, dispatches Survey Repo for onboarded repos
 - [Survey Repo](/.github/workflows/survey-repo.yaml): agent-driven survey of a target repository that ingests results into the knowledge wiki and writes outcomes back via `record-survey-result.ts`
