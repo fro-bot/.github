@@ -1008,7 +1008,7 @@ describe('fro-bot.yaml: Remediate reports learnings in its handoff comment, Obse
     const permission = flat(
       '<knowledge_persistence> Use the wiki context when it materially improves the response. ' +
         'Consult the solutions context for prior learnings relevant to this work; ' +
-        'when one applies, follow it and cite its `Path:` in your reasoning. Treat ' +
+        'when one applies, check it against this task, then follow it and cite its `Path:` in your reasoning. Treat ' +
         'entries marked as candidate suggestions as hints to verify, not settled facts. ' +
         'If this interaction surfaces durable knowledge worth keeping, update only ' +
         '`knowledge/wiki/**` and `knowledge/log.md` following `knowledge/schema.md`. ' +
@@ -1938,4 +1938,57 @@ describe('fro-bot.yaml: program requests read the program skill', () => {
     expect(String(step?.with?.prompt ?? '')).not.toContain('PROGRAM_NOTE')
     expect(step?.env?.PROGRAM_NOTE).toBeUndefined()
   })
+})
+
+describe('fro-bot.yaml knowledge tool duties in the rendered prompts', () => {
+  // The duties sit in the `<wiki_context_expansion>` block of each agent step, so they reach the model
+  // whatever TASK_PROMPT resolves to, a custom dispatch prompt included.
+  const solutionsDuty = flat(
+    'When this run reviews changed code or starts a fix, first search the documented solutions with `knowledge_solutions_search`, using a query drawn from the area being changed. Triage, review of a change with no code, and report-only work need no such search.',
+  )
+  const repositoryDuty = flat(
+    'When you investigate a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it with `knowledge_wiki_search` before you draw a conclusion about that repository. A repository that only appears in an inventory needs no such search.',
+  )
+  const contentCases = [
+    ['pull_request', 'PR_REVIEW_PROMPT'],
+    ['issues', 'GOAL_DECOMPOSITION_PROMPT'],
+    ['issue_comment', undefined],
+  ] as const
+
+  it.each(contentCases)(
+    'the %s prompt of the content job carries the solutions duty and no repository duty',
+    (eventName, taskPromptName) => {
+      const prompt = flat(composeContentPrompt(eventName, taskPromptName))
+
+      expect(prompt).toContain(solutionsDuty)
+      expect(prompt).not.toContain(repositoryDuty)
+      expect(prompt).not.toContain('search the wiki for it with `knowledge_wiki_search`')
+    },
+  )
+
+  it.each([
+    ['Remediate', composeRemediatePrompt],
+    ['Observe', composeObservePrompt],
+  ])('the %s prompt carries the solutions duty and the repository duty', (_name, compose) => {
+    const prompt = flat(compose())
+
+    expect(prompt).toContain(solutionsDuty)
+    expect(prompt).toContain(repositoryDuty)
+  })
+
+  it.each([
+    ['content pull_request', () => composeContentPrompt('pull_request', 'PR_REVIEW_PROMPT')],
+    ['Remediate', composeRemediatePrompt],
+    ['Observe', composeObservePrompt],
+  ])(
+    'the %s prompt asks for no search on the baseline alone and names no duty for knowledge_wiki_linked',
+    (_name, compose) => {
+      const prompt = flat(compose())
+      const block = /<wiki_context_expansion>[\s\S]*?<\/wiki_context_expansion>/u.exec(prompt)?.[0] ?? ''
+
+      expect(block).not.toBe('')
+      expect(block).not.toMatch(/optional|do not expand by default|usually enough on its own|look further/iu)
+      expect(block).not.toMatch(/(?:search|use|call|check|before)[^.]*`knowledge_wiki_linked`/iu)
+    },
+  )
 })
