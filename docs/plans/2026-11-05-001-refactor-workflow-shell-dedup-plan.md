@@ -1,7 +1,7 @@
 ---
 title: "refactor: Give every copied workflow shell block one definition"
 type: refactor
-status: active
+status: complete
 date: 2026-11-05
 origin: docs/brainstorms/2026-11-05-workflow-shell-dedup-requirements.md
 ---

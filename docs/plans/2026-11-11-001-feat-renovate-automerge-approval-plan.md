@@ -1,7 +1,7 @@
 ---
 title: "feat: approve automerge-labelled Renovate PRs from a default-branch sweep"
 type: feat
-status: completed
+status: complete
 date: 2026-11-11
 origin: docs/brainstorms/2026-11-11-renovate-automerge-approval-requirements.md
 ---

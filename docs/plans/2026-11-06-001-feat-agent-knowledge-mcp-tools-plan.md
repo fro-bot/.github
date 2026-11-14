@@ -1,7 +1,7 @@
 ---
 title: "feat: Serve knowledge lookups to agent runs as MCP tools"
 type: feat
-status: active
+status: complete
 date: 2026-11-06
 origin: docs/brainstorms/2026-11-06-agent-knowledge-mcp-tools-requirements.md
 ---
@@ -428,6 +428,6 @@ sequenceDiagram
 
 - **Origin document:** [docs/brainstorms/2026-11-06-agent-knowledge-mcp-tools-requirements.md](../brainstorms/2026-11-06-agent-knowledge-mcp-tools-requirements.md)
 - Related past work: `docs/brainstorms/2026-10-24-scripts-workspace-packages-requirements.md` R7 and R14, recorded as deferred until fro-bot/agent#1931. This plan is that deferred MCP phase.
-- Related past work: `docs/plans/2026-11-05-001-refactor-workflow-shell-dedup-plan.md`, status active (all units merged). Its composite-action and caller-table patterns are reused here.
+- Related past work: `docs/plans/2026-11-05-001-refactor-workflow-shell-dedup-plan.md`, status complete (all units merged). Its composite-action and caller-table patterns are reused here.
 - fro-bot/agent#2082 (caller MCP servers, released in v0.135.1).
 - marcusrbrown/infra `packages/cli/src/commands/mcp.ts`.
