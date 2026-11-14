@@ -1,7 +1,7 @@
 ---
 title: "refactor: Make the four slowest mutation targets cheap"
 type: refactor
-status: active
+status: complete
 date: 2026-11-07
 origin: docs/brainstorms/2026-11-07-cheaper-mutation-gate-requirements.md
 ---

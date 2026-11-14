@@ -182,6 +182,15 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 **Verification:** the four criteria hold over ten reports, or the gaps are filed.
 
+**Readback so far (2026-11-14):**
+
+- **Window.** Six daily reports have been published since #4160 merged on 2026-11-09: #4163, #4169, #4182, #4200, #4216 and #4227. The criteria are measured over ten.
+- **Keys and carry-over.** Every attention item in the six reports has a `key:` line, an owner and a first-seen date. The Scorecard key keeps first-seen 2026-11-03 from #4163 through #4182.
+- **Escalation.** #4164 was filed with the label on 2026-11-09 and closed by #4194 on 2026-11-12. #4226 was filed on 2026-11-14 for the survey-conflict key, which is on #4200, #4216 and #4227, and #4227 shows it as one line linking #4226.
+- **Re-check.** #4227 dropped the Gateway delivery key as resolved, and #4169 dropped the uncovered-learning-backlog key.
+- **Public only.** The attention sections of the six reports link only `fro-bot/.github`, `fro-bot/agent` and `marcusrbrown/infra`, which are all public.
+- **Still owed.** Four more reports, and a report-by-report check that no item's key had resolved at publish time and that every item has an owner and a next action.
+
 ## System-Wide Impact
 
 - **Interaction graph:** the Observe job's prompt, and Update Repo Settings, which creates the label.

@@ -1,7 +1,7 @@
 ---
 title: "feat: start and run cross-repo programs from config, a program skill and the existing tracker"
 type: feat
-status: active
+status: complete
 date: 2026-11-08
 origin: docs/brainstorms/2026-11-08-cross-repo-program-tracker-requirements.md
 ---

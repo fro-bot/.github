@@ -1,7 +1,7 @@
 ---
 title: "refactor: Consolidate scripts into private workspace packages"
 type: refactor
-status: active
+status: complete
 date: 2026-10-24
 deepened: 2026-10-24
 origin: docs/brainstorms/2026-10-24-scripts-workspace-packages-requirements.md
@@ -437,7 +437,7 @@ The foundation PRs create primitives and gates. They migrate no callers, with tw
 
 **Verification:** Done. Every probe has a saved log with an exit code, and no result reopens the plan.
 
-- [ ] **Unit 2: Core and test-kit packages, gate wiring and new primitives** (PR A)
+- [x] **Unit 2: Core and test-kit packages, gate wiring and new primitives** (PR A, #4061)
 
 **Goal:** Land `@fro-bot/core` and `@fro-bot/test-kit`, make every gate see `@fro-bot/` code, and add the guards, output and JSON primitives as new, fully tested code. The only caller edits are the importers of the four moved test helpers. No primitive migrations.
 

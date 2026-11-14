@@ -483,6 +483,14 @@ flowchart TD
 
 **Verification:** the run and issue links are recorded on the PR.
 
+**Results (2026-11-11 to 2026-11-14):**
+
+- **Dry run.** The first daily run after #4168 merged ([42940189403](https://github.com/fro-bot/.github/actions/runs/42940189403)) ran `decide`, merged `main` back, pinned `data` at `ee04f3b`, passed both leak gates and opened #4175 labelled `automerge` with its head at the pin. The self-merge step waited about 4 minutes for the required checks and ended `DRY_RUN`.
+- **Live approval.** With `PROMOTION_SELF_MERGE` set to `on`, one dispatched run ([42942262202](https://github.com/fro-bot/.github/actions/runs/42942262202)) approved #4175 as `fro-bot` at the pinned commit at 01:54:56Z and squash-merged it at 01:54:59Z. GitHub counts the `fro-bot` user's approval as the required code-owner review, and `FRO_BOT_PAT` can read the repository variable. The results are posted on #4168.
+- **Since then.** #4204 (dispatched run [43274490781](https://github.com/fro-bot/.github/actions/runs/43274490781)) and #4225 (scheduled run [43543306120](https://github.com/fro-bot/.github/actions/runs/43543306120)) were approved by `fro-bot` and merged by the promotion run.
+- **Drift watcher.** The first real events opened #4172, and the first `branch_protection_rule` event after #4174 ([43014968528](https://github.com/fro-bot/.github/actions/runs/43014968528), 2026-11-11 11:48Z) came from `fro-bot[bot]`, matched the declared values, logged `protection-drift: closed #4172` and closed it.
+- **Not done.** Not yet seen: a drift report opened and closed by the shipped code in one cycle. #4172 was opened before #4174 landed, and the hand edit that step 3 describes has not been run against the shipped code. It is not known whether GitHub reports `require_last_push_approval` in the event payload. A `hold-merge` label stopping a live promotion and a promotion whose required checks never settle have not been seen.
+
 ## System-Wide Impact
 
 - **Interaction graph:** `merge-data.yaml` (two jobs), `merge-data-pr`, the leak gates (now fed a pinned ref), `check-private-leak.yaml`, the settings workflow (whose writes close drift issues), and Scorecard, which also runs on `branch_protection_rule` and is unchanged.
