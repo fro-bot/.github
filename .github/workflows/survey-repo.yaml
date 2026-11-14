@@ -265,8 +265,7 @@ jobs:
         run: bun scripts/route-stderr.ts --route 'corrections:warning:=Correction context warnings' --summary all bun scripts/render-corrections-context.ts
 
       # Adds the `knowledge` MCP server (wiki and solutions lookups) to the config all three attempts
-      # share. A survey has no handoff file, so `knowledge_wiki_linked` answers with an error here and
-      # the prompts name only the two search tools.
+      # share. The prompts name the two search tools.
       - name: Add the knowledge tools to the agent config
         id: knowledge-mcp
         uses: ./.github/actions/knowledge-mcp-config

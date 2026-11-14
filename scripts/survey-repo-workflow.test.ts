@@ -2615,7 +2615,9 @@ describe('survey-repo.yaml knowledge tools in the three survey attempts', () => 
     )
   })
 
-  it.each(blocks)('names no duty for knowledge_wiki_linked, which a survey has no handoff for', block => {
+  it.each(blocks)('names only the two search tools', block => {
+    expect(block).toContain('knowledge_wiki_search')
+    expect(block).toContain('knowledge_solutions_search')
     expect(block).not.toContain('knowledge_wiki_linked')
   })
 })

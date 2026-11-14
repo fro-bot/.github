@@ -1,6 +1,6 @@
 /**
- * The `knowledge` MCP server: three read-only lookups an agent run can call mid-run, `wiki_search`,
- * `wiki_linked` and `solutions_search`. OpenCode names them `knowledge_wiki_search` and so on.
+ * The `knowledge` MCP server: two read-only lookups an agent run can call mid-run, `wiki_search` and
+ * `solutions_search`. OpenCode names them `knowledge_wiki_search` and so on.
  *
  * The server owns a private goke instance and serves it through `@goke/mcp`. Each command calls the
  * code behind an existing CLI in-process (`runWikiContextExpandCli`, `searchSolutions`), so the query
@@ -22,9 +22,8 @@
  *   call then appends one line, `<tool> <code>`, where the code is `ok` or the fixed error code. No
  *   argument, query, path or result is ever written, and a failed create or append changes nothing the
  *   caller sees.
- * - There is no path argument. The handoff path comes from the server definition, as the
- *   `WIKI_CONTEXT_HANDOFF_PATH` variable, and the corpus is read relative to the working directory,
- *   which the definition sets to the checkout root.
+ * - There is no path argument. The corpus is read relative to the working directory, which the server
+ *   definition sets to the checkout root.
  * - The call log is the server's only write, and it needs no credential. `scripts/knowledge-mcp.ts`
  *   removes the two OpenCode variables from the process before this module loads.
  *
@@ -42,15 +41,14 @@ import {goke} from 'goke'
 import {z} from 'zod'
 
 import {searchSolutions} from './solutions-query.ts'
-import {parseHandoffContent, runWikiContextExpandCli} from './wiki-context-expand.ts'
+import {runWikiContextExpandCli} from './wiki-context-expand.ts'
 
 /** The only text an error result carries. */
-export type KnowledgeErrorCode =
-  'no-handoff' | 'handoff-malformed' | 'invalid-query' | 'corpus-unavailable' | 'unexpected'
+export type KnowledgeErrorCode = 'invalid-query' | 'corpus-unavailable' | 'unexpected'
 
 /** A function so a mutant in the names is exercised whenever a test reads them. */
 export function knowledgeToolNames(): readonly string[] {
-  return ['wiki_search', 'wiki_linked', 'solutions_search']
+  return ['wiki_search', 'solutions_search']
 }
 
 /** What a handler returns: the MCP result shape, built here so `@goke/mcp` passes it through as is. */
@@ -60,7 +58,7 @@ export interface KnowledgeToolResult {
 }
 
 export interface KnowledgeDeps {
-  /** Only `WIKI_CONTEXT_HANDOFF_PATH` and `KNOWLEDGE_MCP_CALL_LOG` are read. */
+  /** Only `KNOWLEDGE_MCP_CALL_LOG` is read. */
   readonly env: Readonly<Record<string, string | undefined>>
   readonly readDir: (path: string) => Promise<{name: string; isFile: () => boolean}[]>
   readonly readFile: (path: string) => Promise<string>
@@ -163,8 +161,8 @@ function ignore(): void {
 type ExpandOutcome = Awaited<ReturnType<typeof runWikiContextExpandCli>>
 
 /**
- * Maps the CLI outcome onto the tool contract: an empty match is a result, a broken corpus or handoff
- * is an error. A result with no reason is a populated one. A non-zero exit or no result at all means
+ * Maps the CLI outcome onto the tool contract: an empty match is a result, a broken corpus is an
+ * error. A result with no reason is a populated one. A non-zero exit or no result at all means
  * the arguments were not accepted (bad argv or help), so the query never reached the corpus.
  */
 function fromExpand(deps: KnowledgeDeps, outcome: ExpandOutcome): Outcome {
@@ -178,12 +176,7 @@ function fromExpand(deps: KnowledgeDeps, outcome: ExpandOutcome): Outcome {
     case 'no-corpus':
     case 'private-token-load-failed':
       return fail(deps, 'corpus-unavailable')
-    case 'no-handoff':
-      return fail(deps, 'no-handoff')
-    case 'malformed-handoff':
-      return fail(deps, 'handoff-malformed')
     case 'no-match':
-    case 'no-links':
     case undefined:
       return succeed(result)
   }
@@ -195,33 +188,6 @@ async function wikiSearch(deps: KnowledgeDeps, query: unknown): Promise<Outcome>
 
     const outcome = await deps.expand({
       argv: ['query', query],
-      env: {},
-      readDir: deps.readDir,
-      readFile: deps.readFile,
-      writeStdout: ignore,
-      writeStderr: ignore,
-    })
-    return fromExpand(deps, outcome)
-  })
-}
-
-async function wikiLinked(deps: KnowledgeDeps): Promise<Outcome> {
-  return guarded(deps, async () => {
-    // The handoff is checked before the corpus loads, so a broken handoff is never reported as an empty expansion.
-    const handoffPath = deps.env.WIKI_CONTEXT_HANDOFF_PATH
-    if (handoffPath === undefined || handoffPath === '') return fail(deps, 'no-handoff')
-
-    let content: string
-    try {
-      content = await deps.readFile(handoffPath)
-    } catch {
-      return fail(deps, 'no-handoff')
-    }
-    if (parseHandoffContent(content).status !== 'ok') return fail(deps, 'handoff-malformed')
-
-    const outcome = await deps.expand({
-      argv: ['linked'],
-      env: {WIKI_CONTEXT_HANDOFF_PATH: handoffPath},
       readDir: deps.readDir,
       readFile: deps.readFile,
       writeStdout: ignore,
@@ -252,7 +218,7 @@ export function queryDescription(): string {
 }
 
 /**
- * Registers the three commands on a fresh goke instance. The query is a required `--query` option, not
+ * Registers the two commands on a fresh goke instance. The query is a required `--query` option, not
  * a positional: `@goke/mcp` gives a positional a plain string schema, while an option carries its zod
  * schema and the adapter rejects a call that leaves it out before the handler runs.
  */
@@ -267,13 +233,6 @@ export function buildKnowledgeCli(deps: KnowledgeDeps): ReturnType<typeof goke> 
     .option('--query <query>', z.string().describe(queryDescription()))
     .required()
     .action(async options => respond(deps, 'wiki_search', await wikiSearch(deps, options.query)))
-
-  cli
-    .command(
-      'wiki_linked',
-      'Expand the wiki pages this run already received: returns the pages they link to as JSON. Takes no arguments.',
-    )
-    .action(async () => respond(deps, 'wiki_linked', await wikiLinked(deps)))
 
   cli
     .command(

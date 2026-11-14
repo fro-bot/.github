@@ -101,7 +101,6 @@ interface CliRun {
   readonly stdout: string
   readonly stderr: string
   readonly githubOutput: string
-  readonly handoff: string
 }
 
 /** Run the real `scripts/wiki-query.ts` against a temp checkout holding `files`. */
@@ -110,11 +109,10 @@ async function runCli(files: Readonly<Record<string, string>>, env: Record<strin
   try {
     await writeWiki(dir, files)
     const githubOutput = join(dir, 'github-output.txt')
-    const handoffPath = join(dir, 'handoff.json')
     const result = spawnSync('node', [join(import.meta.dirname, '..', '..', '..', 'scripts', 'wiki-query.ts')], {
       cwd: dir,
       encoding: 'utf8',
-      env: {...process.env, GITHUB_OUTPUT: githubOutput, WIKI_CONTEXT_HANDOFF_PATH: handoffPath, ...env},
+      env: {...process.env, GITHUB_OUTPUT: githubOutput, ...env},
     })
     return {
       status: result.status,
@@ -122,7 +120,6 @@ async function runCli(files: Readonly<Record<string, string>>, env: Record<strin
       stderr: result.stderr,
       // The runner picks a random heredoc delimiter for the multi-line `excerpt` value.
       githubOutput: (await readFile(githubOutput, 'utf8').catch(() => '')).replaceAll(UUID_PATTERN, '<delimiter>'),
-      handoff: await readFile(handoffPath, 'utf8').catch(() => ''),
     }
   } finally {
     await rm(dir, {recursive: true, force: true})
@@ -178,7 +175,7 @@ describe('baseline wiki query over a fixture wiki with no bad page', () => {
     )
   })
 
-  it('prints one JSON line, the outputs and the handoff through the real CLI', async () => {
+  it('prints one JSON line, and the outputs through the real CLI', async () => {
     const run = await runCli(FIXTURE_WIKI, {
       WIKI_QUERY_EVENT_NAME: 'pull_request',
       WIKI_QUERY_OWNER: 'fro-bot',
@@ -249,10 +246,6 @@ describe('baseline wiki query over a fixture wiki with no bad page', () => {
       <delimiter>
       selected-paths=["knowledge/wiki/repos/fro-bot--agent.md","knowledge/wiki/repos/fro-bot--dashboard.md","knowledge/wiki/topics/github-actions-ci.md","knowledge/wiki/topics/vitest.md","knowledge/wiki/entities/octokit.md","knowledge/wiki/topics/crlf-page.md","knowledge/wiki/topics/no-frontmatter.md","knowledge/wiki/comparisons/vitest-vs-jest.md"]
       byte-length=1024
-      "
-    `)
-    expect(run.handoff).toMatchInlineSnapshot(`
-      "{"selectedPaths":["knowledge/wiki/repos/fro-bot--agent.md","knowledge/wiki/repos/fro-bot--dashboard.md","knowledge/wiki/topics/github-actions-ci.md","knowledge/wiki/topics/vitest.md","knowledge/wiki/entities/octokit.md","knowledge/wiki/topics/crlf-page.md","knowledge/wiki/topics/no-frontmatter.md","knowledge/wiki/comparisons/vitest-vs-jest.md"]}
       "
     `)
   })
@@ -350,7 +343,7 @@ describe('wiki-query CLI: a page with unreadable frontmatter', () => {
     ['unclosed block', UNCLOSED_PATH, UNCLOSED_PAGE, UNCLOSED_WARNING],
     ['invalid YAML', BAD_YAML_PATH, BAD_YAML_PAGE, BAD_YAML_WARNING],
   ])(
-    'with %s is skipped: same context, outputs and handoff as without it, one warning, exit 0',
+    'with %s is skipped: same context and outputs as without it, one warning, exit 0',
     async (_label, path, page, warning) => {
       const clean = await runCli(FIXTURE_WIKI, EVENT_ENV)
       const run = await runCli({...FIXTURE_WIKI, [path]: page}, EVENT_ENV)
@@ -359,7 +352,6 @@ describe('wiki-query CLI: a page with unreadable frontmatter', () => {
       expect(run.stderr).toBe(warning)
       expect(run.stdout).toBe(clean.stdout)
       expect(run.githubOutput).toBe(clean.githubOutput)
-      expect(run.handoff).toBe(clean.handoff)
     },
   )
 
@@ -373,14 +365,14 @@ describe('wiki-query CLI: a page with unreadable frontmatter', () => {
     expect(run.stderr).toBe(`${BAD_YAML_WARNING}${UNCLOSED_WARNING}`)
   })
 
-  it('carries no text from a bad page on stdout, stderr, the outputs or the handoff', async () => {
+  it('carries no text from a bad page on stdout, stderr or the outputs', async () => {
     const run = await runCli(
       {...FIXTURE_WIKI, [UNCLOSED_PATH]: UNCLOSED_PAGE, [BAD_YAML_PATH]: BAD_YAML_PAGE},
       EVENT_ENV,
     )
 
     expect(run.stderr).not.toBe('')
-    for (const surface of [run.stdout, run.stderr, run.githubOutput, run.handoff]) {
+    for (const surface of [run.stdout, run.stderr, run.githubOutput]) {
       expect(surface).not.toContain(SENTINEL)
     }
   })
@@ -397,7 +389,6 @@ describe('wiki-query CLI: a page with unreadable frontmatter', () => {
     expect(run.stderr).toBe('wiki-query:warn:baseline-query-failed\n')
     expect(run.stdout).toBe(EMPTY_STDOUT)
     expect(run.githubOutput).toContain('selected-paths=[]')
-    expect(JSON.parse(run.handoff)).toEqual({selectedPaths: []})
   })
 
   it("keeps today's fail-soft result when the wiki cannot be read at all", async () => {
@@ -409,7 +400,6 @@ describe('wiki-query CLI: a page with unreadable frontmatter', () => {
     expect(run.status).toBe(0)
     expect(run.stderr).toBe('wiki-query:warn:baseline-query-failed\n')
     expect(run.stdout).toBe(EMPTY_STDOUT)
-    expect(JSON.parse(run.handoff)).toEqual({selectedPaths: []})
   })
 })
 
@@ -455,11 +445,7 @@ describe('runWikiQuery: a stderr that cannot be written', () => {
     await writeWiki(cwd, files)
     const stdout: string[] = []
     await runWikiQuery(
-      {
-        ...EVENT_ENV,
-        GITHUB_OUTPUT: join(cwd, 'github-output.txt'),
-        WIKI_CONTEXT_HANDOFF_PATH: join(cwd, 'handoff.json'),
-      },
+      {...EVENT_ENV, GITHUB_OUTPUT: join(cwd, 'github-output.txt')},
       {
         stdout: text => stdout.push(text),
         stderr: () => {
@@ -470,7 +456,7 @@ describe('runWikiQuery: a stderr that cannot be written', () => {
     return {stdout}
   }
 
-  it('still writes the outputs, the handoff and stdout when a skipped-page warning cannot be written', async () => {
+  it('still writes the outputs and stdout when a skipped-page warning cannot be written', async () => {
     const {stdout} = await runWithBrokenStderr({...FIXTURE_WIKI, [UNCLOSED_PATH]: UNCLOSED_PAGE})
 
     expect(stdout).toHaveLength(1)
@@ -478,9 +464,6 @@ describe('runWikiQuery: a stderr that cannot be written', () => {
       'knowledge/wiki/repos/fro-bot--agent.md',
     )
     expect(await readFile(join(cwd, 'github-output.txt'), 'utf8')).toContain('selected-paths=[')
-    expect(
-      (JSON.parse(await readFile(join(cwd, 'handoff.json'), 'utf8')) as {selectedPaths: string[]}).selectedPaths,
-    ).toContain('knowledge/wiki/repos/fro-bot--agent.md')
   })
 
   it('still writes the empty outputs when the baseline-failed warning cannot be written', async () => {
@@ -488,6 +471,5 @@ describe('runWikiQuery: a stderr that cannot be written', () => {
 
     expect(stdout).toEqual([EMPTY_STDOUT])
     expect(await readFile(join(cwd, 'github-output.txt'), 'utf8')).toContain('selected-paths=[]')
-    expect(JSON.parse(await readFile(join(cwd, 'handoff.json'), 'utf8'))).toEqual({selectedPaths: []})
   })
 })

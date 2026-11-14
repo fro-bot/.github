@@ -27,7 +27,7 @@ const CONFIG_OUTPUT = expr('steps.knowledge-mcp.outputs.opencode-config')
 const CALL_LOG_OUTPUT = expr('steps.knowledge-mcp.outputs.call-log')
 const SUMMARY_IF = expr(`always() && steps.knowledge-mcp.outputs.call-log != ''`)
 const FORK_FLAG = expr('github.event.pull_request.head.repo.fork')
-const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_wiki_linked', 'knowledge_solutions_search'] as const
+const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_solutions_search'] as const
 
 interface Step {
   name?: string
@@ -68,11 +68,9 @@ interface Caller {
   readonly job: string
   /** The agent step ids that read the action's output, in file order. */
   readonly agentSteps: readonly string[]
-  /** The action's `handoff-path`, or undefined when the job has no handoff. */
-  readonly handoffPath?: string
   /** The action's `fork` input, or undefined when the job passes none. */
   readonly fork?: string
-  /** Whether the prompt carries the Fro Bot guidance (all three tools) or the survey one (two search tools). */
+  /** Whether the prompt carries the Fro Bot guidance or the survey one; both name the two search tools. */
   readonly prompt: 'fro-bot' | 'survey'
 }
 
@@ -81,9 +79,6 @@ const CALLERS: readonly Caller[] = [
     workflow: 'fro-bot.yaml',
     job: 'fro-bot',
     agentSteps: ['fro-bot-agent'],
-    handoffPath: `${expr('runner.temp')}/wiki-context-handoff-${expr('github.run_id')}-${expr(
-      'github.run_attempt',
-    )}.json`,
     fork: FORK_FLAG,
     prompt: 'fro-bot',
   },
@@ -91,9 +86,6 @@ const CALLERS: readonly Caller[] = [
     workflow: 'fro-bot.yaml',
     job: 'fro-bot-remediate',
     agentSteps: ['fro-bot-agent'],
-    handoffPath: `${expr('runner.temp')}/wiki-context-handoff-${expr('github.run_id')}-${expr(
-      'github.run_attempt',
-    )}-remediate.json`,
     fork: FORK_FLAG,
     prompt: 'fro-bot',
   },
@@ -101,9 +93,6 @@ const CALLERS: readonly Caller[] = [
     workflow: 'fro-bot.yaml',
     job: 'fro-bot-observe',
     agentSteps: ['fro-bot-agent'],
-    handoffPath: `${expr('runner.temp')}/wiki-context-handoff-${expr('github.run_id')}-${expr(
-      'github.run_attempt',
-    )}-observe.json`,
     fork: FORK_FLAG,
     prompt: 'fro-bot',
   },
@@ -125,14 +114,7 @@ const RAW_SECRET_STEPS: readonly string[] = [
 /** What the excerpt steps looked like before the server existed; they are not touched. */
 const EXCERPT_STEPS = {
   'wiki-query': {
-    env: [
-      'WIKI_QUERY_EVENT_NAME',
-      'WIKI_QUERY_OWNER',
-      'WIKI_QUERY_REPO',
-      'WIKI_QUERY_TITLE',
-      'WIKI_QUERY_BODY',
-      'WIKI_CONTEXT_HANDOFF_PATH',
-    ],
+    env: ['WIKI_QUERY_EVENT_NAME', 'WIKI_QUERY_OWNER', 'WIKI_QUERY_REPO', 'WIKI_QUERY_TITLE', 'WIKI_QUERY_BODY'],
     run: "bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts",
   },
   'solutions-query': {
@@ -209,10 +191,9 @@ describe.each(CALLERS)('knowledge MCP caller $workflow / $job', caller => {
     expect(configStep?.run).toBeUndefined()
   })
 
-  it('passes the secret, the handoff path and the fork flag through with: only', () => {
+  it('passes the secret and the fork flag through with: only', () => {
     expect(configStep?.with).toStrictEqual({
       'opencode-config': SECRET,
-      ...(caller.handoffPath === undefined ? {} : {'handoff-path': caller.handoffPath}),
       ...(caller.fork === undefined ? {} : {fork: caller.fork}),
     })
   })
@@ -270,10 +251,11 @@ describe.each(CALLERS)('knowledge MCP caller $workflow / $job', caller => {
       return
     }
     for (const tool of TOOL_IDS) expect(prompt).toContain(`\`${tool}\``)
+    expect(prompt).not.toContain('knowledge_wiki_linked')
     // The agent pin keeps credential-free local servers on every trigger, so the prompt carries no bash recipe.
     expect(prompt).not.toContain('wiki-context-expand')
     expect(prompt).not.toContain('bun scripts/')
-    expect(prompt).not.toContain('WIKI_CONTEXT_HANDOFF_PATH=')
+    expect(prompt).not.toContain('WIKI_CONTEXT_HANDOFF_PATH')
   })
 })
 
@@ -294,15 +276,12 @@ describe('knowledge MCP callers: nothing else moves', () => {
     },
   )
 
-  it.each(CALLERS.filter(caller => caller.prompt === 'fro-bot'))(
-    'the handoff path the agent step declares is the one the config step passes ($job)',
-    caller => {
-      const steps = stepsOf(caller.workflow, caller.job)
-      const agent = steps.find(step => step.id === 'fro-bot-agent')
-      const producer = steps.find(step => step.id === 'wiki-query')
+  it('no step in either workflow sets a hand-off path or passes `handoff-path`', () => {
+    for (const file of readdirSync(WORKFLOWS_DIR).filter(name => name.endsWith('.yaml'))) {
+      const text = readFileSync(resolve(WORKFLOWS_DIR, file), 'utf8')
 
-      expect(agent?.env?.WIKI_CONTEXT_HANDOFF_PATH).toBe(caller.handoffPath)
-      expect(producer?.env?.WIKI_CONTEXT_HANDOFF_PATH).toBe(caller.handoffPath)
-    },
-  )
+      expect(text, file).not.toContain('WIKI_CONTEXT_HANDOFF_PATH')
+      expect(text, file).not.toContain('handoff-path')
+    }
+  })
 })

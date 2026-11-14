@@ -27,8 +27,6 @@ const SERVER_COMMAND = ['bun', 'scripts/knowledge-mcp.ts'] as const
 const READY_LINE = 'knowledge-mcp: ready'
 const FIXED_STDERR_LINES = new Set([
   READY_LINE,
-  'knowledge-mcp: error:no-handoff',
-  'knowledge-mcp: error:handoff-malformed',
   'knowledge-mcp: error:invalid-query',
   'knowledge-mcp: error:corpus-unavailable',
   'knowledge-mcp: error:unexpected',
@@ -221,15 +219,15 @@ function stderrLines(session: Session): string[] {
 }
 
 describe('knowledge MCP server: the composite command, spawned', () => {
-  it('lists exactly the three tools and writes the ready line to stderr', async () => {
+  it('lists exactly the two tools and writes the ready line to stderr', async () => {
     // #given the composite's exact command and a fixture checkout as cwd
     const session = await connect({cwd: await makeCheckout()})
 
     // #when a client lists tools
     const {tools} = await session.client.listTools()
 
-    // #then exactly the three allowlisted tools exist and stderr is only the ready line
-    expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_linked', 'wiki_search'])
+    // #then exactly the two allowlisted tools exist and stderr is only the ready line
+    expect(tools.map(tool => tool.name).sort()).toEqual(['solutions_search', 'wiki_search'])
     expect(stderrLines(session)).toEqual([READY_LINE])
 
     // The query text the model reads over the real transport is the validator-shaped description.
@@ -294,47 +292,11 @@ describe('knowledge MCP server: the composite command, spawned', () => {
     expect(solutions).toEqual({isError: true, text: '{"error":"corpus-unavailable"}'})
   })
 
-  it('wiki_linked returns the pages linked from the handoff', async () => {
-    const cwd = await makeCheckout()
-    const handoff = join(cwd, 'handoff.json')
-    await writeFile(handoff, JSON.stringify({selectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md']}))
-    const session = await connect({cwd, env: {WIKI_CONTEXT_HANDOFF_PATH: handoff}})
-
-    const outcome = await callTool(session, 'wiki_linked')
-
-    expect(outcome.isError).toBe(false)
-    expect(JSON.parse(outcome.text)).toMatchObject({status: 'ok', mode: 'linked'})
-    expect((JSON.parse(outcome.text) as {selectedPaths: string[]}).selectedPaths.sort()).toEqual([
-      'knowledge/wiki/entities/octokit.md',
-      'knowledge/wiki/topics/vitest.md',
-    ])
-  })
-
-  it('wiki_linked answers no-handoff when no handoff path is configured', async () => {
+  it('refuses a call to wiki_linked as an unknown tool', async () => {
     const session = await connect({cwd: await makeCheckout()})
 
-    expect(await callTool(session, 'wiki_linked')).toEqual({isError: true, text: '{"error":"no-handoff"}'})
-  })
-
-  it('wiki_linked answers no-handoff for a missing file, naming no path', async () => {
-    const cwd = await makeCheckout()
-    const missing = join(cwd, 'does-not-exist-handoff.json')
-    const session = await connect({cwd, env: {WIKI_CONTEXT_HANDOFF_PATH: missing}})
-
-    const outcome = await callTool(session, 'wiki_linked')
-
-    expect(outcome).toEqual({isError: true, text: '{"error":"no-handoff"}'})
-    expect(outcome.text).not.toContain('does-not-exist')
-    expect(session.stderr()).not.toContain('does-not-exist')
-  })
-
-  it('wiki_linked answers handoff-malformed even when the corpus is also missing', async () => {
-    const cwd = await makeCheckout({wiki: false})
-    const handoff = join(cwd, 'handoff.json')
-    await writeFile(handoff, '{"selectedPaths": "not-an-array"}')
-    const session = await connect({cwd, env: {WIKI_CONTEXT_HANDOFF_PATH: handoff}})
-
-    expect(await callTool(session, 'wiki_linked')).toEqual({isError: true, text: '{"error":"handoff-malformed"}'})
+    await expect(session.client.callTool({name: 'wiki_linked', arguments: {}})).rejects.toBeInstanceOf(McpError)
+    expect(stderrLines(session)).toEqual([READY_LINE])
   })
 
   it('solutions_search returns the matching fixture doc and stderr holds only the ready line', async () => {
@@ -375,7 +337,6 @@ describe('knowledge MCP server: the composite command, spawned', () => {
       (await callTool(session, 'wiki_search', {query: 'octokit github api access'})).text,
       (await callTool(session, 'wiki_search', {query: 'wiki'})).text,
       (await callTool(session, 'solutions_search', {query: 'cache invalidation region rotation'})).text,
-      (await callTool(session, 'wiki_linked')).text,
       session.stderr(),
     ].join('\n')
 
@@ -420,13 +381,10 @@ describe('knowledge MCP server: the composite command, spawned', () => {
 
   it('writes only lines from the fixed set to stderr across every error case', async () => {
     const cwd = await makeCheckout()
-    const handoff = join(cwd, 'bad-handoff.json')
-    await writeFile(handoff, 'not json')
-    const session = await connect({cwd, env: {WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+    const session = await connect({cwd})
 
     await callTool(session, 'wiki_search', {query: 'wiki'})
     await callTool(session, 'solutions_search', {query: '../x'})
-    await callTool(session, 'wiki_linked')
 
     const lines = stderrLines(session)
     expect(lines.length).toBeGreaterThan(1)
@@ -448,11 +406,11 @@ describe('knowledge MCP server: the call log, spawned', () => {
     expect(await readFile(log, 'utf8')).toBe('')
 
     // #when a call lands and a second server (the next survey attempt) starts on the same file
-    await callTool(first, 'wiki_linked')
+    await callTool(first, 'wiki_search', {query: 'wiki'})
     await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log}})
 
     // #then the earlier line is still there
-    expect(await readFile(log, 'utf8')).toBe('wiki_linked no-handoff\n')
+    expect(await readFile(log, 'utf8')).toBe('wiki_search invalid-query\n')
   })
 
   it('appends one `<tool> <code>` line per tools/call, and nothing the model sent', async () => {
@@ -468,7 +426,6 @@ describe('knowledge MCP server: the call log, spawned', () => {
     await callTool(session, 'wiki_search', {query: 'wiki'})
     await callTool(session, 'solutions_search', {query: 'cache invalidation region rotation'})
     await callTool(session, 'solutions_search', {query: '../x'})
-    await callTool(session, 'wiki_linked')
 
     // #then the file holds exactly those calls' tool names and codes, and the sentinel is nowhere
     const text = await readFile(log, 'utf8')
@@ -479,7 +436,6 @@ describe('knowledge MCP server: the call log, spawned', () => {
         'wiki_search invalid-query',
         'solutions_search ok',
         'solutions_search invalid-query',
-        'wiki_linked no-handoff',
         '',
       ].join('\n'),
     )
@@ -487,20 +443,15 @@ describe('knowledge MCP server: the call log, spawned', () => {
     expect(session.stderr()).not.toContain(sentinel)
   })
 
-  it('records the other fixed codes: corpus-unavailable and handoff-malformed', async () => {
+  it('records the other fixed code: corpus-unavailable', async () => {
     const cwd = await makeCheckout({wiki: false, solutions: false})
     const log = join(cwd, 'knowledge-mcp-calls.log')
-    const handoff = join(cwd, 'handoff.json')
-    await writeFile(handoff, '{"selectedPaths": "not-an-array"}')
-    const session = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log, WIKI_CONTEXT_HANDOFF_PATH: handoff}})
+    const session = await connect({cwd, env: {KNOWLEDGE_MCP_CALL_LOG: log}})
 
     await callTool(session, 'wiki_search', {query: 'octokit github api access'})
     await callTool(session, 'solutions_search', {query: 'cache region rotation'})
-    await callTool(session, 'wiki_linked')
 
-    expect(await readFile(log, 'utf8')).toBe(
-      'wiki_search corpus-unavailable\nsolutions_search corpus-unavailable\nwiki_linked handoff-malformed\n',
-    )
+    expect(await readFile(log, 'utf8')).toBe('wiki_search corpus-unavailable\nsolutions_search corpus-unavailable\n')
   })
 
   it('writes no file when the path is not absolute, and still answers', async () => {

@@ -1,5 +1,5 @@
 /**
- * The `scripts/wiki-query.ts` entrypoint on the goke runner. It reads the wiki from the checkout, appends `excerpt`, `selected-paths` and `byte-length` to `$GITHUB_OUTPUT`, writes the selected-path handoff file at the caller-supplied `WIKI_CONTEXT_HANDOFF_PATH`, and prints the result as one JSON line. Both writes go to caller-supplied paths, so it is read-only. It takes no argument; argv that matches
+ * The `scripts/wiki-query.ts` entrypoint on the goke runner. It reads the wiki from the checkout, appends `excerpt`, `selected-paths` and `byte-length` to the caller-supplied `$GITHUB_OUTPUT`, and prints the result as one JSON line, so it is read-only. It takes no argument; argv that matches
  * nothing declared, `--help` included, is a usage error and runs nothing.
  */
 

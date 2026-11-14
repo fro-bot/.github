@@ -1,5 +1,4 @@
-import {readdir, readFile, rename, unlink, writeFile} from 'node:fs/promises'
-import process from 'node:process'
+import {readdir, readFile} from 'node:fs/promises'
 
 import {formatJsonLine} from '@fro-bot/core/json'
 import {writeGithubOutputs} from '@fro-bot/core/output'
@@ -254,32 +253,6 @@ function writeGithubOutput(result: AssembleWikiContextResult, env: Readonly<Reco
   )
 }
 
-/**
- * Write the baseline query's selected wiki paths to a runner-temp handoff file.
- * Contains only `selectedPaths` and coarse metadata — no excerpt bodies,
- * queries, task text, or workflow context.
- *
- * Writes atomically (temp file + rename) with owner-only permissions where the
- * platform supports it. Fails soft: any error is swallowed so baseline wiki
- * context output is never broken by a handoff write failure.
- */
-export async function writeSelectedPathsHandoff(handoffPath: string, selectedPaths: string[]): Promise<void> {
-  const payload = {selectedPaths}
-  const tempPath = `${handoffPath}.tmp-${Math.random().toString(16).slice(2)}`
-
-  try {
-    await writeFile(tempPath, `${JSON.stringify(payload)}\n`, {mode: 0o600})
-    await rename(tempPath, handoffPath)
-  } catch {
-    try {
-      await unlink(tempPath)
-    } catch {
-      // ignore — tempPath may not have been created
-    }
-    process.stderr.write('wiki-query:warn:handoff-write-failed\n')
-  }
-}
-
 const EMPTY_CONTEXT_RESULT: AssembleWikiContextResult = {
   excerpt: '',
   selectedPaths: [],
@@ -321,7 +294,7 @@ function warn(io: WikiQueryIo, line: string): void {
   try {
     io.stderr(line)
   } catch {
-    // Swallowed on purpose: the outputs, the handoff and stdout are written regardless.
+    // Swallowed on purpose: the outputs and stdout are written regardless.
   }
 }
 
@@ -329,7 +302,7 @@ function warn(io: WikiQueryIo, line: string): void {
  * The baseline wiki query. A page whose frontmatter cannot be read is left out and reported on stderr; the rest
  * of the context is built. Fail-soft: a corpus-level failure (the wiki cannot be read, or no page is readable)
  * never breaks the baseline prompt-injection workflow, so it falls back to an explicit empty context and
- * still writes the outputs. A handoff-write failure is also swallowed (see writeSelectedPathsHandoff).
+ * still writes the outputs.
  */
 export async function runWikiQuery(env: Readonly<Record<string, string | undefined>>, io: WikiQueryIo): Promise<void> {
   let result: AssembleWikiContextResult
@@ -357,11 +330,6 @@ export async function runWikiQuery(env: Readonly<Record<string, string | undefin
   }
 
   writeGithubOutput(result, env)
-
-  const handoffPath = env.WIKI_CONTEXT_HANDOFF_PATH
-  if (handoffPath !== undefined && handoffPath !== '') {
-    await writeSelectedPathsHandoff(handoffPath, result.selectedPaths)
-  }
 
   io.stdout(
     formatJsonLine({excerpt: result.excerpt, selectedPaths: result.selectedPaths, byteLength: result.byteLength}),

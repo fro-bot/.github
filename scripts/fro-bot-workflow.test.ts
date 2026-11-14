@@ -1981,14 +1981,14 @@ describe('fro-bot.yaml knowledge tool duties in the rendered prompts', () => {
     ['Remediate', composeRemediatePrompt],
     ['Observe', composeObservePrompt],
   ])(
-    'the %s prompt asks for no search on the baseline alone and names no duty for knowledge_wiki_linked',
+    'the %s prompt asks for no search on the baseline alone and never names knowledge_wiki_linked',
     (_name, compose) => {
       const prompt = flat(compose())
       const block = /<wiki_context_expansion>[\s\S]*?<\/wiki_context_expansion>/u.exec(prompt)?.[0] ?? ''
 
       expect(block).not.toBe('')
       expect(block).not.toMatch(/optional|do not expand by default|usually enough on its own|look further/iu)
-      expect(block).not.toMatch(/(?:search|use|call|check|before)[^.]*`knowledge_wiki_linked`/iu)
+      expect(prompt).not.toContain('knowledge_wiki_linked')
     },
   )
 })

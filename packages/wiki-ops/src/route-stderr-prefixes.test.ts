@@ -304,24 +304,21 @@ describe('the wiki-query emitter', () => {
     return [...kinds].sort()
   }
 
-  /** Kinds the wiki-query steps deliberately do not route: a failed handoff write leaves the baseline context intact. */
-  const UNROUTED_KINDS = ['handoff-write-failed']
-
   const queryRoutes = (): Route[] => steps.filter(step => step.key === 'wiki-query').flatMap(step => routesOf(step))
   const routedBy = (kind: string, route: Route): boolean => `${PREFIX}${kind} path="x"`.startsWith(route.prefix)
 
-  it('writes exactly the kinds baseline-query-failed, handoff-write-failed and page-skipped', () => {
-    expect(emittedKinds()).toStrictEqual(['baseline-query-failed', 'handoff-write-failed', 'page-skipped'])
+  it('writes exactly the kinds baseline-query-failed and page-skipped', () => {
+    expect(emittedKinds()).toStrictEqual(['baseline-query-failed', 'page-skipped'])
   })
 
-  it('routes every other kind in each of the three steps, each under its own heading, and none twice', () => {
+  it('routes every kind in each of the three steps, each under its own heading, and none twice', () => {
     const queryStepRoutes = steps.filter(step => step.key === 'wiki-query').map(step => routesOf(step))
     expect(queryStepRoutes).toHaveLength(3)
     for (const routes of queryStepRoutes) {
       expect(routes.map(route => route.heading)).toStrictEqual(['Wiki pages skipped', 'Wiki context unavailable'])
       for (const kind of emittedKinds()) {
         const matching = routes.filter(route => routedBy(kind, route))
-        expect(matching.length, kind).toBe(UNROUTED_KINDS.includes(kind) ? 0 : 1)
+        expect(matching.length, kind).toBe(1)
       }
     }
   })
@@ -330,9 +327,5 @@ describe('the wiki-query emitter', () => {
     for (const route of queryRoutes()) {
       expect(emittedKinds().filter(kind => routedBy(kind, route)).length, route.prefix).toBe(1)
     }
-  })
-
-  it('lists only kinds the query writes as unrouted', () => {
-    for (const kind of UNROUTED_KINDS) expect(emittedKinds()).toContain(kind)
   })
 })

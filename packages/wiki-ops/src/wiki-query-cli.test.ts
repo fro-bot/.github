@@ -41,7 +41,6 @@ describe('argv that no caller sends', () => {
 describe('main', () => {
   it('runs the CLI against process.argv, prints one JSON line and sets the exit code without exiting the process', async () => {
     vi.stubEnv('GITHUB_OUTPUT', '')
-    vi.stubEnv('WIKI_CONTEXT_HANDOFF_PATH', '')
     vi.stubEnv('WIKI_QUERY_EVENT_NAME', 'schedule')
     vi.stubEnv('WIKI_QUERY_OWNER', '')
     vi.stubEnv('WIKI_QUERY_REPO', '')

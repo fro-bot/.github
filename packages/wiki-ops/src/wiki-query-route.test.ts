@@ -57,7 +57,6 @@ interface Observed {
   readonly stderr: string
   /** `$GITHUB_OUTPUT` with the random heredoc delimiter replaced. */
   readonly githubOutput: string
-  readonly handoff: string
 }
 
 interface Both {
@@ -76,39 +75,36 @@ async function checkout(name: string, files: Readonly<Record<string, string>>): 
   return cwd
 }
 
-async function observe(result: SpawnEntrypointResult, handoffPath: string): Promise<Observed> {
+function observe(result: SpawnEntrypointResult): Observed {
   return {
     exitCode: result.exitCode,
     stdout: result.stdout,
     stderr: result.stderr,
     githubOutput: result.githubOutput.replaceAll(UUID_PATTERN, '<delimiter>'),
-    handoff: await readFile(handoffPath, 'utf8').catch(() => ''),
   }
 }
 
 /** Runs the query bare and behind the router of the first step, on the same checkout. `summary` is what the router appended. */
 async function runBoth(files: Readonly<Record<string, string>>, summaryPath?: string): Promise<Both> {
   const cwd = await checkout('checkout', files)
-  const plainHandoff = join(root, 'plain-handoff.json')
-  const wrappedHandoff = join(root, 'wrapped-handoff.json')
   const summary = summaryPath ?? join(root, 'summary.md')
   await writeFile(join(root, 'summary.md'), '')
 
   const plain = await spawnEntrypoint({
     entrypoint: WIKI_QUERY,
     cwd,
-    env: {...EVENT_ENV, WIKI_CONTEXT_HANDOFF_PATH: plainHandoff},
+    env: EVENT_ENV,
   })
   const wrapped = await spawnEntrypoint({
     entrypoint: ROUTER,
     cwd,
     argv: [...(ROUTER_FLAGS[0] ?? []), 'bun', WIKI_QUERY],
-    env: {...EVENT_ENV, WIKI_CONTEXT_HANDOFF_PATH: wrappedHandoff, GITHUB_STEP_SUMMARY: summary},
+    env: {...EVENT_ENV, GITHUB_STEP_SUMMARY: summary},
   })
 
   return {
-    plain: await observe(plain, plainHandoff),
-    wrapped: await observe(wrapped, wrappedHandoff),
+    plain: observe(plain),
+    wrapped: observe(wrapped),
     summary: await readFile(join(root, 'summary.md'), 'utf8'),
   }
 }
@@ -126,7 +122,7 @@ describe('wrapped and unwrapped baseline wiki query', () => {
     ['one unclosed page', {...GOOD_PAGES, 'knowledge/wiki/topics/bad.md': UNCLOSED_PAGE}, 0],
     ['one invalid YAML page', {...GOOD_PAGES, 'knowledge/wiki/topics/bad.md': BAD_YAML_PAGE}, 0],
     ['every page bad', {'knowledge/index.md': '# Wiki Index\n', 'knowledge/wiki/topics/bad.md': UNCLOSED_PAGE}, 0],
-  ])('%s: stdout, stderr, GITHUB_OUTPUT, the handoff file and the exit code are identical', async (_name, files) => {
+  ])('%s: stdout, stderr, GITHUB_OUTPUT and the exit code are identical', async (_name, files) => {
     const {plain, wrapped} = await runBoth(files)
 
     expect(plain.exitCode).toBe(0)

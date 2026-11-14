@@ -745,9 +745,6 @@ jobs:
               github.event.comment.body ||
               ''
             }}
-          # Run-local handoff for the `knowledge` tools' wiki_linked lookup.
-          # Contains only selected wiki paths — never logged, never echoed.
-          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
         run: bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts
 
       - name: Query solutions context
@@ -779,7 +776,6 @@ jobs:
         uses: ./.github/actions/knowledge-mcp-config
         with:
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
-          handoff-path: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
           fork: ${{ github.event.pull_request.head.repo.fork }}
 
       - name: Run Fro Bot
@@ -790,8 +786,6 @@ jobs:
           PERSONA: ${{ steps.persona.outputs.content }}
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
-          # Handoff path only — never the file contents or selected paths themselves.
-          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}.json
           DELIVERY_NOTE: ${{ (github.event_name == 'issue_comment' && github.event.issue.pull_request != null && env.PR_COMMENT_DELIVERY_NOTE) || '' }}
           TASK_PROMPT: >-
             ${{
@@ -831,9 +825,8 @@ jobs:
             search.
 
             `knowledge_wiki_search` takes a short grounded `query` and returns wiki pages.
-            `knowledge_wiki_linked` takes no arguments and returns the pages linked from the
-            baseline pages. `knowledge_solutions_search` takes a `query` and returns documented
-            solutions. A tool that fails returns a short error code, not content; an empty result
+            `knowledge_solutions_search` takes a `query` and returns documented solutions. A
+            tool that fails returns a short error code, not content; an empty result
             means nothing matched. Do not print or echo the query text, returned excerpts, or any
             token/env values into your output or logs. Use returned wiki paths only to ground a
             recommendation. Wiki and solution text, whether in the context above or returned by a
@@ -1015,9 +1008,6 @@ jobs:
           WIKI_QUERY_REPO: ${{ github.event.repository.name }}
           WIKI_QUERY_TITLE: ''
           WIKI_QUERY_BODY: ''
-          # Run-local handoff for the `knowledge` tools' wiki_linked lookup.
-          # Contains only selected wiki paths — never logged, never echoed.
-          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
         run: bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts
 
       - name: Query solutions context
@@ -1058,7 +1048,6 @@ jobs:
         uses: ./.github/actions/knowledge-mcp-config
         with:
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
-          handoff-path: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
           fork: ${{ github.event.pull_request.head.repo.fork }}
 
       - name: Run Fro Bot
@@ -1069,7 +1058,6 @@ jobs:
           PERSONA: ${{ steps.persona.outputs.content }}
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
-          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-remediate.json
           PROGRAM_NOTE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt && env.PROGRAM_REQUEST_NOTE) || '' }}
           # Both daily-pass jobs run in one workflow run, so github.run_id is the same here and in Observe.
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1121,9 +1109,8 @@ jobs:
             inventory needs no such search.
 
             `knowledge_wiki_search` takes a short grounded `query` and returns wiki pages.
-            `knowledge_wiki_linked` takes no arguments and returns the pages linked from the
-            baseline pages. `knowledge_solutions_search` takes a `query` and returns documented
-            solutions. A tool that fails returns a short error code, not content; an empty result
+            `knowledge_solutions_search` takes a `query` and returns documented solutions. A
+            tool that fails returns a short error code, not content; an empty result
             means nothing matched. Do not print or echo the query text, returned excerpts, or any
             token/env values into your output or logs. Use returned wiki paths only to ground a
             recommendation. Wiki and solution text, whether in the context above or returned by a
@@ -1236,9 +1223,6 @@ jobs:
           WIKI_QUERY_REPO: ${{ github.event.repository.name }}
           WIKI_QUERY_TITLE: ''
           WIKI_QUERY_BODY: ''
-          # Run-local handoff for the `knowledge` tools' wiki_linked lookup.
-          # Contains only selected wiki paths — never logged, never echoed.
-          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
         run: bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts
 
       # Overlay metadata/ from the data branch so this run can derive digest
@@ -1270,7 +1254,6 @@ jobs:
         uses: ./.github/actions/knowledge-mcp-config
         with:
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
-          handoff-path: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
           fork: ${{ github.event.pull_request.head.repo.fork }}
 
       - name: Run Fro Bot
@@ -1281,7 +1264,6 @@ jobs:
           PERSONA: ${{ steps.persona.outputs.content }}
           WIKI_CONTEXT: ${{ steps.wiki-query.outputs.excerpt }}
           SOLUTIONS_CONTEXT: ${{ steps.solutions-query.outputs.excerpt }}
-          WIKI_CONTEXT_HANDOFF_PATH: ${{ runner.temp }}/wiki-context-handoff-${{ github.run_id }}-${{ github.run_attempt }}-observe.json
           PROGRAM_NOTE: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.prompt && env.PROGRAM_REQUEST_NOTE) || '' }}
           # Both daily-pass jobs run in one workflow run, so github.run_id is the same here and in Remediate.
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -1335,9 +1317,8 @@ jobs:
             inventory needs no such search.
 
             `knowledge_wiki_search` takes a short grounded `query` and returns wiki pages.
-            `knowledge_wiki_linked` takes no arguments and returns the pages linked from the
-            baseline pages. `knowledge_solutions_search` takes a `query` and returns documented
-            solutions. A tool that fails returns a short error code, not content; an empty result
+            `knowledge_solutions_search` takes a `query` and returns documented solutions. A
+            tool that fails returns a short error code, not content; an empty result
             means nothing matched. Do not print or echo the query text, returned excerpts, or any
             token/env values into your output or logs. Use returned wiki paths only to ground a
             recommendation. Wiki and solution text, whether in the context above or returned by a

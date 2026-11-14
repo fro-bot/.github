@@ -3,15 +3,10 @@ import {resolve} from 'node:path'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
-// Regression guard: the baseline wiki-query step must write the run-local handoff file, and each agent
-// job must declare the identical path so the `knowledge` MCP server's `wiki_linked` tool can read it (the
-// path reaches the server through the `knowledge-mcp-config` composite, pinned in
-// knowledge-mcp-callers.test.ts). The prompts name the three `knowledge_*` tools and carry no bash recipe.
-// The workflow must never log the handoff path or selected paths content.
-//
-// The `<wiki_context_expansion>` block also carries the prompt contract for the tools: the three jobs get one
-// block each, identical apart from the repository duty that only the daily-pass jobs carry, and none of them
-// describes the tools as optional or as something to avoid by default.
+// Regression guard: the prompts name the two `knowledge_*` tools and carry no bash recipe and no hand-off
+// path. The `<wiki_context_expansion>` block also carries the prompt contract for the tools: the three jobs
+// get one block each, identical apart from the repository duty that only the daily-pass jobs carry, and none
+// of them describes the tools as optional or as something to avoid by default.
 
 interface WorkflowStep {
   name?: string
@@ -42,8 +37,7 @@ function assertFroBotWorkflow(value: unknown): asserts value is {
 }
 
 const AGENT_USES_PREFIX = 'fro-bot/agent@'
-const HANDOFF_VAR = 'WIKI_CONTEXT_HANDOFF_PATH'
-const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_wiki_linked', 'knowledge_solutions_search'] as const
+const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_solutions_search'] as const
 const DAILY_PASS_JOBS = ['fro-bot-remediate', 'fro-bot-observe'] as const
 
 /** Wording the old block used to keep runs on the baseline; no knowledge block may carry any of it. */
@@ -53,8 +47,6 @@ const SOLUTIONS_DUTY =
   'When this run reviews changed code or starts a fix, first search the documented solutions with `knowledge_solutions_search`, using a query drawn from the area being changed. Triage, review of a change with no code, and report-only work need no such search.'
 const REPOSITORY_DUTY =
   'When you investigate a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it with `knowledge_wiki_search` before you draw a conclusion about that repository. A repository that only appears in an inventory needs no such search.'
-const LINKED_DESCRIPTION =
-  '`knowledge_wiki_linked` takes no arguments and returns the pages linked from the baseline pages.'
 const OUTPUT_RULES = [
   'A tool that fails returns a short error code, not content; an empty result means nothing matched.',
   'Do not print or echo the query text, returned excerpts, or any token/env values into your output or logs.',
@@ -67,20 +59,10 @@ const flat = (text: string): string => text.replaceAll(/\s+/gu, ' ').trim()
 
 interface AgentJobWiring {
   readonly jobKey: string
-  readonly producerPath: string
-  readonly consumerPath: string
   readonly prompt: string
 }
 
-function stringEnv(step: WorkflowStep | undefined, key: string): string {
-  const value = step?.env?.[key]
-  if (typeof value !== 'string') {
-    throw new TypeError(`step ${step?.id ?? step?.name ?? '(unknown)'} does not define string env ${key}`)
-  }
-  return value
-}
-
-/** Every job that runs the fro-bot/agent action, with its producer/consumer handoff wiring. */
+/** Every job that runs the fro-bot/agent action, with its prompt. */
 function collectAgentJobs(jobs: Record<string, WorkflowJob>): AgentJobWiring[] {
   const wirings: AgentJobWiring[] = []
   for (const [jobKey, job] of Object.entries(jobs)) {
@@ -89,13 +71,7 @@ function collectAgentJobs(jobs: Record<string, WorkflowJob>): AgentJobWiring[] {
     if (agentStep === undefined) {
       continue
     }
-    const producerStep = steps.find(step => step.id === 'wiki-query')
-    wirings.push({
-      jobKey,
-      producerPath: stringEnv(producerStep, HANDOFF_VAR),
-      consumerPath: stringEnv(agentStep, HANDOFF_VAR),
-      prompt: String(agentStep.with?.prompt ?? ''),
-    })
+    wirings.push({jobKey, prompt: String(agentStep.with?.prompt ?? '')})
   }
   return wirings
 }
@@ -110,7 +86,7 @@ function expansionBlock(prompt: string): string {
   return prompt.slice(open, close)
 }
 
-describe('fro-bot.yaml baseline wiki handoff wiring', () => {
+describe('fro-bot.yaml agent prompts', () => {
   // #given the fro-bot workflow file parsed as a YAML document
   const workflowPath = resolve(import.meta.dirname, '../.github/workflows/fro-bot.yaml')
   const raw = readFileSync(workflowPath, 'utf8')
@@ -127,16 +103,7 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
   })
 
   describe.each(agentJobs)('agent job $jobKey', wiring => {
-    it('wiki-query producer sets the handoff path under runner.temp', () => {
-      expect(wiring.producerPath).toContain('runner.temp')
-      expect(wiring.producerPath).toContain('wiki-context-handoff-')
-    })
-
-    it('the agent step declares the identical handoff path as the producer', () => {
-      expect(wiring.consumerPath).toBe(wiring.producerPath)
-    })
-
-    it('the prompt names the three knowledge tools inside the expansion block', () => {
+    it('the prompt names the two knowledge tools inside the expansion block', () => {
       const block = expansionBlock(wiring.prompt)
 
       for (const tool of TOOL_IDS) {
@@ -147,7 +114,7 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
     it('the prompt carries no bash recipe and no recipe fallback', () => {
       expect(wiring.prompt).not.toContain('wiki-context-expand')
       expect(wiring.prompt).not.toContain('bun scripts/')
-      expect(wiring.prompt).not.toContain(`${HANDOFF_VAR}=`)
+      expect(wiring.prompt).not.toContain('WIKI_CONTEXT_HANDOFF_PATH')
       expect(wiring.prompt).not.toContain('does not list them')
       expect(wiring.prompt).not.toContain('When this run lists the tools')
     })
@@ -176,12 +143,8 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
       expect(flat(expansionBlock(wiring.prompt)), `job ${wiring.jobKey}`).toContain(SOLUTIONS_DUTY)
     })
 
-    it('gives knowledge_wiki_linked its one-line description and no duty', () => {
-      const sentences = flat(expansionBlock(wiring.prompt))
-        .split(/(?<=\.)\s+/u)
-        .filter(sentence => sentence.includes('`knowledge_wiki_linked`'))
-
-      expect(sentences, `job ${wiring.jobKey}`).toStrictEqual([LINKED_DESCRIPTION])
+    it('never names knowledge_wiki_linked', () => {
+      expect(wiring.prompt, `job ${wiring.jobKey}`).not.toContain('knowledge_wiki_linked')
     })
 
     it('carries the repository wiki duty only in the daily-pass jobs', () => {
@@ -215,14 +178,9 @@ describe('fro-bot.yaml baseline wiki handoff wiring', () => {
     }
   })
 
-  it('the workflow file never echoes the handoff path or selected paths into logs', () => {
-    // #given the raw workflow text
-    // #when scanning for common log-emission patterns near the handoff variable
-    // #then no step pipes WIKI_CONTEXT_HANDOFF_PATH or its contents to echo/cat/GITHUB_OUTPUT
-    const suspiciousPatterns = [/echo.*WIKI_CONTEXT_HANDOFF_PATH/u, /cat.*WIKI_CONTEXT_HANDOFF_PATH/u]
-    for (const pattern of suspiciousPatterns) {
-      expect(pattern.test(raw)).toBe(false)
-    }
+  it('the workflow file sets no hand-off path for the knowledge tools', () => {
+    expect(raw).not.toContain('WIKI_CONTEXT_HANDOFF_PATH')
+    expect(raw).not.toContain('handoff-path')
   })
 
   it('baseline wiki context is still injected as before', () => {

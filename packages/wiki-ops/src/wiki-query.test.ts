@@ -1,17 +1,16 @@
 import {spawnSync} from 'node:child_process'
-import {chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises'
+import {chmod, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 
-import {describe, expect, it, vi} from 'vitest'
+import {describe, expect, it} from 'vitest'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
 const wikiQueryModulePromise: Promise<{
   assembleWikiContext: typeof import('./wiki-query.js').assembleWikiContext
-  writeSelectedPathsHandoff: typeof import('./wiki-query.js').writeSelectedPathsHandoff
 }> = import(`./wiki-query${'.js'}`)
-const {assembleWikiContext, writeSelectedPathsHandoff} = await wikiQueryModulePromise
+const {assembleWikiContext} = await wikiQueryModulePromise
 
 describe('assembleWikiContext', () => {
   it('prioritizes the repo page for repo-local pull request context', () => {
@@ -242,99 +241,6 @@ describe('assembleWikiContext: a page whose frontmatter block is never closed', 
   })
 })
 
-describe('writeSelectedPathsHandoff', () => {
-  it('writes selected paths as a deterministic JSON array under the handoff path', async () => {
-    // #given a runner-temp directory and a set of selected wiki paths
-    const dir = await mkdtemp(join(tmpdir(), 'wiki-handoff-'))
-    const handoffPath = join(dir, 'wiki-context-handoff-1-1.json')
-
-    try {
-      // #when the handoff writer runs
-      await writeSelectedPathsHandoff(handoffPath, [
-        'knowledge/wiki/repos/fro-bot--agent.md',
-        'knowledge/wiki/topics/vitest.md',
-      ])
-
-      // #then the file contains only the selected paths as a JSON array
-      const contents = await readFile(handoffPath, 'utf8')
-      expect(JSON.parse(contents)).toEqual({
-        selectedPaths: ['knowledge/wiki/repos/fro-bot--agent.md', 'knowledge/wiki/topics/vitest.md'],
-      })
-    } finally {
-      await rm(dir, {recursive: true, force: true})
-    }
-  })
-
-  it('writes an empty array, not a missing or malformed file, when there are no selected paths', async () => {
-    // #given a runner-temp directory and zero selected paths
-    const dir = await mkdtemp(join(tmpdir(), 'wiki-handoff-'))
-    const handoffPath = join(dir, 'wiki-context-handoff-2-1.json')
-
-    try {
-      // #when the handoff writer runs with an empty selection
-      await writeSelectedPathsHandoff(handoffPath, [])
-
-      // #then the file exists with an explicit empty selectedPaths array
-      const contents = await readFile(handoffPath, 'utf8')
-      expect(JSON.parse(contents)).toEqual({selectedPaths: []})
-    } finally {
-      await rm(dir, {recursive: true, force: true})
-    }
-  })
-
-  it('sets owner-only permissions on the handoff file when the platform supports it', async () => {
-    // #given a runner-temp directory
-    const dir = await mkdtemp(join(tmpdir(), 'wiki-handoff-'))
-    const handoffPath = join(dir, 'wiki-context-handoff-3-1.json')
-
-    try {
-      // #when the handoff writer runs
-      await writeSelectedPathsHandoff(handoffPath, ['knowledge/wiki/topics/vitest.md'])
-
-      // #then the file mode is restricted to owner read/write only
-      const stats = await stat(handoffPath)
-
-      expect(stats.mode & 0o777).toBe(0o600)
-    } finally {
-      await rm(dir, {recursive: true, force: true})
-    }
-  })
-
-  it('fails soft when the handoff path is unwritable, without throwing', async () => {
-    // #given a handoff path inside a directory that does not exist and cannot be created safely
-    const unwritablePath = join('/nonexistent-root-that-should-not-exist', 'handoff.json')
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-
-    try {
-      // #when the handoff writer runs against an unwritable path
-      // #then it resolves without throwing (fail-soft), leaving baseline output unaffected
-      await expect(
-        writeSelectedPathsHandoff(unwritablePath, ['knowledge/wiki/topics/vitest.md']),
-      ).resolves.toBeUndefined()
-    } finally {
-      stderrSpy.mockRestore()
-    }
-  })
-
-  it('emits a closed-vocabulary stderr warning on write failure without leaking the raw path', async () => {
-    // #given a handoff path that will fail to write, and a stderr spy
-    const unwritablePath = join('/nonexistent-root-that-should-not-exist', 'handoff.json')
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
-
-    try {
-      // #when the handoff writer fails
-      await writeSelectedPathsHandoff(unwritablePath, ['knowledge/wiki/topics/vitest.md'])
-
-      // #then a closed-vocabulary status token is written to stderr, with no raw path or error text
-      const written = stderrSpy.mock.calls.map(call => String(call[0])).join('')
-      expect(written).toContain('wiki-query:warn:handoff-write-failed')
-      expect(written).not.toContain('nonexistent-root-that-should-not-exist')
-    } finally {
-      stderrSpy.mockRestore()
-    }
-  })
-})
-
 describe('wiki-query CLI shell behavior', () => {
   it('skips an unreadable wiki page while preserving readable baseline context', async () => {
     // #given a repo-shaped working directory with one readable matching page and one unreadable page
@@ -378,12 +284,11 @@ describe('wiki-query CLI shell behavior', () => {
     }
   })
 
-  it('catches baseline query failure when no page is readable and still writes empty outputs plus handoff', async () => {
+  it('catches baseline query failure when no page is readable and still writes empty outputs', async () => {
     // #given a temporary repo-shaped working directory whose only page has malformed wiki frontmatter
     const dir = await mkdtemp(join(tmpdir(), 'wiki-query-cli-'))
     const wikiDir = join(dir, 'knowledge/wiki/topics')
     const githubOutput = join(dir, 'github-output.txt')
-    const handoffPath = join(dir, 'handoff.json')
 
     try {
       await mkdir(wikiDir, {recursive: true})
@@ -397,19 +302,17 @@ describe('wiki-query CLI shell behavior', () => {
         env: {
           ...process.env,
           GITHUB_OUTPUT: githubOutput,
-          WIKI_CONTEXT_HANDOFF_PATH: handoffPath,
           WIKI_QUERY_EVENT_NAME: 'workflow_dispatch',
           WIKI_QUERY_TITLE: 'broken',
         },
       })
 
       // #then the shell layer fails soft: success exit, closed warning, empty stdout JSON,
-      // GitHub outputs, and an explicit empty selected-path handoff
+      // and GitHub outputs
       expect(result.status).toBe(0)
       expect(result.stderr).toContain('wiki-query:warn:baseline-query-failed')
       expect(JSON.parse(result.stdout)).toEqual({excerpt: '', selectedPaths: [], byteLength: 0})
       expect(await readFile(githubOutput, 'utf8')).toContain('selected-paths=[]')
-      expect(JSON.parse(await readFile(handoffPath, 'utf8'))).toEqual({selectedPaths: []})
     } finally {
       await rm(dir, {recursive: true, force: true})
     }

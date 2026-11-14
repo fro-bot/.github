@@ -152,7 +152,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 ## Implementation Units
 
-- [ ] **Unit 1: Remove the `wiki_linked` tool**
+- [x] **Unit 1: Remove the `wiki_linked` tool**
 
 **Goal:** The server offers two tools, nothing reads or writes the selected-page hand-off, and no prompt names `wiki_linked`.
 

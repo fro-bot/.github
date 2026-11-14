@@ -6,10 +6,6 @@ inputs:
     description: The OPENCODE_CONFIG secret, empty when unset. Read through `env:` only. Never printed; it is parsed and merged, and a value that does not parse fails the step with a fixed message.
     required: false
     default: ''
-  handoff-path:
-    description: The path of the job's wiki-context handoff file, set as the server's `WIKI_CONTEXT_HANDOFF_PATH`. A relative path is resolved against the workspace. Leave empty for a job without a handoff (survey); `wiki_linked` then answers `no-handoff`.
-    required: false
-    default: ''
   fork:
     description: '`true` on a pull request from a fork. The secret is then passed through unchanged and no server is added, because the checkout holds fork-authored code that the server would run.'
     required: false
@@ -33,7 +29,6 @@ runs:
       if: ${{ always() }}
       env:
         KNOWLEDGE_MCP_CONFIG: ${{ inputs.opencode-config }}
-        KNOWLEDGE_MCP_HANDOFF_PATH: ${{ inputs.handoff-path }}
         KNOWLEDGE_MCP_FORK: ${{ inputs.fork }}
       run: |
         set -euo pipefail
@@ -65,14 +60,6 @@ runs:
           /*) ;;
           *) fail 'the workspace path is not absolute' ;;
         esac
-
-        handoff="${KNOWLEDGE_MCP_HANDOFF_PATH:-}"
-        if [ -n "$handoff" ]; then
-          case "$handoff" in
-            /*) ;;
-            *) handoff="$workspace/$handoff" ;;
-          esac
-        fi
 
         # The server appends one line per tool call here. OpenCode keeps a local server's stderr in its
         # debug log, so this file is the only record a run leaves of a call. The name carries the run,
@@ -124,12 +111,10 @@ runs:
 
         merged=$(printf '%s' "$base" | jq -c \
           --arg cwd "$workspace" \
-          --arg handoff "$handoff" \
           --arg calllog "$call_log" \
           --argjson native "$native" '
           ({type: "local", command: ["bun", "scripts/knowledge-mcp.ts"], cwd: $cwd,
-            environment: ((if $handoff == "" then {} else {WIKI_CONTEXT_HANDOFF_PATH: $handoff} end)
-              + {KNOWLEDGE_MCP_CALL_LOG: $calllog})}) as $server
+            environment: {KNOWLEDGE_MCP_CALL_LOG: $calllog}}) as $server
           | (if has("mcp") then . else . + {mcp: {}} end)
           | if $native then .mcp.servers.knowledge = $server else .mcp.knowledge = $server end' 2>/dev/null) ||
           fail 'could not add the knowledge server'

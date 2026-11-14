@@ -1,29 +1,18 @@
 /**
  * Read-only, agent-invoked wiki context expansion CLI.
  *
- * Extends the cheap baseline wiki prompt injection with a bounded, explicitly-invoked
- * follow-up: either first-hop wikilinks from the baseline-selected pages ("linked" mode)
- * or a short grounded corpus query ("query" mode). Both modes share the same corpus,
- * budget, and runtime safety gate, and both return a structurally identical empty result
- * shape for every non-match/invalid/excluded case so query mode cannot become a
- * fine-grained corpus oracle.
+ * A bounded, explicitly-invoked short grounded corpus query ("query" mode). It returns a
+ * structurally identical empty result shape for every non-match/invalid/excluded case so
+ * the query cannot become a fine-grained corpus oracle.
  *
  * Output contract: deterministic JSON to stdout containing only safe excerpts, safe
  * selected paths, byte length, mode, status, and closed-vocabulary reason/counts. No raw
- * query text, handoff path, selected-path file contents, excerpt bodies outside the JSON
- * result, private token names, raw error messages, or environment values are ever
- * written to stdout or stderr.
+ * query text, excerpt bodies outside the JSON result, private token names, raw error
+ * messages, or environment values are ever written to stdout or stderr.
  */
 
 import {buildPrivateTokenSet} from '@fro.bot/wiki-write-core/wiki-slug'
-import {
-  buildWikiTargetIndex,
-  byteLength,
-  collectWikilinks,
-  collectWikiPages,
-  truncateToBytes,
-  WIKI_ROOT,
-} from '@fro.bot/wiki-write-core/wiki-utils'
+import {byteLength, collectWikiPages, truncateToBytes, WIKI_ROOT} from '@fro.bot/wiki-write-core/wiki-utils'
 import {parse} from 'yaml'
 import {filterSafeCandidates} from './wiki-context-safety.ts'
 
@@ -33,7 +22,7 @@ export const MAX_EXPANDED_CONTEXT_BYTES = 8 * 1024
 /** Per-invocation hard cap on returned pages. */
 export const MAX_EXPANDED_CONTEXT_PAGES = 3
 
-const USAGE = 'Usage: wiki-context-expand <linked|query> [query text]\n'
+const USAGE = 'Usage: wiki-context-expand query <query text>\n'
 
 // Overbroad/stopword-only query rejection vocabulary — short, generic terms that would
 // return most of the corpus rather than a grounded slice.
@@ -76,7 +65,7 @@ const PROMPT_INJECTION_PATTERNS = [
   /reveal\s+(secrets?|tokens?|credentials?)/iu,
 ]
 
-export type ExpandMode = 'linked' | 'query'
+export type ExpandMode = 'query'
 export type ExpandStatus = 'ok' | 'empty'
 
 /**
@@ -85,15 +74,7 @@ export type ExpandStatus = 'ok' | 'empty'
  * external reason as a true no-match, so query mode can never be used to distinguish
  * "matched but excluded" and "did not match" apart and become a fine-grained corpus oracle.
  */
-export type EmptyReason =
-  | 'no-handoff'
-  | 'malformed-handoff'
-  | 'no-links'
-  | 'invalid-query'
-  | 'no-match'
-  | 'private-token-load-failed'
-  | 'no-corpus'
-  | 'bad-args'
+export type EmptyReason = 'invalid-query' | 'no-match' | 'private-token-load-failed' | 'no-corpus' | 'bad-args'
 
 export interface ExpandResult {
   readonly status: ExpandStatus
@@ -117,9 +98,8 @@ export interface QueryValidationResult {
 /**
  * Validate and tokenize a query BEFORE any corpus access. Rejects empty, stopword-only,
  * path-like, delimiter-shaped, shell-metacharacter, prompt-injection-shaped, too-long, and
- * overbroad queries. This tokenizer is deliberately separate from the baseline event
- * tokenizer used by `wiki-query.ts` — query mode has a stricter, security-relevant input
- * boundary that the baseline event tokenizer does not need.
+ * overbroad queries. This is a stricter, security-relevant input boundary than any
+ * free-text tokenizer.
  */
 export function validateQuery(rawQuery: string): QueryValidationResult {
   const trimmed = rawQuery.trim()
@@ -160,38 +140,6 @@ export function validateQuery(rawQuery: string): QueryValidationResult {
   }
 
   return {valid: true, tokens: meaningfulTokens}
-}
-
-// ---------------------------------------------------------------------------
-// Handoff parsing
-// ---------------------------------------------------------------------------
-
-export type HandoffStatus = 'ok' | 'missing' | 'malformed'
-
-export interface HandoffParseResult {
-  readonly status: HandoffStatus
-  readonly selectedPaths: readonly string[]
-}
-
-/** Parse baseline handoff file content into a validated selected-paths list. Fails closed on any shape mismatch. */
-export function parseHandoffContent(content: string): HandoffParseResult {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(content)
-  } catch {
-    return {status: 'malformed', selectedPaths: []}
-  }
-
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return {status: 'malformed', selectedPaths: []}
-  }
-
-  const selectedPaths = (parsed as Record<string, unknown>).selectedPaths
-  if (!Array.isArray(selectedPaths) || !selectedPaths.every((value): value is string => typeof value === 'string')) {
-    return {status: 'malformed', selectedPaths: []}
-  }
-
-  return {status: 'ok', selectedPaths}
 }
 
 // ---------------------------------------------------------------------------
@@ -259,18 +207,8 @@ interface CorpusPage {
   readonly body: string
 }
 
-export interface AssembleLinkedParams {
-  readonly mode: 'linked'
-  readonly files: Record<string, string>
-  readonly handoffStatus: HandoffStatus
-  readonly baselineSelectedPaths?: readonly string[]
-  readonly privateTokens: ReadonlySet<string> | null
-  readonly maxBytes?: number
-  readonly maxPages?: number
-}
-
-export interface AssembleQueryParams {
-  readonly mode: 'query'
+export interface AssembleExpandedContextParams {
+  readonly mode: ExpandMode
   readonly files: Record<string, string>
   readonly query: string
   readonly privateTokens: ReadonlySet<string> | null
@@ -278,11 +216,9 @@ export interface AssembleQueryParams {
   readonly maxPages?: number
 }
 
-export type AssembleExpandedContextParams = AssembleLinkedParams | AssembleQueryParams
-
-const EMPTY_RESULT = (mode: ExpandMode, reason: EmptyReason): ExpandResult => ({
+const EMPTY_RESULT = (reason: EmptyReason): ExpandResult => ({
   status: 'empty',
-  mode,
+  mode: 'query',
   selectedPaths: [],
   excerpt: '',
   byteLength: 0,
@@ -291,48 +227,36 @@ const EMPTY_RESULT = (mode: ExpandMode, reason: EmptyReason): ExpandResult => ({
 })
 
 /**
- * Pure core: given a corpus, mode input, private token set, and budget settings, assemble
+ * Pure core: given a corpus, a query, a private token set, and budget settings, assemble
  * an expanded wiki context result. Safety filtering runs before formatting so an unsafe
  * candidate never reaches string concatenation.
  */
 export function assembleExpandedContext(params: AssembleExpandedContextParams): ExpandResult {
   if (params.privateTokens === null) {
-    return EMPTY_RESULT(params.mode, 'private-token-load-failed')
+    return EMPTY_RESULT('private-token-load-failed')
   }
 
-  if (params.mode === 'query') {
-    const validation = validateQuery(params.query)
-    if (!validation.valid || validation.tokens === undefined) {
-      return EMPTY_RESULT('query', 'invalid-query')
-    }
+  const validation = validateQuery(params.query)
+  if (!validation.valid || validation.tokens === undefined) {
+    return EMPTY_RESULT('invalid-query')
   }
 
   const pages = collectWikiPages(params.files).filter(page => page.frontmatterError === undefined)
   if (pages.length === 0) {
-    return EMPTY_RESULT(params.mode, 'no-corpus')
+    return EMPTY_RESULT('no-corpus')
   }
 
-  const candidates: CorpusPage[] =
-    params.mode === 'linked' ? collectLinkedCandidates(params, pages) : collectQueryCandidates(params, pages)
-
+  const candidates = rankQueryCandidates(pages, validation.tokens)
   if (candidates.length === 0) {
-    const reason: EmptyReason =
-      params.mode === 'linked'
-        ? params.handoffStatus === 'missing'
-          ? 'no-handoff'
-          : params.handoffStatus === 'malformed'
-            ? 'malformed-handoff'
-            : 'no-links'
-        : 'no-match'
-    return EMPTY_RESULT(params.mode, reason)
+    return EMPTY_RESULT('no-match')
   }
 
   const safeCandidates = filterSafeCandidates(candidates, params.privateTokens)
   if (safeCandidates.length === 0) {
-    // Safety-filtered candidates are indistinguishable from a true no-match/no-links
-    // result in the external reason — query mode must not be able to fingerprint the
-    // private corpus by observing whether candidates existed but were excluded.
-    return EMPTY_RESULT(params.mode, params.mode === 'linked' ? 'no-links' : 'no-match')
+    // Safety-filtered candidates are indistinguishable from a true no-match result in the
+    // external reason — the query must not be able to fingerprint the private corpus by
+    // observing whether candidates existed but were excluded.
+    return EMPTY_RESULT('no-match')
   }
 
   const maxBytes = params.maxBytes ?? MAX_EXPANDED_CONTEXT_BYTES
@@ -341,7 +265,7 @@ export function assembleExpandedContext(params: AssembleExpandedContextParams): 
   const {excerpt, selectedPaths} = formatCandidates(safeCandidates.slice(0, maxPages), maxBytes)
 
   if (selectedPaths.length === 0) {
-    return EMPTY_RESULT(params.mode, params.mode === 'linked' ? 'no-links' : 'no-match')
+    return EMPTY_RESULT('no-match')
   }
 
   return {
@@ -354,46 +278,7 @@ export function assembleExpandedContext(params: AssembleExpandedContextParams): 
   }
 }
 
-function collectLinkedCandidates(params: AssembleLinkedParams, pages: readonly CorpusPage[]): CorpusPage[] {
-  if (params.handoffStatus !== 'ok') {
-    return []
-  }
-
-  const baselinePaths = new Set(params.baselineSelectedPaths ?? [])
-  if (baselinePaths.size === 0) {
-    return []
-  }
-
-  const index = buildWikiTargetIndex(pages)
-  const pagesByPath = new Map(pages.map(page => [page.path, page]))
-
-  const candidateOrder: string[] = []
-  const seen = new Set<string>()
-
-  for (const baselinePath of baselinePaths) {
-    const baselinePage = pagesByPath.get(baselinePath)
-    if (baselinePage === undefined) continue
-
-    for (const linkTarget of collectWikilinks(baselinePage.body)) {
-      const resolved = index.resolve(linkTarget)
-      if (resolved === undefined) continue
-      if (baselinePaths.has(resolved.path)) continue
-      if (seen.has(resolved.path)) continue
-      seen.add(resolved.path)
-      candidateOrder.push(resolved.path)
-    }
-  }
-
-  return candidateOrder.map(path => pagesByPath.get(path)).filter((page): page is CorpusPage => page !== undefined)
-}
-
-function collectQueryCandidates(params: AssembleQueryParams, pages: readonly CorpusPage[]): CorpusPage[] {
-  const validation = validateQuery(params.query)
-  if (!validation.valid || validation.tokens === undefined) {
-    return []
-  }
-
-  const tokens = validation.tokens
+function rankQueryCandidates(pages: readonly CorpusPage[], tokens: readonly string[]): CorpusPage[] {
   const scored = pages
     .map(page => ({page, score: scorePage(page, tokens)}))
     .filter(entry => entry.score > 0)
@@ -462,16 +347,12 @@ export interface ArgvParseResult {
   readonly help?: boolean
 }
 
-/** Parse fixed argv: `<mode> [query]`. Mode is a fixed value; query mode requires a non-empty query argument. */
+/** Parse fixed argv: `query <text>`. Query mode requires a non-empty query argument. */
 export function parseArgv(argv: readonly string[]): ArgvParseResult {
   const [first, query] = argv
 
   if (first === '--help' || first === '-h') {
     return {ok: true, help: true}
-  }
-
-  if (first === 'linked' && argv.length === 1) {
-    return {ok: true, mode: 'linked'}
   }
 
   if (first === 'query') {
@@ -488,11 +369,8 @@ export function parseArgv(argv: readonly string[]): ArgvParseResult {
 // Testable CLI runner
 // ---------------------------------------------------------------------------
 
-const inferAttemptedMode = (argv: readonly string[]): ExpandMode => (argv[0] === 'linked' ? 'linked' : 'query')
-
 export interface WikiContextExpandCliDeps {
   readonly argv: readonly string[]
-  readonly env: Readonly<Record<string, string | undefined>>
   readonly readDir: (path: string) => Promise<{name: string; isFile: () => boolean}[]>
   readonly readFile: (path: string) => Promise<string>
   readonly writeStdout: (chunk: string) => void
@@ -506,8 +384,8 @@ export interface WikiContextExpandCliOutcome {
 
 /**
  * Testable CLI orchestration seam. Accepts argv/env/fs/output abstractions so the full
- * dispatch path — argv parsing, help, corpus loading, private-token loading, mode
- * dispatch, and top-level error handling — can be exercised without a real subprocess.
+ * dispatch path — argv parsing, help, corpus loading, private-token loading, query
+ * assembly, and top-level error handling — can be exercised without a real subprocess.
  *
  * Exit codes: bad argv is the only failure exit (this tool is an optional retrieval
  * step; every other empty state, including token-load failure and unexpected errors,
@@ -523,20 +401,18 @@ export async function runWikiContextExpandCli(deps: WikiContextExpandCliDeps): P
     }
 
     if (!argvResult.ok || argvResult.mode === undefined) {
-      const badArgsResult = EMPTY_RESULT(inferAttemptedMode(deps.argv), 'bad-args')
+      const badArgsResult = EMPTY_RESULT('bad-args')
       deps.writeStderr('wiki-context-expand:error:bad-args\n')
       deps.writeStdout(`${JSON.stringify(badArgsResult)}\n`)
       return {exitCode: 1, result: badArgsResult}
     }
 
-    if (argvResult.mode === 'query') {
-      const validation = validateQuery(argvResult.query ?? '')
-      if (!validation.valid) {
-        const result = EMPTY_RESULT('query', 'invalid-query')
-        deps.writeStderr('wiki-context-expand:query:empty:invalid-query\n')
-        deps.writeStdout(`${JSON.stringify(result)}\n`)
-        return {exitCode: 0, result}
-      }
+    const validation = validateQuery(argvResult.query ?? '')
+    if (!validation.valid) {
+      const result = EMPTY_RESULT('invalid-query')
+      deps.writeStderr('wiki-context-expand:query:empty:invalid-query\n')
+      deps.writeStdout(`${JSON.stringify(result)}\n`)
+      return {exitCode: 0, result}
     }
 
     const [files, tokenLoad] = await Promise.all([
@@ -548,24 +424,7 @@ export async function runWikiContextExpandCli(deps: WikiContextExpandCliDeps): P
       deps.writeStderr('wiki-context-expand:warn:private-token-load-failed\n')
     }
 
-    let result: ExpandResult
-    if (argvResult.mode === 'linked') {
-      const handoff = await loadHandoff(deps.env.WIKI_CONTEXT_HANDOFF_PATH, deps.readFile)
-      result = assembleExpandedContext({
-        mode: 'linked',
-        files,
-        handoffStatus: handoff.status,
-        baselineSelectedPaths: handoff.selectedPaths,
-        privateTokens,
-      })
-    } else {
-      result = assembleExpandedContext({
-        mode: 'query',
-        files,
-        query: argvResult.query ?? '',
-        privateTokens,
-      })
-    }
+    const result = assembleExpandedContext({mode: 'query', files, query: argvResult.query ?? '', privateTokens})
 
     deps.writeStderr(
       result.status === 'empty'
@@ -577,7 +436,7 @@ export async function runWikiContextExpandCli(deps: WikiContextExpandCliDeps): P
   } catch {
     const fallback: ExpandResult = {
       status: 'empty',
-      mode: inferAttemptedMode(deps.argv),
+      mode: 'query',
       selectedPaths: [],
       excerpt: '',
       byteLength: 0,
@@ -633,22 +492,4 @@ async function loadPrivateTokens(readFileFn: WikiContextExpandCliDeps['readFile'
     content = null
   }
   return parsePrivateTokensFromReposYaml(content)
-}
-
-async function loadHandoff(
-  handoffPath: string | undefined,
-  readFileFn: WikiContextExpandCliDeps['readFile'],
-): Promise<HandoffParseResult> {
-  if (handoffPath === undefined || handoffPath === '') {
-    return {status: 'missing', selectedPaths: []}
-  }
-
-  let content: string
-  try {
-    content = await readFileFn(handoffPath)
-  } catch {
-    return {status: 'missing', selectedPaths: []}
-  }
-
-  return parseHandoffContent(content)
 }
