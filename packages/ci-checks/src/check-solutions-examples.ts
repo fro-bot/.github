@@ -26,6 +26,10 @@ import {readdir, readFile} from 'node:fs/promises'
  *    repo-relative `PATH` file, and every call to `NAME` inside the block is checked against
  *    that symbol's real parameter count. This is opt-in because most blocks are illustrative
  *    and name nothing real; only annotate a block when it names or calls an actual repo symbol.
+ *    A marker must sit directly above its fence (the last of a stack of markers ends on the line
+ *    above the opening fence), and a detached marker fails the check: one with a blank line or text
+ *    before the fence, at the end of the file, or above a fence that is not `ts`/`typescript`/`tsx`.
+ *    A marker inside a code fence is example text, not a marker.
  *
  * Both directive forms (the `<!-- verify -->` comment and the fence's own info string) fail
  * CLOSED on anything that looks like it was meant to be a directive but doesn't parse as one —
@@ -230,6 +234,13 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
     }
   }
 
+  // Which markers the fence walk below attaches to a checked fence, which sit directly above a fence whose
+  // language is not checked (value: how to name that fence), and where every fence lies. Whatever is left
+  // over once the walk is done is a detached marker.
+  const attachedMarkerLines = new Set<number>()
+  const uncheckedFenceMarkers = new Map<number, string>()
+  const fenceRanges: FenceRange[] = []
+
   for (let i = 0; i < lines.length; i++) {
     const openMatch = FENCE_LINE_PATTERN.exec(lines[i] ?? '')
     if (!openMatch) continue
@@ -253,10 +264,17 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
       bodyLines.push(dedent(lines[j] ?? '', indent))
     }
 
+    fenceRanges.push({startLine: fenceLine, endLine: j + 1})
+
     if (CODE_LANGS.has(lang)) {
       const modifierTokens = rest.length === 0 ? [] : rest.split(/\s+/u)
-      const {annotations, findings: annotationFindings} = collectAnnotationsAt(spansByEndLine, fenceLine)
+      const {
+        annotations,
+        spans: markerSpans,
+        findings: annotationFindings,
+      } = collectAnnotationsAt(spansByEndLine, fenceLine)
       for (const finding of annotationFindings) directiveFindings.push({...finding, docPath})
+      for (const span of markerSpans) attachedMarkerLines.add(span.startLine)
 
       if (modifierTokens.length === 0) {
         blocks.push({docPath, line: fenceLine, lang, code: bodyLines.join('\n'), fragment: false, annotations})
@@ -269,21 +287,82 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
           reason: `unrecognized fence modifier "${rest}" on a \`${rawLang}\` fence (only the bare fence or a single \`${FRAGMENT_MODIFIER}\` modifier is recognized) — block was not checked`,
         })
       }
-    } else if (rest.length === 0 && rawLang.length > 0 && !KNOWN_NON_CODE_FENCE_LANGS.has(lang)) {
-      const nearestMatch = nearestCodeLang(lang)
-      if (nearestMatch !== undefined) {
-        directiveFindings.push({
-          docPath,
-          line: fenceLine,
-          reason: `fence language "${rawLang}" is not recognized and closely resembles "${nearestMatch}" — likely a typo (block was not checked as TypeScript)`,
-        })
+    } else {
+      // Only the markers themselves matter here; a malformed comment above this fence stays unreported, as before.
+      const fenceName = rawLang.length > 0 ? `a \`${rawLang}\` fence` : 'a fence with no language'
+      for (const span of collectAnnotationsAt(spansByEndLine, fenceLine).spans) {
+        uncheckedFenceMarkers.set(span.startLine, fenceName)
+      }
+
+      if (rest.length === 0 && rawLang.length > 0 && !KNOWN_NON_CODE_FENCE_LANGS.has(lang)) {
+        const nearestMatch = nearestCodeLang(lang)
+        if (nearestMatch !== undefined) {
+          directiveFindings.push({
+            docPath,
+            line: fenceLine,
+            reason: `fence language "${rawLang}" is not recognized and closely resembles "${nearestMatch}" — likely a typo (block was not checked as TypeScript)`,
+          })
+        }
       }
     }
 
     i = j // skip past the closing fence; outer loop's i++ advances past it
   }
 
+  directiveFindings.push(
+    ...findDetachedMarkers({spans, fenceRanges, attachedMarkerLines, uncheckedFenceMarkers}).map(finding => ({
+      ...finding,
+      docPath,
+    })),
+  )
+
   return {blocks, directiveFindings}
+}
+
+interface FenceRange {
+  /** 1-based line of the opening fence. */
+  readonly startLine: number
+  /** 1-based line of the closing fence, or one past the last line when the fence is never closed. */
+  readonly endLine: number
+}
+
+/**
+ * Every well-formed `<!-- verify: NAME from PATH -->` comment outside a code fence that the fence walk did not
+ * attach to a ts/typescript/tsx fence. Such a marker used to be dropped without a word, so the example it was
+ * meant to guard was never checked. A marker is attached only when it, or the last of a stack of markers, ends
+ * on the line directly above the opening fence; one directly above a fence of another language can never be
+ * checked either, so it is reported with that reason instead.
+ */
+function findDetachedMarkers(input: {
+  readonly spans: readonly CommentSpan[]
+  readonly fenceRanges: readonly FenceRange[]
+  readonly attachedMarkerLines: ReadonlySet<number>
+  readonly uncheckedFenceMarkers: ReadonlyMap<number, string>
+}): readonly RawDirectiveFinding[] {
+  const findings: RawDirectiveFinding[] = []
+  // Spans and fence ranges are both in increasing order, so one forward pass pairs them.
+  let range = 0
+
+  for (const span of input.spans) {
+    const verifyMatch = VERIFY_ANNOTATION_INNER_PATTERN.exec(normalizeCommentInner(span.inner))
+    if (!verifyMatch) continue
+
+    while (range < input.fenceRanges.length && (input.fenceRanges[range]?.endLine ?? 0) < span.startLine) range += 1
+    const insideFence = range < input.fenceRanges.length && (input.fenceRanges[range]?.startLine ?? 0) <= span.startLine
+    if (insideFence || input.attachedMarkerLines.has(span.startLine)) continue
+
+    const marker = `the \`<!-- verify: NAME from PATH -->\` marker for \`${verifyMatch[1] ?? ''}\` (from ${verifyMatch[2] ?? ''})`
+    const fenceName = input.uncheckedFenceMarkers.get(span.startLine)
+    findings.push({
+      line: span.startLine,
+      reason:
+        fenceName === undefined
+          ? `${marker} is not directly above a checked code fence, so its example was not checked — remove whatever sits between the marker and its fence (a blank line or text), or delete the marker`
+          : `${marker} sits directly above ${fenceName}, and only ts, typescript and tsx fences are checked, so nothing was verified — delete the marker, or move it above a ts fence`,
+    })
+  }
+
+  return findings
 }
 
 /** Strips up to `indent`'s length of leading whitespace from `line`, tolerating a shorter prefix. */
@@ -343,8 +422,13 @@ interface RawDirectiveFinding {
 function collectAnnotationsAt(
   spansByEndLine: ReadonlyMap<number, CommentSpan>,
   fenceLine: number,
-): {readonly annotations: readonly VerifyAnnotation[]; readonly findings: readonly RawDirectiveFinding[]} {
+): {
+  readonly annotations: readonly VerifyAnnotation[]
+  readonly spans: readonly CommentSpan[]
+  readonly findings: readonly RawDirectiveFinding[]
+} {
   const annotations: VerifyAnnotation[] = []
+  const spans: CommentSpan[] = []
   const findings: RawDirectiveFinding[] = []
   let expectedEndLine = fenceLine - 1
 
@@ -356,6 +440,7 @@ function collectAnnotationsAt(
     const verifyMatch = VERIFY_ANNOTATION_INNER_PATTERN.exec(normalized)
     if (verifyMatch) {
       annotations.unshift({symbol: verifyMatch[1] ?? '', file: verifyMatch[2] ?? ''})
+      spans.unshift(span)
       expectedEndLine = span.startLine - 1
       continue
     }
@@ -369,7 +454,7 @@ function collectAnnotationsAt(
     break
   }
 
-  return {annotations, findings}
+  return {annotations, spans, findings}
 }
 
 /**

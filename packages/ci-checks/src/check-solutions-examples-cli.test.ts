@@ -94,6 +94,20 @@ describe('a run', () => {
     expect(result.stderr).toMatch(/^docs\/solutions\/x\/doc\.md:3 -> .+\n$/u)
   })
 
+  it('prints a detached verify marker (blank line before its fence) as path:line -> reason and exits 1', async () => {
+    const result = await run(
+      checkout('detached', {
+        'docs/solutions/x/doc.md': DOC('<!-- verify: add from src/lib.ts -->\n\n```ts\nconst total = add(1, 2)\n```'),
+        'src/lib.ts': LIB,
+      }),
+    )
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toMatch(
+      /^docs\/solutions\/x\/doc\.md:3 -> .*`add` \(from src\/lib\.ts\).*not directly above.*\n$/u,
+    )
+  })
+
   it('prints directive findings before parse findings before symbol findings', async () => {
     const result = await run(
       checkout('order', {
