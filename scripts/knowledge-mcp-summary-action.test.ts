@@ -121,7 +121,7 @@ describe('knowledge-mcp-summary action: shape', () => {
   })
 
   it('matches only lines of the exact shape, with the tool names spelled out', () => {
-    expect(runScript).toContain('^(wiki_search|wiki_linked|solutions_search) [a-z-]+$')
+    expect(runScript).toContain('^(wiki_search|solutions_search) [a-z-]+$')
   })
 
   it('asks for no secret and for no network', () => {
@@ -229,10 +229,10 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
         'wiki_search ok',
         'wiki_search invalid-query',
         'solutions_search ok',
-        'wiki_linked no-handoff',
+        'solutions_search invalid-query',
         'wiki_search ok',
         'solutions_search corpus-unavailable',
-        'wiki_linked handoff-malformed',
+        'solutions_search unexpected',
         'wiki_search unexpected',
         '',
       ].join('\n'),
@@ -240,7 +240,7 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
 
     expect(result.status).toBe(0)
     expect(result.summary).toBe(
-      `${HEADING}${row('solutions_search', 'corpus-unavailable', 1)}${row('solutions_search', 'ok', 1)}${row('wiki_linked', 'handoff-malformed', 1)}${row('wiki_linked', 'no-handoff', 1)}${row('wiki_search', 'invalid-query', 1)}${row('wiki_search', 'ok', 3)}${row('wiki_search', 'unexpected', 1)}\n`,
+      `${HEADING}${row('solutions_search', 'corpus-unavailable', 1)}${row('solutions_search', 'invalid-query', 1)}${row('solutions_search', 'ok', 1)}${row('solutions_search', 'unexpected', 1)}${row('wiki_search', 'invalid-query', 1)}${row('wiki_search', 'ok', 3)}${row('wiki_search', 'unexpected', 1)}\n`,
     )
     expect(result.stdout).toBe(result.summary)
   })
@@ -252,9 +252,27 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
   })
 
   it('counts ten or more repeats as one number', () => {
-    const result = run('wiki_linked ok\n'.repeat(12))
+    const result = run('solutions_search ok\n'.repeat(12))
 
-    expect(result.summary).toBe(`${HEADING}${row('wiki_linked', 'ok', 12)}\n`)
+    expect(result.summary).toBe(`${HEADING}${row('solutions_search', 'ok', 12)}\n`)
+  })
+
+  // The server no longer has a wiki_linked tool, so the name is not a recognised tool.
+  it('writes the started line for a log of only wiki_linked rows', () => {
+    const result = run('wiki_linked ok\nwiki_linked ok\n')
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toBe(STARTED)
+    expect(result.stdout).toBe(STARTED)
+  })
+
+  it('counts only the valid rows of a log that also holds a wiki_linked row', () => {
+    const result = run('wiki_search ok\nwiki_linked ok\nsolutions_search ok\nwiki_linked ok\nwiki_search ok\n')
+    const table = `${HEADING}${row('solutions_search', 'ok', 1)}${row('wiki_search', 'ok', 2)}\n`
+
+    expect(result.status).toBe(0)
+    expect(result.summary).toBe(table)
+    expect(result.stdout).toBe(table)
   })
 
   it('ignores every other line and prints none of its text', () => {
@@ -263,18 +281,20 @@ describe('knowledge-mcp-summary action: a table of counts', () => {
         'wiki_search ok',
         `${SENTINEL} $(touch /tmp/${SENTINEL}) \`id\``,
         `wiki_search ok; echo ${SENTINEL}`,
-        `wiki_linked ok | ${SENTINEL}`,
+        `solutions_search ok | ${SENTINEL}`,
         `solutions_search ok ${SENTINEL}`,
         'wiki_search ok\r',
         `# ${SENTINEL}`,
         '| a | b |',
-        'wiki_linked no-handoff',
+        'solutions_search corpus-unavailable',
         '',
       ].join('\n'),
     )
 
     expect(result.status).toBe(0)
-    expect(result.summary).toBe(`${HEADING}${row('wiki_linked', 'no-handoff', 1)}${row('wiki_search', 'ok', 1)}\n`)
+    expect(result.summary).toBe(
+      `${HEADING}${row('solutions_search', 'corpus-unavailable', 1)}${row('wiki_search', 'ok', 1)}\n`,
+    )
     expect(result.summary).not.toContain(SENTINEL)
     expect(result.stdout + result.stderr).not.toContain(SENTINEL)
   })
@@ -341,12 +361,12 @@ describe('knowledge-mcp-summary action: the step log', () => {
     ['GITHUB_STEP_SUMMARY is unset', 'unset'],
     ['GITHUB_STEP_SUMMARY is unwritable', 'unwritable'],
   ] as const)('still prints the table and the fixed line when %s', (_label, summaryPath) => {
-    const withCalls = run('wiki_linked ok\n', {summaryPath})
+    const withCalls = run('solutions_search ok\n', {summaryPath})
     const empty = run('', {summaryPath})
     const absent = run(undefined, {summaryPath})
 
     expect(withCalls.status).toBe(0)
-    expect(withCalls.stdout).toBe(`${HEADING}${row('wiki_linked', 'ok', 1)}\n`)
+    expect(withCalls.stdout).toBe(`${HEADING}${row('solutions_search', 'ok', 1)}\n`)
     expect(withCalls.stderr).toBe('')
     expect(empty.status).toBe(0)
     expect(empty.stdout).toBe(STARTED)

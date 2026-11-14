@@ -36,7 +36,7 @@ runs:
         found=no
         if [ -n "$log" ] && [ -f "$log" ] && [ -r "$log" ]; then
           found=yes
-          counts=$(LC_ALL=C grep -aE '^(wiki_search|wiki_linked|solutions_search) [a-z-]+$' -- "$log" 2>/dev/null |
+          counts=$(LC_ALL=C grep -aE '^(wiki_search|solutions_search) [a-z-]+$' -- "$log" 2>/dev/null |
             LC_ALL=C sort | LC_ALL=C uniq -c 2>/dev/null) || counts=''
         fi
 
