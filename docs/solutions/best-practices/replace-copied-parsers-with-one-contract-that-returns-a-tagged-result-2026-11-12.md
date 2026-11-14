@@ -70,7 +70,6 @@ Copies drift, and a patch to each copy moves the defect instead of removing it. 
 A reader that rejects an absent or unclosed block and handles an empty one:
 
 <!-- verify: splitFrontmatterBlock from packages/wiki-write-core/src/frontmatter-block.ts -->
-
 ```ts
 function readBlock(content: string): unknown {
   const split = splitFrontmatterBlock(content)
@@ -83,7 +82,6 @@ function readBlock(content: string): unknown {
 An editor that replaces a status line it has already found and rebuilds the file from the pieces:
 
 <!-- verify: splitFrontmatterBlock from packages/wiki-write-core/src/frontmatter-block.ts -->
-
 ```ts
 function setStatus(content: string, index: number): string | null {
   const split = splitFrontmatterBlock(content)
