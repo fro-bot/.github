@@ -10621,3 +10621,29 @@ Run: https://github.com/fro-bot/.github/actions/runs/43593828571
 Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-11-14 12:45] ingest | repo:marcusrbrown/esphome.life
+
+Re-surveyed marcusrbrown/esphome.life. HEAD is still `3213838` (#438,
+2026-10-22) and matches the 2026-10-30 snapshot, so the tree and workflows are
+unchanged: 17 blobs, three workflows. Still no Fro Bot workflow, so a draft PR
+is still a candidate as a separate follow-up. The 23-day silence follows the
+upstreams: neither `bfra-me/.github` v4.43.0 nor renovate-config 5.2.16 has a
+newer release, so this is not an inert-Renovate repeat. Per the run list, the
+mis-pathed `Update Repo Settings` cron still runs daily with a `success`
+conclusion. Recorded a watch item: the 60-day inactivity rule would disable that
+cron around 2026-12-21, and it is the only scheduled Renovate trigger. Added a
+dated Overview section, a sources entry, and a Survey History row to the repo
+page; earlier content untouched. No topic/entity/comparison change is justified
+by an unchanged tree. Reads were limited to the tree listing, commit list,
+workflow registry/run list, and upstream release lists. Corrections context was
+empty.
+
+Sources: https://github.com/marcusrbrown/esphome.life/tree/32138381e60aff308ebba61b3702068fa72bd753
+Run: https://github.com/fro-bot/.github/actions/runs/43593962671
+
+## [2026-11-14 12:18] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
