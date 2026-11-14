@@ -52,7 +52,7 @@ Requirement IDs are the origin document's.
 - `packages/wiki-ops/src/knowledge-mcp.ts`: tools register in `buildKnowledgeCli`; `knowledgeToolNames` is the allowlist; `fromExpand` is an exhaustive switch over expansion reasons.
 - `.github/actions/knowledge-mcp-config/action.yaml` (`handoff-path` input) and `.github/actions/knowledge-mcp-summary/action.yaml` (tool-name pattern).
 - Conditional prompt text in `fro-bot.yaml`: `PROGRAM_NOTE` and `DELIVERY_NOTE` are rendered from top-level `env:` notes with `${{ cond && env.NOTE || '' }}` and tested with `evaluateExpressionValue` from `@fro-bot/test-kit`.
-- The three `Query wiki context` steps run behind `scripts/route-stderr.ts` with two routes. `scripts/route-stderr-prefixes.test.ts` reads the emitted warning kinds from the module source.
+- The three `Query wiki context` steps run behind `scripts/route-stderr.ts` with two routes. `packages/wiki-ops/src/route-stderr-prefixes.test.ts` reads the emitted warning kinds from the module source.
 - Remediate's step order: sync, persona, wiki query, solutions query, restore `knowledge/` to `HEAD`, config, agent. `scripts/data-sync-callers.test.ts` pins that the sync precedes the step with id `wiki-query`.
 
 ### Institutional Learnings
@@ -366,7 +366,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 ## System-Wide Impact
 
-- **Interaction graph:** the pull request job, Remediate and Observe in `fro-bot.yaml`; the `knowledge` server; the config and summary actions; `route-stderr`. Survey runs are touched only where their prompt and one comment name `wiki_linked`.
+- **Interaction graph:** the pull request job, Remediate and Observe in `fro-bot.yaml`; the `knowledge` server; the config action; `route-stderr`. Survey runs are touched only where their prompt and one comment name `wiki_linked`.
 - **Error propagation:** an index that cannot be built never fails the job. It yields the unavailable note and a status line.
 - **State lifecycle risks:** none persisted. The index is built per run and written only to a step output.
 - **API surface parity:** `packages/wiki-ops` exports lose `wiki-query` and `wiki-query-cli` and gain `wiki-index` and `wiki-index-cli`. Nothing outside the package imports the removed ones.
