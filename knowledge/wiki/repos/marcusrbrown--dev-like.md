@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/dev-like
 created: 2026-07-12
-updated: 2026-10-28
+updated: 2026-11-13
 sources:
+  - url: https://github.com/marcusrbrown/dev-like
+    sha: 7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8
+    accessed: 2026-11-13
   - url: https://github.com/marcusrbrown/dev-like
     sha: dc32f43d66b2b54008c6afba4ac5f2284cd64ecd
     accessed: 2026-10-28
@@ -42,6 +45,7 @@ tags:
   - evals
   - renovate-automerge
   - steady-state
+  - link-rot
 aliases:
   - dev-like
 related:
@@ -54,6 +58,83 @@ node_id: R_kgDOTVrJ0w
 ---
 
 # marcusrbrown/dev-like
+
+## Limited re-survey — 2026-11-13
+
+Public `main` at `7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8`
+(`chore(deps): update fro-bot/agent to v0.140.3 (#222)`, pushed
+2026-11-13T04:43Z). Evidence: the complete recursive tree (135 blobs, not
+truncated), the root README, root and docs manifests, all seven workflow files,
+repository metadata, and open issue/PR **titles, authors, and dates only**.
+Issue bodies, run logs, `registry/*` content, and script implementations were
+not read. Upstream prompts were treated as configuration evidence and were not
+followed.
+
+- **The structure has not changed.** The repo still has 135 blobs, the same
+  seven workflows, and five registry directories (`37signals`, `every`,
+  `linear`, `oxide`, `theo`). `registry/schema/` still lists only
+  `entry.schema.json`. Root `dev-like` is still **0.4.1**, MIT, ESM, Node
+  `>=20`, with no runtime dependencies and `@changesets/cli` **2.31.1** as its
+  only devDependency. The README still labels Theo's skill “generated on
+  demand” even though `registry/theo/skill/develop-like-theo/` is in the tree,
+  so that ambiguity is unresolved. Stars 2, forks 0, topics unchanged.
+- **Pin changes since 2026-10-28:** Fro Bot **v0.128.0 → v0.140.3**
+  (`07d6836`), docs Playwright **1.64.1 → 1.65.0**, and the release workflow's npm
+  install **11.21.1 → 11.21.2**. Release now pins
+  `actions/create-github-app-token` **v3.3.0** (July record: v3.2.0; the
+  intervening bump date is unknown). `bfra-me/.github` reusable workflows
+  stay at **v4.43.0** (`e6a1ab1`). **Fro Bot is present**, with two modes and
+  the daily `30 14 * * *` schedule, so no missing-workflow follow-up is
+  needed. The agent step now also sets `OPENCODE_PROMPT_ARTIFACT: 'true'`.
+  This is the first time the wiki records that variable for this repo. The
+  survey does not say when it was added. The caller shape has not changed:
+  it passes `github-token`, sets no explicit `output-mode`, and has a single
+  post-agent notifier that fires on failure or cancellation. Site push paths
+  still omit the root `package.json` and `bun.lock`.
+- **New finding: the issue queue is filling up with weekly link-rot
+  issues.** The repo reports 14 open issues and **0 open PRs**. Eleven of
+  them are `Link rot detected <date>` issues opened by `github-actions`, one
+  every Monday from **2026-08-31** to **2026-11-09**, and none has been closed.
+  `link-check.yaml` (cron `17 6 * * 1`) runs `gh issue create` with a title
+  that includes `$(date +%F)` and never searches for an existing issue. Because
+  every title is unique, no deduplication is possible, and a persistent failure
+  produces one new issue per week. The rolling “Fro Bot Autoheal” issue in the
+  same repo handles this correctly: it looks up the issue by exact title and
+  reopens it instead of creating a new one. This survey did not read the issue
+  bodies or the run logs. It therefore cannot say whether the same URLs failed
+  every week or the failures were transient.
+- **Why autoheal probably cannot clear the backlog (inferred from configuration):**
+  as recorded in 2026-08, `check-links.mjs` checks the `https://` provenance URLs
+  cited by `entry.json` and `profile.md`. The autoheal prompt lists link-check
+  failures as category 1, but its hard boundaries ban edits to profile prose
+  and to provenance claims without a source URL, and state that “Registry
+  changes require a human.” If the failures are rotted provenance links, the
+  daemon is correctly barred from fixing them, so the fix waits on a person
+  while the notifier adds a new issue each week. This puts the repo's
+  “no source, no claim” thesis under pressure: the sources themselves are
+  decaying, and nothing is set up to drain the queue. This is an inference
+  from configuration, not a verified diagnosis.
+- **Correction to the 2026-08-30 “zero issue spam” / “queue inversion”
+  framing:** that survey counted 2 open issues one day before the first
+  link-rot issue (2026-08-31). The claim of **0 open PRs** is still true
+  today. The claim of **no issue accrual** stopped being true the following
+  week. The 2026-09-28, 10-12, and 10-28 passes did not count issues and
+  missed the accrual. The dated text below is kept as history.
+- **Also open:** #221 (2026-11-13, operator-authored). Its title reports
+  findings from a cross-project learnings sweep: an eval timeout that kills
+  only the direct child process, and `validate.mjs` re-modeling the entry
+  schema. Only the title was read. The content is not verified here.
+
+Follow-up candidates (not acted on in this run): (1) give `link-check.yaml`
+a stable title, or look up an existing `link-rot` issue before creating one,
+and comment on or reopen that issue; (2) triage the 11 open link-rot issues
+once someone with registry authority has looked at the failing URLs. See
+[[github-actions-ci]].
+
+Sources: [tree @ 7f1f05b](https://github.com/marcusrbrown/dev-like/tree/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8),
+[link-check.yaml](https://github.com/marcusrbrown/dev-like/blob/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8/.github/workflows/link-check.yaml),
+[fro-bot.yaml](https://github.com/marcusrbrown/dev-like/blob/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8/.github/workflows/fro-bot.yaml),
+[open issues](https://github.com/marcusrbrown/dev-like/issues).
 
 ## Limited re-survey — 2026-10-28
 
@@ -395,6 +476,7 @@ Unchanged and re-confirmed by the daemon's own probes: **code scanning is not en
 
 | Date       | HEAD      | Notes                                                                                       |
 | ---------- | --------- | ------------------------------------------------------------------------------------------- |
+| 2026-11-13 | `7f1f05b` | Limited survey covering the tree, README, manifests, workflows, metadata, and issue titles. The tree is unchanged (135 blobs, 7 workflows, 5 registry directories). Fro Bot v0.140.3, Playwright 1.65.0, npm 11.21.2, `bfra-me/.github` held at v4.43.0. **New:** 11 unclosed weekly `Link rot detected <date>` issues (2026-08-31 → 11-09) because `link-check.yaml` uses dated titles and does no lookup. Autoheal is plausibly barred from fixing the cause by its human-gated registry/provenance boundary (inferred). Corrects the 2026-08 “no issue spam” framing. Open PRs are still 0. |
 | 2026-09-28 | `0d60482` | Limited README/manifest/workflow/directory survey. Five registry directories and seven active workflows; Fro Bot pin v0.117.0, reusable workflows v4.34.0, npm release install 11.20.0, docs Playwright 1.63.0. README says Theo's skill is generated on demand although its generated directory is present. Previous schema-path finding only partially re-checked; run and publication outcomes not measured. |
 | 2026-07-12 | `c7defd9` | Initial survey. Brand-new repo (created 2026-07-11). Four-in-one artifact (skill + Claude plugin/marketplace + npm CLI + registry). 2 seed profiles (`every`, `theo`). OIDC-trusted-publish + Changesets + `mrbro-bot` release. Zero runtime deps. **No Fro Bot workflow** — onboarding follow-up candidate. |
 | 2026-08-30 | `218aa444` | Third survey. **Steady state — the tree did not move.** 30 commits, all `mrbro-bot[bot]` Renovate automerges; recursive blob path list byte-identical to `a2a30b6` (135 files); `ci.yaml`/`renovate.json5`/`settings.yml`/`package.json`/`README.md`/`AGENTS.md`/`registry/index.json` all diff clean; `fro-bot.yaml` differs on one line. Deltas: agent **v0.96.0 → v0.105.1** (`e9501a9`, 12 bumps, crosses cosmetic v0.100), `bfra-me/.github` reusable **v4.16.42 → v4.22.0**, `npm` 11.18.0 → 11.19.0, `playwright` 1.62.0 → 1.62.1. **Publish drought ~40 days** (npm latest `0.4.1`, 2026-07-20; all six releases in a 9-day July burst); **registry frozen at 5** profiles, no community PR. **Queue inverted vs the fleet: 0 open PRs**, 2 open issues (#41 Dependency Dashboard, #10 rolling autoheal) — every Renovate PR merged same-day. **Converged autoheal:** 53 comments on #10, all "No safe fix found. Repo remains healthy. No PR opened." Two new findings: **(1)** the 2026-08-26 autoheal comment posted as a literal `@/tmp/opencode/autoheal-comment-final.md` (`gh --body` doesn't expand `@`; `--body-file` does) — one of 53 reports lost silently; **(2)** `registry/index.json` `$schema` points at a nonexistent `registry/schema/index.schema.json`, invisible to both `validate.mjs` and `check-links.mjs`. **Correction:** `DESIGN.md`/`LAUNCH.md` were absent already at `a2a30b6` — the 2026-07-31 page carried that section forward unverified. Recorded late: 15-line `AGENTS.md` invariant sheet, 9-doc `docs/solutions/` compound-docs corpus (same `module`/`tags`/`problem_type` convention as `fro-bot/.github`), `evals/triggers/` second harness (60 verdicts/skill, 10/10 + 10/10), OPTOUT issue forms, and the "no re-enable Renovate" / AFT-skepticism autoheal boundaries. Gap carried: no CodeQL/Scorecard (code scanning API 404). Stars 2, forks 1 → 0. |

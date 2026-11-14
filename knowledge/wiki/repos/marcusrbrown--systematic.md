@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-11-04
+updated: 2026-11-13
 sources:
+  - url: https://github.com/marcusrbrown/systematic
+    sha: 39e66b30214722c739e6f6b0ec17beef107bdec8
+    accessed: 2026-11-13
   - url: https://github.com/marcusrbrown/systematic
     sha: c312aeb5407461d345bcf50fc299794fd4d75582
     accessed: 2026-11-04
@@ -87,6 +90,39 @@ node_id: R_kgDORAJegA
 Compound-engineering workflow system for AI coding harnesses. Published to npm as `@fro.bot/systematic`. Adapted from the [Compound Engineering Plugin (CEP)](https://github.com/EveryInc/compound-engineering-plugin) for Claude Code, now evolving independently.
 
 **As of v3 this is no longer "an OpenCode plugin."** It is a single content source with three shipped harness adapters (OpenCode, Pi, Claude Code) and three documented portability targets. Everything below the 2026-09-05 section that says "OpenCode plugin" is v2-era framing retained for history.
+
+## 2026-11-13 — scheduled ce:connect splits the agent away from the write (oversight note)
+
+Observed from the daily oversight pass, not a full survey. At `39e66b30`, a new
+`.github/workflows/connect.yaml` (added in #1386, adjusted in #1390) runs one
+headless `ce:connect` slice a day over the public repositories named in a
+repository variable and posts a dated, rotating report issue. Top-level
+permissions are `{}` and four jobs each hold their own grant:
+
+- **prepare** — `contents: read`, `issues: read`. Validates the variables
+  (owner/repo shape, at most 16 entries) and fails unless every named
+  repository reads back as `public` from the API; any read error counts as
+  not public. No checkout of this repository.
+- **run** — `contents: read` only. The sole job that runs the agent
+  (`fro-bot/agent` pinned by SHA at v0.140.2, `output-mode: working-dir`,
+  `response-mode: none`), so the model holds no issue-write credential.
+- **render** — `permissions: {}`. Renders the report and rechecks visibility
+  of every repository behind it; a repository no longer public or no longer
+  identifiable fails the job, and nothing is uploaded, cached or posted.
+- **post** — `issues: write` and no repository code. Writes and rotates the
+  report issue.
+
+The concurrency group sets `queue: max` with `cancel-in-progress: false`, and
+the Systematic version used by the agent step and the helper installs is a
+single pinned `x.y.z` value, so the skill and the helper that reads its ledger
+come from the same release. The newest scheduled run on 2026-11-13 succeeded.
+
+Why it matters for [[github-actions-ci]]: publication authority and the
+public-only check live in jobs the model never runs in, and the visibility
+check runs twice — before the agent and again right before posting. That is a
+stronger shape than an agent step that both writes the report and is trusted
+to have applied the public-only rule. These are workflow-file facts, not an
+audit of the render scripts.
 
 ## 2026-11-04 bounded snapshot
 

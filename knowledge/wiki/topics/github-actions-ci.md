@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-12
+updated: 2026-11-13
 sources:
+  - url: https://github.com/marcusrbrown/dev-like/blob/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8/.github/workflows/link-check.yaml
+    sha: 7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8
+    accessed: 2026-11-13
   - url: https://github.com/marcusrbrown/renovate-config/tree/18cebf2b28c6c1322489e41fc5786595be64adbf/.github/workflows
     sha: 18cebf2b28c6c1322489e41fc5786595be64adbf
     accessed: 2026-11-12
@@ -894,6 +897,28 @@ or successful-run claim.
 
 Sources: the pinned Fro Bot and regeneration workflows above; see
 [[marcusrbrown--sparkle]] for the manifest and CI evidence boundaries.
+
+## Dated issue titles defeat notifier deduplication (2026-11-13)
+
+At `7f1f05b`, [[marcusrbrown--dev-like]]'s weekly `link-check.yaml` sends
+failures to `gh issue create --title "Link rot detected $(date +%F)"` and
+never checks for an existing issue first. Each title is unique by design, so
+nothing can match a prior issue, and a persistent failure produces one new issue
+per week. The repo has **11 such issues open, one every Monday from 2026-08-31
+to 2026-11-09**. In the same repo, the Fro Bot failure notifier looks up a
+fixed title (“Fro Bot Autoheal”) and reopens it instead of creating a new one.
+One repo, two notifiers, two opposite queue shapes.
+
+There is a second-order problem. The autoheal prompt names link-check failures
+as its first category, but it also forbids provenance and profile edits
+(“Registry changes require a human”). If the failing URLs are registry
+provenance links, the daemon is correctly fenced off from the fix, so nothing
+automated drains the queue. This is inferred from configuration; issue bodies
+and run logs were not read. Lesson: a scheduled notifier needs a stable
+identity (a fixed title, a label lookup, or a marker) so repeats update one
+record, and every failure class an agent is barred from fixing needs a named
+human drain. A PR-only queue count (“0 open PRs”) hides this kind of accrual.
+Count issues too.
 
 ## Failure notification is not file delivery or successful no-op reporting (2026-10-12)
 
