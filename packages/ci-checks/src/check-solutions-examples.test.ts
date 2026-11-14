@@ -498,3 +498,362 @@ describe('checkSolutionsExamples', () => {
     expect(result.parseFindings).toEqual([])
   })
 })
+
+function findingsFor(lines: readonly string[]) {
+  return extractCodeBlocks(lines.join('\n'), 'doc.md').directiveFindings
+}
+
+describe('a `<!-- verify -->` marker that does not attach to a checked fence (detached)', () => {
+  const MARKER = '<!-- verify: foo from scripts/foo.ts -->'
+
+  it('reports the real missed shape: marker, blank line, ts fence — with file, line, symbol and the fix', () => {
+    const lines = ['# Title', '', MARKER, '', '```ts', 'foo(1)', '```']
+    const {blocks, directiveFindings} = extractCodeBlocks(lines.join('\n'), 'doc.md')
+
+    expect(blocks[0]?.annotations).toEqual([])
+    expect(directiveFindings).toEqual([
+      {
+        docPath: 'doc.md',
+        line: 3,
+        reason:
+          'the `<!-- verify: NAME from PATH -->` marker for `foo` (from scripts/foo.ts) is not directly above a checked code fence, so its example was not checked — remove whatever sits between the marker and its fence (a blank line or text), or delete the marker',
+      },
+    ])
+  })
+
+  it('reports a marker followed by prose before the fence', () => {
+    const findings = findingsFor([MARKER, 'Some prose.', '```ts', 'foo(1)', '```'])
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({docPath: 'doc.md', line: 1})
+    expect(findings[0]?.reason).toContain('`foo`')
+    expect(findings[0]?.reason).toContain('not directly above')
+  })
+
+  it('reports a marker followed by a heading before the fence', () => {
+    const findings = findingsFor([MARKER, '## Heading', '```ts', 'foo(1)', '```'])
+    expect(findings).toEqual([expect.objectContaining({line: 1})])
+  })
+
+  it('reports a marker at the end of the file', () => {
+    const findings = findingsFor(['```ts', 'const x = 1', '```', MARKER])
+    expect(findings).toEqual([expect.objectContaining({docPath: 'doc.md', line: 4})])
+    expect(findings[0]?.reason).toContain('`foo`')
+  })
+
+  it('reports a marker at the end of the file followed only by a trailing newline', () => {
+    const findings = extractCodeBlocks(`${MARKER}\n`, 'doc.md').directiveFindings
+    expect(findings).toEqual([expect.objectContaining({line: 1})])
+  })
+
+  it('reports a marker above a non-checked fence even when a ts fence follows later', () => {
+    const findings = findingsFor([MARKER, '```yaml', 'a: 1', '```', '', '```ts', 'foo(1)', '```'])
+    // The yaml fence is directly below the marker, so this is the "language not checked" form.
+    expect(findings).toHaveLength(1)
+    expect(findings[0]).toMatchObject({line: 1})
+  })
+
+  it('reports a marker directly above a fence in a language the checker does not parse, naming the language', () => {
+    const findings = findingsFor([MARKER, '```bash', 'foo 1', '```'])
+    expect(findings).toEqual([
+      {
+        docPath: 'doc.md',
+        line: 1,
+        reason:
+          'the `<!-- verify: NAME from PATH -->` marker for `foo` (from scripts/foo.ts) sits directly above a `bash` fence, and only ts, typescript and tsx fences are checked, so nothing was verified — delete the marker, or move it above a ts fence',
+      },
+    ])
+  })
+
+  it('reports a marker directly above a fence with no language', () => {
+    const findings = findingsFor([MARKER, '```', 'foo 1', '```'])
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.reason).toContain('a fence with no language')
+    expect(findings[0]?.reason).toContain('only ts, typescript and tsx fences are checked')
+  })
+
+  it('reports every marker of a stack above an unchecked-language fence', () => {
+    const findings = findingsFor([MARKER, '<!-- verify: bar from scripts/bar.ts -->', '```text', 'x', '```'])
+    expect(findings.map(finding => finding.line)).toEqual([1, 2])
+    expect(findings[0]?.reason).toContain('`foo`')
+    expect(findings[1]?.reason).toContain('`bar`')
+    expect(findings.every(finding => finding.reason.includes('`text` fence'))).toBe(true)
+  })
+
+  it('reports only the upper marker of a stack that a blank line separates from the attached one', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      [MARKER, '', '<!-- verify: bar from scripts/bar.ts -->', '```ts', 'bar(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(blocks[0]?.annotations).toEqual([{symbol: 'bar', file: 'scripts/bar.ts'}])
+    expect(directiveFindings).toEqual([expect.objectContaining({line: 1})])
+    expect(directiveFindings[0]?.reason).toContain('`foo`')
+  })
+
+  it('reports a wrapped marker by the line it opens on', () => {
+    const findings = findingsFor([
+      '# T',
+      '<!-- verify: foo',
+      '     from scripts/foo.ts -->',
+      '',
+      '```ts',
+      'foo(1)',
+      '```',
+    ])
+    expect(findings).toEqual([expect.objectContaining({line: 2})])
+    expect(findings[0]?.reason).toContain('`foo` (from scripts/foo.ts)')
+  })
+
+  it('reports each detached marker once, with its own symbol and line', () => {
+    const findings = findingsFor([MARKER, '', '<!-- verify: bar from scripts/bar.ts -->', '', '```ts', 'foo(1)', '```'])
+    expect(findings.map(finding => finding.line)).toEqual([1, 3])
+    expect(findings[0]?.reason).toContain('`foo`')
+    expect(findings[1]?.reason).toContain('`bar`')
+  })
+
+  it('treats a marker directly above a `fragment` fence as attached', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      [MARKER, '```ts fragment', '.foo(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(blocks[0]?.annotations).toEqual([{symbol: 'foo', file: 'scripts/foo.ts'}])
+    expect(directiveFindings).toEqual([])
+  })
+
+  it('treats a marker directly above a tsx or typescript fence as attached', () => {
+    expect(findingsFor([MARKER, '```tsx', 'foo(1)', '```'])).toEqual([])
+    expect(findingsFor([MARKER, '```typescript', 'foo(1)', '```'])).toEqual([])
+  })
+
+  it('treats a marker with text before it on the line directly above a fence as attached, as the parser always has', () => {
+    expect(findingsFor([`Note: ${MARKER}`, '```ts', 'foo(1)', '```'])).toEqual([])
+  })
+
+  it('does not treat a marker inside a code fence as a marker', () => {
+    expect(findingsFor(['```markdown', MARKER, '', '```ts', 'foo(1)', '```'])).toEqual([])
+  })
+
+  it('does not treat a marker inside an unclosed fence as a marker', () => {
+    expect(findingsFor(['```text', MARKER])).toEqual([])
+  })
+
+  it('does not report a marker inside a fence, but still reports a detached one after it', () => {
+    const findings = findingsFor(['```text', MARKER, '```', '', MARKER, '', '```ts', 'foo(1)', '```'])
+    expect(findings).toEqual([expect.objectContaining({line: 5})])
+  })
+
+  it('keeps a stack of markers attached, and keeps checking each one', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      [MARKER, '<!-- verify: bar from scripts/bar.ts -->', '```ts', 'foo(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations).toEqual([
+      {symbol: 'foo', file: 'scripts/foo.ts'},
+      {symbol: 'bar', file: 'scripts/bar.ts'},
+    ])
+  })
+
+  it('keeps a wrapped marker attached', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      ['<!-- verify: foo', '     from scripts/foo.ts -->', '```ts', 'foo(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations).toEqual([{symbol: 'foo', file: 'scripts/foo.ts'}])
+  })
+
+  it('does not report a verify-like comment that is not a well-formed marker and is not above a fence', () => {
+    expect(findingsFor(['<!-- verify add from scripts/t.ts -->', '', 'Prose.'])).toEqual([])
+  })
+
+  it('does not report an unrelated comment away from a fence', () => {
+    expect(findingsFor(['<!-- a note -->', '', '```ts', 'const x = 1', '```'])).toEqual([])
+  })
+
+  it('reports only the detached marker of a doc that also has an attached one, and still checks the attached one', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'check-solutions-examples-'))
+    await writeFixture(
+      rootDir,
+      'scripts/target.ts',
+      'export function add(a: number, b: number): number { return a + b }\n',
+    )
+    await writeFixture(
+      rootDir,
+      'docs/solutions/x/doc.md',
+      [
+        '<!-- verify: add from scripts/target.ts -->',
+        '```ts',
+        'add(1, 2)',
+        '```',
+        '',
+        '<!-- verify: add from scripts/target.ts -->',
+        '',
+        '```ts',
+        'add(1, 2, 3)',
+        '```',
+        '',
+      ].join('\n'),
+    )
+
+    const result = await checkSolutionsExamples(rootDir)
+    expect(result.directiveFindings).toEqual([expect.objectContaining({docPath: 'docs/solutions/x/doc.md', line: 6})])
+    expect(result.symbolFindings).toEqual([])
+    expect(result.parseFindings).toEqual([])
+  })
+
+  it('still reports a wrong-arity call in an attached marker alongside a detached one', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'check-solutions-examples-'))
+    await writeFixture(
+      rootDir,
+      'scripts/target.ts',
+      'export function add(a: number, b: number): number { return a + b }\n',
+    )
+    await writeFixture(
+      rootDir,
+      'docs/solutions/x/doc.md',
+      [
+        '<!-- verify: add from scripts/target.ts -->',
+        '<!-- verify: add from scripts/target.ts -->',
+        '```ts',
+        'add(1)',
+        '```',
+        '',
+        '<!-- verify: add from scripts/target.ts -->',
+        '',
+        '```ts',
+        'add(1, 2)',
+        '```',
+        '',
+      ].join('\n'),
+    )
+
+    const result = await checkSolutionsExamples(rootDir)
+    expect(result.directiveFindings).toEqual([expect.objectContaining({line: 7})])
+    expect(result.symbolFindings).toHaveLength(2)
+  })
+})
+
+describe('several `<!-- verify -->` markers on one line', () => {
+  const A = '<!-- verify: a from scripts/a.ts -->'
+  const B = '<!-- verify: b from scripts/b.ts -->'
+  const C = '<!-- verify: c from scripts/c.ts -->'
+
+  it('attaches both markers of a same-line pair to the fence below, in source order', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks([`${A}${B}`, '```ts', 'a(1)', '```'].join('\n'), 'doc.md')
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations).toEqual([
+      {symbol: 'a', file: 'scripts/a.ts'},
+      {symbol: 'b', file: 'scripts/b.ts'},
+    ])
+  })
+
+  it('attaches a same-line pair separated by a space', () => {
+    const {blocks} = extractCodeBlocks([`${A} ${B}`, '```ts', 'a(1)', '```'].join('\n'), 'doc.md')
+    expect(blocks[0]?.annotations.map(annotation => annotation.symbol)).toEqual(['a', 'b'])
+  })
+
+  it('attaches three markers on one line', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks([`${A}${B}${C}`, '```ts', 'a(1)', '```'].join('\n'), 'doc.md')
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations.map(annotation => annotation.symbol)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('attaches a same-line pair together with a stack of markers above it, in source order', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks([C, `${A}${B}`, '```ts', 'a(1)', '```'].join('\n'), 'doc.md')
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations.map(annotation => annotation.symbol)).toEqual(['c', 'a', 'b'])
+  })
+
+  it('attaches a wrapped marker and a single-line marker that ends on the same line', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      ['<!-- verify: a', `     from scripts/a.ts -->${B}`, '```ts', 'a(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations.map(annotation => annotation.symbol)).toEqual(['a', 'b'])
+  })
+
+  it('attaches a marker that shares its line with an unrelated comment, and keeps walking up the stack', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      [C, `<!-- a note -->${A}`, '```ts', 'a(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations.map(annotation => annotation.symbol)).toEqual(['c', 'a'])
+  })
+
+  it('still attaches a marker with ordinary text before and after it on the line above the fence', () => {
+    const {blocks, directiveFindings} = extractCodeBlocks(
+      [`Before ${A} and after.`, '```ts', 'a(1)', '```'].join('\n'),
+      'doc.md',
+    )
+    expect(directiveFindings).toEqual([])
+    expect(blocks[0]?.annotations).toEqual([{symbol: 'a', file: 'scripts/a.ts'}])
+  })
+
+  it('checks the first marker of a same-line pair: its wrong-arity call is reported', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'check-solutions-examples-'))
+    await writeFixture(rootDir, 'scripts/a.ts', 'export function a(x: number, y: number): number { return x + y }\n')
+    await writeFixture(rootDir, 'scripts/b.ts', 'export function b(x: number): number { return x }\n')
+    await writeFixture(rootDir, 'docs/solutions/x/doc.md', [`${A}${B}`, '```ts', 'a(1)', 'b(1)', '```', ''].join('\n'))
+
+    const result = await checkSolutionsExamples(rootDir)
+    expect(result.directiveFindings).toEqual([])
+    expect(result.symbolFindings).toEqual([expect.objectContaining({symbol: 'a', file: 'scripts/a.ts', line: 3})])
+  })
+
+  it('reports a symbol that does not exist for the first marker of a same-line pair', async () => {
+    const rootDir = await mkdtemp(join(tmpdir(), 'check-solutions-examples-'))
+    await writeFixture(rootDir, 'scripts/a.ts', 'export function other(): void {}\n')
+    await writeFixture(rootDir, 'scripts/b.ts', 'export function b(x: number): number { return x }\n')
+    await writeFixture(rootDir, 'docs/solutions/x/doc.md', [`${A}${B}`, '```ts', 'b(1)', '```', ''].join('\n'))
+
+    const result = await checkSolutionsExamples(rootDir)
+    expect(result.symbolFindings).toEqual([expect.objectContaining({symbol: 'a', file: 'scripts/a.ts'})])
+  })
+
+  it('reports both markers of a same-line pair above a bash fence as unchecked-language', () => {
+    const findings = findingsFor([`${A}${B}`, '```bash', 'a 1', '```'])
+    expect(findings).toHaveLength(2)
+    expect(findings.map(finding => finding.line)).toEqual([1, 1])
+    expect(findings[0]?.reason).toContain('`a`')
+    expect(findings[1]?.reason).toContain('`b`')
+    expect(findings.every(finding => finding.reason.includes('a `bash` fence'))).toBe(true)
+  })
+
+  it('reports both markers of a same-line pair that a blank line separates from the fence as detached', () => {
+    const findings = findingsFor([`${A}${B}`, '', '```ts', 'a(1)', '```'])
+    expect(findings).toHaveLength(2)
+    expect(findings.map(finding => finding.line)).toEqual([1, 1])
+    expect(findings[0]?.reason).toContain('`a`')
+    expect(findings[1]?.reason).toContain('`b`')
+    expect(findings.every(finding => finding.reason.includes('not directly above a checked code fence'))).toBe(true)
+  })
+
+  it('reports all three same-line markers at the end of the file', () => {
+    const findings = findingsFor([`${A}${B}${C}`])
+    expect(findings).toHaveLength(3)
+  })
+
+  it('reports a well-formed marker that shares a line with a malformed verify-like comment', () => {
+    const findings = findingsFor([`<!-- verifies: a from scripts/a.ts -->${B}`, '```ts', 'b(1)', '```'])
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.reason).toContain("doesn't match that grammar")
+  })
+})
+
+describe('a `<!-- verify -->` marker above a tilde fence', () => {
+  it('names the tilde fence instead of telling the author to remove a blank line that is not there', () => {
+    const findings = findingsFor(['<!-- verify: a from scripts/a.ts -->', '~~~ts', 'a(1)', '~~~'])
+    expect(findings).toHaveLength(1)
+    expect(findings[0]?.line).toBe(1)
+    expect(findings[0]?.reason).toContain('a `~~~` fence')
+    expect(findings[0]?.reason).toContain('only backtick fences are checked')
+    expect(findings[0]?.reason).not.toContain('blank line')
+  })
+
+  it('still calls a marker with a blank line before a tilde fence detached', () => {
+    const findings = findingsFor(['<!-- verify: a from scripts/a.ts -->', '', '~~~ts', 'a(1)', '~~~'])
+    expect(findings[0]?.reason).toContain('not directly above a checked code fence')
+  })
+})
