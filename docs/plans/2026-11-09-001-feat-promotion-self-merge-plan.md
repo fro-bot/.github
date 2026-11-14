@@ -1,7 +1,7 @@
 ---
 title: "feat: merge knowledge/metadata promotions in the promotion run and report protection drift"
 type: feat
-status: active
+status: complete
 date: 2026-11-09
 origin: docs/brainstorms/2026-11-09-promotion-self-merge-requirements.md
 ---
@@ -465,7 +465,7 @@ flowchart TD
 
 **Verification:** lint is clean, and no stale "weekly only" or "never auto-merges" claim remains for promotions.
 
-- [ ] **Unit 6: Live verification and enablement**
+- [x] **Unit 6: Live verification and enablement**
 
 **Goal:** Prove a live approval counts, then enable the step.
 
@@ -490,6 +490,12 @@ flowchart TD
 - **Since then.** #4204 (dispatched run [43274490781](https://github.com/fro-bot/.github/actions/runs/43274490781)) and #4225 (scheduled run [43543306120](https://github.com/fro-bot/.github/actions/runs/43543306120)) were approved by `fro-bot` and merged by the promotion run.
 - **Drift watcher.** The first real events opened #4172, and the first `branch_protection_rule` event after #4174 ([43014968528](https://github.com/fro-bot/.github/actions/runs/43014968528), 2026-11-11 11:48Z) came from `fro-bot[bot]`, matched the declared values, logged `protection-drift: closed #4172` and closed it.
 - **Not done.** Not yet seen: a drift report opened and closed by the shipped code in one cycle. #4172 was opened before #4174 landed, and the hand edit that step 3 describes has not been run against the shipped code. It is not known whether GitHub reports `require_last_push_approval` in the event payload. A `hold-merge` label stopping a live promotion and a promotion whose required checks never settle have not been seen.
+
+**Closed (2026-11-14):**
+
+- **Seen live.** Three self-merged promotions, #4175, #4204 and #4225, each merged by the `fro-bot` user. The first promotion under the strict privacy gate, run [43543306120](https://github.com/fro-bot/.github/actions/runs/43543306120). The drift watcher opening and closing #4172 (opened 2026-11-10, closed 2026-11-11).
+- **Not seen live, covered by tests only.** A `hold-merge` label stopping a promotion. A promotion whose required checks never settle. A hand edit of `main` protection through the web UI.
+- These three are accepted as test-covered, and the unit is closed on that basis.
 
 ## System-Wide Impact
 
