@@ -10507,3 +10507,72 @@ Run: https://github.com/fro-bot/.github/actions/runs/43246623734
 Surveyed fro-bot/agent and updated the control-plane wiki.
 
 Sources: https://github.com/fro-bot/agent
+
+## [2026-11-13 06:40] manual-edit | repo:fro-bot/agent, repo:marcusrbrown/systematic
+
+Daily oversight pass (cross-project intelligence) added two dated, additive
+notes. fro-bot/agent: the experimental `isolate-agent` input (#2168), what the
+separate-uid boundary does and does not block, and its runner constraints.
+marcusrbrown/systematic: the new scheduled Connect workflow's four-job
+permission split, with the public-visibility check run both before the agent
+and again before posting. Workflow and documentation facts only; no
+production run with isolation enabled was observed. No other page, the index
+or metadata was touched.
+
+Sources: https://github.com/fro-bot/agent/commit/63d82e702d41704af1f81f7fcec6c9df40e591ee, https://github.com/marcusrbrown/systematic/blob/39e66b30214722c739e6f6b0ec17beef107bdec8/.github/workflows/connect.yaml
+Run: https://github.com/fro-bot/.github/actions/runs/43375062413
+
+## [2026-11-13 06:14] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@1557f67642473e90867a19324b166c7ea0a9a67a
+
+## [2026-11-13 14:00] ingest | repo:marcusrbrown/dev-like
+
+Limited re-survey of marcusrbrown/dev-like at `7f1f05b`, covering the tree,
+README, manifests, seven workflows, metadata, and issue/PR titles only. The
+structure is unchanged: 135 blobs, 5 registry directories, version 0.4.1, zero
+runtime deps. Pins: Fro Bot v0.140.3, Playwright 1.65.0, npm 11.21.2, and
+`bfra-me/.github` held at v4.43.0. Fro Bot is present, so no onboarding
+follow-up is needed. New finding: 11 unclosed weekly `Link rot detected
+<date>` issues (2026-08-31 to 2026-11-09). They exist because `link-check.yaml`
+puts the date in its titles and does no existing-issue lookup. The autoheal
+prompt's human-gated registry/provenance boundary plausibly bars the daemon
+from fixing the cause (inferred, not verified). This corrects the 2026-08-30
+"no issue spam" framing; open PRs are still 0. Added a dated
+notifier-dedup section to github-actions-ci.
+
+Sources: https://github.com/marcusrbrown/dev-like/tree/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8
+Run: https://github.com/fro-bot/.github/actions/runs/43431370503
+
+## [2026-11-13 13:13] ingest | repo:marcusrbrown/dev-like
+
+Surveyed marcusrbrown/dev-like and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/dev-like
+
+## [2026-11-13 16:30] ingest | repo:bfra-me/ha-addon-repository
+
+Re-surveyed bfra-me/ha-addon-repository. HEAD moved `b7bcd528` → `8fcd4acc`
+(3 commits, 2 workflow files): `fro-bot/agent` v0.112.0 → v0.136.5 (#605),
+`omo-providers` input removed from `fro-bot.yaml` by hand (#603), Scorecard
+`actions/upload-artifact` v7.0.2 (#599). Tree listing, READMEs, `repository.yaml`
+and `example/config.yaml` unchanged. Fro Bot workflow present (no onboarding
+draft needed); its two-step job still has no `output-mode` input and no
+post-agent persistence stage, so the 2026-09-15 delivery-break finding stands
+as source-shape evidence. Reusable workflows remain v4.29.0 while
+`SCHEDULE_PROMPT` still cites v4.16.6. Added a dated section, Identity HEAD,
+Fro Bot agent bullet, Survey History row and Drift Watch recheck to the repo
+page; prior content untouched. No topic/entity/comparison page change justified.
+Reads limited to tree listing, compare diff, and workflow files. Corrections
+context was empty.
+
+Sources: https://github.com/bfra-me/ha-addon-repository/tree/8fcd4acc92a0d657d2d5503802f9e10a89f2023d
+Run: https://github.com/fro-bot/.github/actions/runs/43431596429
+
+## [2026-11-13 13:14] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Sources: https://github.com/bfra-me/ha-addon-repository

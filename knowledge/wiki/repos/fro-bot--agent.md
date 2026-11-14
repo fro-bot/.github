@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-12
+updated: 2026-11-13
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 63d82e702d41704af1f81f7fcec6c9df40e591ee
+    accessed: 2026-11-13
   - url: https://github.com/fro-bot/agent
     sha: a302de1ea783ada5c7d3855637f6814676bffb50
     accessed: 2026-11-12
@@ -165,6 +168,39 @@ The workspace-agent README's `/clone` example still omits the bearer now
 required by `deploy/README.md` for the :9100 control API; following that example
 against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
+
+## `isolate-agent` — an opt-in uid boundary (2026-11-13 oversight note)
+
+Observed from the daily oversight pass, not a full survey. Commit `63d82e70`
+(#2168, one commit after the November 12 snapshot) adds an **experimental**
+`isolate-agent` input, default `false`; the input is present in `action.yaml`
+at release `v0.140.3`. When set, the OpenCode V2 server and every tool and
+shell under it run as a separate unprivileged local user with no supplementary
+groups, no capabilities and `no_new_privs`.
+
+What it closes: the earlier caveat (see "Withholding is not an OS boundary" in
+the action's setup docs) that a same-uid model could read the workflow token
+from the action's `/proc/<pid>/environ` even when credential withholding kept
+it out of the model's own environment. Under isolation the model also cannot
+read `$GITHUB_ENV`/`$GITHUB_OUTPUT`, private `RUNNER_TEMP` directories or the
+rest of the runner's home, and gets no `sudo` or Docker socket.
+
+What it does not close: the provider key and server password stay readable;
+anything a trigger deliberately provisions (such as the `gh` config in
+provision mode) is still reachable; the checkout and network remain available.
+It is not a VM boundary, and the writable checkout stays untrusted for later
+steps.
+
+Constraints in the README and input description: GitHub-hosted Linux runners
+with passwordless `sudo` only (self-hosted, container jobs, macOS and Windows
+fail before setup); the run refuses if `actions/checkout` persisted
+credentials in `.git/config`; a local `uses: ./` install is refused because the
+action's own files must not be writable by the agent; the first account
+creation on a cold runner can take up to about two minutes; and two isolated
+steps in one job are not supported. The plan document frames this as phase 3
+of #2135, with a second uid for tools left as future work. The ci workflow
+gained coverage in the same commit; this note records workflow and docs
+facts, not an observed production run with the flag on.
 
 ## Overview
 
