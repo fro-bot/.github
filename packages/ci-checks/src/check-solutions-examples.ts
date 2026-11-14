@@ -27,8 +27,8 @@ import {readdir, readFile} from 'node:fs/promises'
  *    that symbol's real parameter count. This is opt-in because most blocks are illustrative
  *    and name nothing real; only annotate a block when it names or calls an actual repo symbol.
  *    A marker must sit directly above its fence (the last of a stack of markers ends on the line
- *    above the opening fence), and a detached marker fails the check: one with a blank line or text
- *    before the fence, at the end of the file, or above a fence that is not `ts`/`typescript`/`tsx`.
+ *    above the opening fence; several markers on one line all attach), and a detached marker fails
+ *    the check: one with a blank line or text before the fence, at the end of the file, or above a fence that is not `ts`/`typescript`/`tsx`.
  *    A marker inside a code fence is example text, not a marker.
  *
  * Both directive forms (the `<!-- verify -->` comment and the fence's own info string) fail
@@ -129,6 +129,8 @@ const VERIFY_ANNOTATION_INNER_PATTERN = /^verify:\s*(\S+)\s+from\s+(\S+)$/u
 // or malformed), so every fence-shaped line gets a chance to be validated rather than silently
 // falling through when it doesn't match a stricter pattern.
 const FENCE_LINE_PATTERN = /^(\s*)```(.*)$/u
+// A `~~~` fence is not one this checker reads; the pattern only lets a marker above one say so.
+const TILDE_FENCE_LINE_PATTERN = /^\s*~~~/u
 const FENCE_CLOSE_PATTERN = /^\s*```\s*$/u
 
 interface CommentSpan {
@@ -218,7 +220,13 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
   const directiveFindings: DirectiveFinding[] = []
 
   const {spans, unterminated} = findCommentSpans(content)
-  const spansByEndLine = new Map(spans.map(span => [span.endLine, span]))
+  // Several comments can end on one line, so a line maps to all of them, in source order.
+  const spansByEndLine = new Map<number, CommentSpan[]>()
+  for (const span of spans) {
+    const sameLine = spansByEndLine.get(span.endLine)
+    if (sameLine) sameLine.push(span)
+    else spansByEndLine.set(span.endLine, [span])
+  }
   for (const comment of unterminated) {
     // Only the text up to the next 4KB (or EOF) is worth scanning for "looks like an
     // annotation" — an unterminated `<!--` this script cares about names a `verify` directive
@@ -235,10 +243,11 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
   }
 
   // Which markers the fence walk below attaches to a checked fence, which sit directly above a fence whose
-  // language is not checked (value: how to name that fence), and where every fence lies. Whatever is left
-  // over once the walk is done is a detached marker.
-  const attachedMarkerLines = new Set<number>()
-  const uncheckedFenceMarkers = new Map<number, string>()
+  // language is not checked (value: what the marker sits above and why that is not checked), and where every
+  // fence lies. Markers are tracked by span, not by line: several can share one line. Whatever is left over
+  // once the walk is done is a detached marker.
+  const attachedMarkers = new Set<CommentSpan>()
+  const uncheckedFenceMarkers = new Map<CommentSpan, string>()
   const fenceRanges: FenceRange[] = []
 
   for (let i = 0; i < lines.length; i++) {
@@ -274,7 +283,7 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
         findings: annotationFindings,
       } = collectAnnotationsAt(spansByEndLine, fenceLine)
       for (const finding of annotationFindings) directiveFindings.push({...finding, docPath})
-      for (const span of markerSpans) attachedMarkerLines.add(span.startLine)
+      for (const span of markerSpans) attachedMarkers.add(span)
 
       if (modifierTokens.length === 0) {
         blocks.push({docPath, line: fenceLine, lang, code: bodyLines.join('\n'), fragment: false, annotations})
@@ -291,7 +300,7 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
       // Only the markers themselves matter here; a malformed comment above this fence stays unreported, as before.
       const fenceName = rawLang.length > 0 ? `a \`${rawLang}\` fence` : 'a fence with no language'
       for (const span of collectAnnotationsAt(spansByEndLine, fenceLine).spans) {
-        uncheckedFenceMarkers.set(span.startLine, fenceName)
+        uncheckedFenceMarkers.set(span, `${fenceName}, and only ts, typescript and tsx fences are checked`)
       }
 
       if (rest.length === 0 && rawLang.length > 0 && !KNOWN_NON_CODE_FENCE_LANGS.has(lang)) {
@@ -310,7 +319,7 @@ export function extractCodeBlocks(content: string, docPath: string): ExtractResu
   }
 
   directiveFindings.push(
-    ...findDetachedMarkers({spans, fenceRanges, attachedMarkerLines, uncheckedFenceMarkers}).map(finding => ({
+    ...findDetachedMarkers({lines, spans, fenceRanges, attachedMarkers, uncheckedFenceMarkers}).map(finding => ({
       ...finding,
       docPath,
     })),
@@ -331,13 +340,15 @@ interface FenceRange {
  * attach to a ts/typescript/tsx fence. Such a marker used to be dropped without a word, so the example it was
  * meant to guard was never checked. A marker is attached only when it, or the last of a stack of markers, ends
  * on the line directly above the opening fence; one directly above a fence of another language can never be
- * checked either, so it is reported with that reason instead.
+ * checked either, so it is reported with that reason instead. So is one directly above a `~~~` fence, which
+ * is never checked: telling its author to remove a blank line that is not there would send them the wrong way.
  */
 function findDetachedMarkers(input: {
+  readonly lines: readonly string[]
   readonly spans: readonly CommentSpan[]
   readonly fenceRanges: readonly FenceRange[]
-  readonly attachedMarkerLines: ReadonlySet<number>
-  readonly uncheckedFenceMarkers: ReadonlyMap<number, string>
+  readonly attachedMarkers: ReadonlySet<CommentSpan>
+  readonly uncheckedFenceMarkers: ReadonlyMap<CommentSpan, string>
 }): readonly RawDirectiveFinding[] {
   const findings: RawDirectiveFinding[] = []
   // Spans and fence ranges are both in increasing order, so one forward pass pairs them.
@@ -349,16 +360,21 @@ function findDetachedMarkers(input: {
 
     while (range < input.fenceRanges.length && (input.fenceRanges[range]?.endLine ?? 0) < span.startLine) range += 1
     const insideFence = range < input.fenceRanges.length && (input.fenceRanges[range]?.startLine ?? 0) <= span.startLine
-    if (insideFence || input.attachedMarkerLines.has(span.startLine)) continue
+    if (insideFence || input.attachedMarkers.has(span)) continue
 
     const marker = `the \`<!-- verify: NAME from PATH -->\` marker for \`${verifyMatch[1] ?? ''}\` (from ${verifyMatch[2] ?? ''})`
-    const fenceName = input.uncheckedFenceMarkers.get(span.startLine)
+    // `lines` is 0-based, so the index `endLine` is the line after the marker.
+    const uncheckedFence =
+      input.uncheckedFenceMarkers.get(span) ??
+      (TILDE_FENCE_LINE_PATTERN.test(input.lines[span.endLine] ?? '')
+        ? 'a `~~~` fence, and only backtick fences are checked'
+        : undefined)
     findings.push({
       line: span.startLine,
       reason:
-        fenceName === undefined
+        uncheckedFence === undefined
           ? `${marker} is not directly above a checked code fence, so its example was not checked — remove whatever sits between the marker and its fence (a blank line or text), or delete the marker`
-          : `${marker} sits directly above ${fenceName}, and only ts, typescript and tsx fences are checked, so nothing was verified — delete the marker, or move it above a ts fence`,
+          : `${marker} sits directly above ${uncheckedFence}, so nothing was verified — delete the marker, or move it above a ts fence`,
     })
   }
 
@@ -412,7 +428,9 @@ function levenshteinDistance(a: string, b: string): number {
  * mentions `verify` but doesn't match it is reported as a `DirectiveFinding` rather than
  * silently skipped, and also stops the walk — a malformed directive is exactly the kind of
  * comment a reader (or a script) should not read past as if it weren't there. A comment
- * unrelated to `verify` stops the walk silently, same as before.
+ * unrelated to `verify` stops the walk silently, same as before. Comments that end on one line are one
+ * step: every marker among them attaches, and the walk goes on from the earliest of them; a malformed
+ * one among them is reported, and the walk stops only when no marker is on the line.
  */
 interface RawDirectiveFinding {
   readonly line: number
@@ -420,41 +438,52 @@ interface RawDirectiveFinding {
 }
 
 function collectAnnotationsAt(
-  spansByEndLine: ReadonlyMap<number, CommentSpan>,
+  spansByEndLine: ReadonlyMap<number, readonly CommentSpan[]>,
   fenceLine: number,
 ): {
   readonly annotations: readonly VerifyAnnotation[]
   readonly spans: readonly CommentSpan[]
   readonly findings: readonly RawDirectiveFinding[]
 } {
-  const annotations: VerifyAnnotation[] = []
-  const spans: CommentSpan[] = []
+  const steps: {readonly annotations: readonly VerifyAnnotation[]; readonly spans: readonly CommentSpan[]}[] = []
   const findings: RawDirectiveFinding[] = []
   let expectedEndLine = fenceLine - 1
 
   for (;;) {
-    const span = spansByEndLine.get(expectedEndLine)
-    if (!span) break
+    // Every comment that ends on this line is one step of the walk, however many there are.
+    const lineSpans = spansByEndLine.get(expectedEndLine)
+    if (!lineSpans) break
 
-    const normalized = normalizeCommentInner(span.inner)
-    const verifyMatch = VERIFY_ANNOTATION_INNER_PATTERN.exec(normalized)
-    if (verifyMatch) {
-      annotations.unshift({symbol: verifyMatch[1] ?? '', file: verifyMatch[2] ?? ''})
-      spans.unshift(span)
-      expectedEndLine = span.startLine - 1
-      continue
+    const stepAnnotations: VerifyAnnotation[] = []
+    const stepSpans: CommentSpan[] = []
+    for (const span of lineSpans) {
+      const normalized = normalizeCommentInner(span.inner)
+      const verifyMatch = VERIFY_ANNOTATION_INNER_PATTERN.exec(normalized)
+      if (verifyMatch) {
+        stepAnnotations.push({symbol: verifyMatch[1] ?? '', file: verifyMatch[2] ?? ''})
+        stepSpans.push(span)
+      } else if (VERIFY_LIKE_PATTERN.test(normalized)) {
+        findings.push({
+          line: span.startLine,
+          reason: `comment looks like a \`<!-- verify: NAME from PATH -->\` annotation but doesn't match that grammar: <!--${span.inner}-->`,
+        })
+      }
     }
 
-    if (VERIFY_LIKE_PATTERN.test(normalized)) {
-      findings.push({
-        line: span.startLine,
-        reason: `comment looks like a \`<!-- verify: NAME from PATH -->\` annotation but doesn't match that grammar: <!--${span.inner}-->`,
-      })
-    }
-    break
+    // A line with no marker on it ends the walk, as it always has.
+    if (stepSpans.length === 0) break
+    // The walk goes upward, so steps are collected last-first and reversed at the end; no spread, since a
+    // line can carry arbitrarily many markers.
+    steps.push({annotations: stepAnnotations, spans: stepSpans})
+    expectedEndLine = stepSpans.reduce((earliest, span) => Math.min(earliest, span.startLine), expectedEndLine + 1) - 1
   }
 
-  return {annotations, spans, findings}
+  const ordered = steps.toReversed()
+  return {
+    annotations: ordered.flatMap(step => step.annotations),
+    spans: ordered.flatMap(step => step.spans),
+    findings,
+  }
 }
 
 /**
