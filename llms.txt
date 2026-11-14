@@ -39,7 +39,7 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 - [Repo reconciliation](packages/registry/src/reconcile-handler.ts): pure decision engine + thin I/O shell that syncs `metadata/repos.yaml` with actual collaborator access, with progressive dispatch pipeline (90s stagger, per-run cap, staleness gate)
 - [Invitation polling](packages/registry/src/handle-invitation.ts): scheduled poll of pending repository invitations against the allowlist, with accept/decline decisions
 - [Wiki ingest](scripts/wiki-ingest.ts): atomic multi-file commits via Git Data API with retry-on-conflict and schema validation
-- [Wiki query](packages/wiki-ops/src/wiki-query.ts): 5 KB context budget injected into every agent prompt as `<wiki_context>`
+- [Wiki index](packages/wiki-ops/src/wiki-index.ts): one line per wiki page (path, title, type, opening sentence) within 12 KiB, injected into the daily-pass agent prompts as `<wiki_context>`
 
 ## Knowledge
 

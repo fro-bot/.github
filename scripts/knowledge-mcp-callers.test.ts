@@ -111,12 +111,8 @@ const RAW_SECRET_STEPS: readonly string[] = [
   'draft-solutions.yaml/draft/agent',
 ]
 
-/** What the excerpt steps looked like before the server existed; they are not touched. */
+/** What the solutions excerpt step looked like before the server existed; it is not touched. */
 const EXCERPT_STEPS = {
-  'wiki-query': {
-    env: ['WIKI_QUERY_EVENT_NAME', 'WIKI_QUERY_OWNER', 'WIKI_QUERY_REPO', 'WIKI_QUERY_TITLE', 'WIKI_QUERY_BODY'],
-    run: "bun scripts/route-stderr.ts --route 'wiki-query:warn:page-skipped =Wiki pages skipped' --route 'wiki-query:warn:baseline-=Wiki context unavailable' --summary filtered bun scripts/wiki-query.ts",
-  },
   'solutions-query': {
     env: [
       'SOLUTIONS_QUERY_EVENT_NAME',
@@ -261,7 +257,7 @@ describe.each(CALLERS)('knowledge MCP caller $workflow / $job', caller => {
 
 describe('knowledge MCP callers: nothing else moves', () => {
   it.each(CALLERS.filter(caller => caller.prompt === 'fro-bot'))(
-    'the excerpt steps of $job keep their env keys and command, and the agent step still reads them',
+    'the solutions excerpt step of $job keeps its env keys and command, and the agent step still reads it',
     caller => {
       const steps = stepsOf(caller.workflow, caller.job)
 
@@ -271,8 +267,24 @@ describe('knowledge MCP callers: nothing else moves', () => {
         expect(step?.run, `${caller.job}/${id}`).toBe(expected.run)
       }
       const agent = steps.find(step => step.id === 'fro-bot-agent')
-      expect(agent?.env?.WIKI_CONTEXT).toBe(expr('steps.wiki-query.outputs.excerpt'))
       expect(agent?.env?.SOLUTIONS_CONTEXT).toBe(expr('steps.solutions-query.outputs.excerpt'))
+    },
+  )
+
+  it.each(CALLERS.filter(caller => caller.prompt === 'fro-bot'))(
+    'the wiki context of $job is the index of its own index step, or none for the content job',
+    caller => {
+      const steps = stepsOf(caller.workflow, caller.job)
+      const agent = steps.find(step => step.id === 'fro-bot-agent')
+      const indexSteps = steps.filter(step => step.id === 'wiki-index')
+
+      if (caller.job === 'fro-bot') {
+        expect(indexSteps).toHaveLength(0)
+        expect(agent?.env?.WIKI_CONTEXT).toBeUndefined()
+      } else {
+        expect(indexSteps).toHaveLength(1)
+        expect(agent?.env?.WIKI_CONTEXT).toBe(expr('steps.wiki-index.outputs.index || env.WIKI_INDEX_UNAVAILABLE_NOTE'))
+      }
     },
   )
 

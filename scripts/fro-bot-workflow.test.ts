@@ -1992,3 +1992,81 @@ describe('fro-bot.yaml knowledge tool duties in the rendered prompts', () => {
     },
   )
 })
+
+describe('fro-bot.yaml wiki context in the rendered prompts', () => {
+  const env = froBotParsed.env as Record<string, string>
+  const index = [
+    'Wiki index: 2 of 2 pages listed.',
+    'knowledge/wiki/repos/fro-bot--agent.md | Fro Bot Agent | repo | An action harness.',
+    'knowledge/wiki/topics/vitest.md | Vitest | topic',
+  ].join('\n')
+
+  /** The daily-pass prompt with the task replaced and `env.WIKI_CONTEXT` evaluated from the step's own expression. */
+  const render = (jobName: 'fro-bot-observe' | 'fro-bot-remediate', task: string, wikiIndex: string): string => {
+    const step = froBotParsed.jobs[jobName]?.steps?.find(candidate => candidate.id === 'fro-bot-agent')
+    const inner = /\$\{\{([\s\S]*)\}\}/u.exec(String(step?.env?.WIKI_CONTEXT ?? ''))?.[1] ?? ''
+    const value = String(
+      evaluateExpressionValue(inner, {
+        steps: {'wiki-index': {outputs: {index: wikiIndex}}},
+        env: {WIKI_INDEX_UNAVAILABLE_NOTE: env.WIKI_INDEX_UNAVAILABLE_NOTE},
+      }) ?? '',
+    )
+    const expressionStart = '$' + '{{'
+    return String(step?.with?.prompt ?? '')
+      .replace(`${expressionStart} env.TASK_PROMPT }}`, () => task)
+      .replace(`${expressionStart} env.WIKI_CONTEXT }}`, () => value)
+  }
+  const wikiContextOf = (prompt: string): string => {
+    const open = prompt.indexOf('<wiki_context>')
+    const close = prompt.indexOf('</wiki_context>')
+    return open === -1 || close === -1 ? '' : prompt.slice(open + '<wiki_context>'.length, close).trim()
+  }
+
+  it.each(['fro-bot-remediate', 'fro-bot-observe'] as const)(
+    'the %s prompt carries the index inside <wiki_context> on the schedule and on a custom dispatch',
+    jobName => {
+      for (const task of ['the scheduled daily pass', 'a custom request from a dispatch']) {
+        const prompt = render(jobName, task, index)
+
+        expect(wikiContextOf(prompt), task).toBe(index)
+        expect(prompt.indexOf('<wiki_context>'), task).toBeGreaterThan(prompt.indexOf(task))
+        expect(prompt, task).not.toContain('No wiki context is provided')
+      }
+    },
+  )
+
+  it.each(['fro-bot-remediate', 'fro-bot-observe'] as const)(
+    'the %s prompt says the index was unavailable, never that the wiki is empty, when the step wrote none',
+    jobName => {
+      const context = wikiContextOf(render(jobName, 'task', ''))
+
+      expect(context).toBe(flat(env.WIKI_INDEX_UNAVAILABLE_NOTE ?? '').trim())
+      expect(context).toMatch(/unavailable/iu)
+      expect(context).not.toMatch(/empty/iu)
+    },
+  )
+
+  it.each([
+    ['pull_request', 'PR_REVIEW_PROMPT'],
+    ['issues', 'GOAL_DECOMPOSITION_PROMPT'],
+    ['issue_comment', undefined],
+  ] as const)(
+    'the %s prompt of the content job says no wiki context is provided and keeps the solutions excerpt',
+    (eventName, taskPromptName) => {
+      const prompt = composeContentPrompt(eventName, taskPromptName)
+
+      expect(wikiContextOf(prompt)).toBe('No wiki context is provided for this run.')
+      expect(prompt).not.toContain('Wiki index:')
+      expect(prompt).toContain('$' + '{{ env.SOLUTIONS_CONTEXT }}')
+    },
+  )
+
+  it('keeps the wiki context in the daily prompts, ahead of the solutions context', () => {
+    for (const jobName of ['fro-bot-remediate', 'fro-bot-observe'] as const) {
+      const prompt = render(jobName, 'task', index)
+
+      expect(prompt.indexOf('<wiki_context>')).toBeLessThan(prompt.indexOf('<solutions_context>'))
+      expect(prompt.indexOf('</wiki_context>')).toBeLessThan(prompt.indexOf('<wiki_context_expansion>'))
+    }
+  })
+})

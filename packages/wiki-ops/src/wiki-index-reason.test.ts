@@ -5,7 +5,7 @@
  */
 import {describe, expect, it, vi} from 'vitest'
 
-import {assembleWikiContext} from './wiki-query.ts'
+import {assembleWikiIndex} from './wiki-index.ts'
 
 vi.mock('@fro.bot/wiki-write-core/wiki-utils', async importOriginal => {
   const actual = await importOriginal<typeof import('@fro.bot/wiki-write-core/wiki-utils')>()
@@ -31,10 +31,10 @@ const FILES: Record<string, string> = {
   'knowledge/wiki/topics/invalid.md': '---\ntype: topic\ntitle: [\n---\n\nBody.\n',
 }
 
-describe('assembleWikiContext: the reason a page is skipped', () => {
+describe('assembleWikiIndex: the reason a page is skipped', () => {
   it('follows the kind of the error, not the wording of its text', () => {
-    const result = assembleWikiContext({files: FILES, event: {eventName: 'issues', title: 'vitest'}})
-    expect(result.skippedPages).toStrictEqual([
+    const result = assembleWikiIndex({files: FILES, held: 3, unreadable: []})
+    expect(result?.skippedPages).toStrictEqual([
       {path: 'knowledge/wiki/topics/invalid.md', reason: 'invalid-frontmatter'},
       {path: 'knowledge/wiki/topics/unclosed.md', reason: 'unclosed-frontmatter'},
     ])

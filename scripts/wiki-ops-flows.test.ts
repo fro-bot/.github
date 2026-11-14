@@ -4,10 +4,10 @@
  * and the production module with its default dependencies. Nothing is mocked inside the CLI, so a broken
  * shim, runner config, env wiring or output path fails here.
  *
- * The workflows read `changed=`, `hash=`, `excerpt`, `selected-paths`, `byte-length` and the five lint
- * counters from `$GITHUB_OUTPUT`, the handoff artifact bytes between build and apply, the repair result
- * file, and the stdout JSON of the handoff steps, the query steps and `wiki-context-expand`. The tests pin
- * each of those, and the usage code of every CLI on the runner.
+ * The workflows read `changed=`, `hash=`, `index`, `excerpt`, `selected-paths`, `byte-length` and the five
+ * lint counters from `$GITHUB_OUTPUT`, the handoff artifact bytes between build and apply, the repair result
+ * file, and the stdout of the handoff steps, the wiki index step, the solutions query step and
+ * `wiki-context-expand`. The tests pin each of those, and the usage code of every CLI on the runner.
  */
 
 import {Buffer} from 'node:buffer'
@@ -418,7 +418,7 @@ describe('the handoff chain: baseline, build and apply (survey-repo.yaml:261,513
   })
 })
 
-// ─── wiki-query and solutions-query ──────────────────────────────────────────────────────────────
+// ─── wiki-index and solutions-query ───────────────────────────────────────────────────────────────
 
 const SOLUTION = `---\ntitle: Build breaks on release\nmodule: release\ntags: [build]\nproblem_type: build_error\nlast_updated: 2026-10-01\n---\n\nThe build breaks when release automation runs.\n`
 const SOLUTIONS = {
@@ -429,77 +429,6 @@ const SOLUTIONS = {
 }
 const PRIVATE_REPOS =
   'version: 1\nrepos:\n  - owner: secretco\n    name: vault\n    private: true\n    node_id: R_x\n    database_id: 1\n'
-
-describe('wiki-query (bun; fro-bot.yaml:592)', () => {
-  const EVENT = {
-    WIKI_QUERY_EVENT_NAME: 'issues',
-    WIKI_QUERY_OWNER: 'acme',
-    WIKI_QUERY_REPO: 'widgets',
-    WIKI_QUERY_TITLE: 'build system',
-  }
-
-  it('prints the result JSON and writes the three outputs the agent step reads, which parse back to the same excerpt', async () => {
-    const cwd = checkout(WIKI)
-    const result = await run('wiki-query', {cwd, env: EVENT})
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe('')
-    const printed = JSON.parse(result.stdout) as {excerpt: string; selectedPaths: string[]; byteLength: number}
-    expect(printed.selectedPaths).toEqual([
-      'knowledge/wiki/repos/acme--widgets.md',
-      'knowledge/wiki/topics/polyglot-monorepo.md',
-    ])
-    const outputs = parseOutputs(result.githubOutput)
-    expect(outputs.excerpt).toBe(printed.excerpt)
-    expect(JSON.parse(outputs['selected-paths'] ?? '')).toEqual(printed.selectedPaths)
-    expect(outputs['byte-length']).toBe(String(printed.byteLength))
-  })
-
-  it('an empty excerpt is an empty output value, not a missing one', async () => {
-    const result = await run('wiki-query', {
-      cwd: checkout(WIKI),
-      env: {WIKI_QUERY_EVENT_NAME: 'issues', WIKI_QUERY_TITLE: 'zzzz qqqq'},
-    })
-    expect(result.exitCode).toBe(0)
-    expect(parseOutputs(result.githubOutput)).toEqual({excerpt: '', 'selected-paths': '[]', 'byte-length': '0'})
-    expect(JSON.parse(result.stdout)).toEqual({excerpt: '', selectedPaths: [], byteLength: 0})
-  })
-
-  it('skips a malformed page and builds the rest: one warning with its path and a fixed reason, exit 0', async () => {
-    const clean = await run('wiki-query', {cwd: checkout(WIKI), env: EVENT})
-    const cwd = checkout({...WIKI, 'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n'})
-    const result = await run('wiki-query', {cwd, env: EVENT})
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe(
-      'wiki-query:warn:page-skipped path="knowledge/wiki/topics/broken.md" reason=invalid-frontmatter\n',
-    )
-    expect(result.stdout).toBe(clean.stdout)
-    expect(parseOutputs(result.githubOutput)).toEqual(parseOutputs(clean.githubOutput))
-  })
-
-  it('fails soft when no page is readable: warning, empty outputs and exit 0', async () => {
-    const cwd = checkout({
-      'knowledge/index.md': INDEX,
-      'knowledge/wiki/topics/broken.md': '---\ntype: [oops\n---\n\nbody\n',
-    })
-    const result = await run('wiki-query', {cwd, env: EVENT})
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe('wiki-query:warn:baseline-query-failed\n')
-    expect(parseOutputs(result.githubOutput)['selected-paths']).toBe('[]')
-  })
-
-  it('works without GITHUB_OUTPUT', async () => {
-    const result = await run('wiki-query', {cwd: checkout(WIKI), env: EVENT, githubOutput: 'unset'})
-    expect(result.exitCode).toBe(0)
-    expect(result.githubOutput).toBe('')
-    expect(JSON.parse(result.stdout)).toHaveProperty('selectedPaths')
-  })
-
-  it.each(USAGE_ARGV)('argv %s is a usage error that queries nothing', async arg => {
-    const result = await run('wiki-query', {argv: [arg], cwd: checkout(WIKI), env: EVENT})
-    expect(result).toMatchObject({exitCode: 1, stdout: '', githubOutput: ''})
-    expect(result.stderr).not.toBe('')
-  })
-})
 
 describe('wiki-index (bun; fro-bot.yaml, the two daily-pass jobs)', () => {
   const COUNT_LINE = 'Wiki index: 2 of 2 pages listed.'
@@ -1014,7 +943,6 @@ describe('the shims run nothing on import', () => {
     'wiki-handoff-baseline',
     'wiki-handoff-build',
     'wiki-handoff-apply',
-    'wiki-query',
     'wiki-index',
     'solutions-query',
     'wiki-context-expand',

@@ -262,7 +262,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - One manual run against a checkout of the wiki at a named `data` commit: record the commit, the status line and the number of pages with a sentence in this plan. It is not a test, because `data` moves.
 - Recorded: `data` at `07793befb79c72f2dae9c5e71e75f9b2193dfbd3`, status line `wiki-index: listed=48 held=48 sentences=kept bytes=7374`, 38 of 48 pages with a sentence.
 
-- [ ] **Unit 3: Wire the workflow and delete the query**
+- [x] **Unit 3: Wire the workflow and delete the query**
 
 **Goal:** The daily passes receive the index, the pull request job receives no wiki context, and the old query is gone.
 

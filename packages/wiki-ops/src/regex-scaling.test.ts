@@ -28,7 +28,6 @@ import {validateQuery} from './wiki-context-expand.ts'
 import {parseGitStatusPorcelainZ} from './wiki-handoff-core.ts'
 import {openingSentence} from './wiki-index.ts'
 import {planIssueLifecycle} from './wiki-lint-issues.ts'
-import {assembleWikiContext} from './wiki-query.ts'
 
 const BEST_OF = 3
 const READABLE_MILLISECONDS = 50
@@ -95,7 +94,6 @@ function growthRatio(make: (size: number) => string, size: number, run: (input: 
 const repeat = (unit: string) => (size: number) => unit.repeat(Math.ceil(size / unit.length)).slice(0, size)
 
 const SMALL = 20_000
-const FRONTMATTER = '---\ntype: topic\ntitle: T\ncreated: 2026-04-16\nupdated: 2026-04-16\n---\n\n'
 
 const REPORT = {
   schema_version: 1,
@@ -141,24 +139,6 @@ describe('the wiki-lint issue markers scale linearly', {timeout: SUITE_TIMEOUT_M
   })
 })
 
-describe('the query token and whitespace patterns scale linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
-  const query = (text: string) => {
-    assembleWikiContext({
-      files: {'knowledge/wiki/topics/a.md': `${FRONTMATTER}${text}`},
-      event: {eventName: 'issues', owner: 'o', repo: 'r', title: text, body: text},
-    })
-  }
-  it.each([
-    {name: 'a whitespace run then x', make: (size: number) => `${' '.repeat(size)}x`},
-    {name: 'alternating whitespace and x', make: repeat(' x')},
-    {name: 'a run of non-alphanumerics then a', make: (size: number) => `${'!'.repeat(size)}a`},
-    {name: 'dashes then x', make: (size: number) => `${'-'.repeat(size)}x`},
-    {name: 'alternating dash and x', make: repeat('-x')},
-  ])('wiki-query: $name', ({make}) => {
-    expect(growthRatio(make, SMALL, query)).toBeLessThan(CEILING)
-  })
-})
-
 describe('the opening-sentence scan scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
   const sentence = (text: string) => {
     openingSentence(`# T\n\n${text}`)
@@ -180,23 +160,6 @@ describe('the opening-sentence scan scales linearly', {timeout: SUITE_TIMEOUT_MI
     {name: 'a long paragraph of abbreviations', make: repeat('Dr. ')},
   ])('openingSentence: $name', ({make}) => {
     expect(growthRatio(make, SMALL, sentence)).toBeLessThan(CEILING)
-  })
-})
-
-describe('the repository slug trim scales linearly', {timeout: SUITE_TIMEOUT_MILLISECONDS}, () => {
-  // `slugify` runs on the event's owner and repo, so the text goes in as both.
-  const slug = (text: string) => {
-    assembleWikiContext({files: {}, event: {eventName: 'issues', owner: text, repo: text}})
-  }
-  it.each([
-    {name: 'a dash run then x', make: (size: number) => `${'-'.repeat(size)}x`},
-    {name: 'alternating dash and x', make: repeat('-x')},
-    {name: 'x then a dash run', make: (size: number) => `x${'-'.repeat(size)}`},
-    {name: 'a dash run between two x', make: (size: number) => `x${'-'.repeat(size)}x`},
-    {name: 'alternating underscore and dash', make: repeat('_-')},
-    {name: 'a dash run and nothing else', make: (size: number) => '-'.repeat(size)},
-  ])('slugify: $name', ({make}) => {
-    expect(growthRatio(make, SMALL, slug)).toBeLessThan(CEILING)
   })
 })
 

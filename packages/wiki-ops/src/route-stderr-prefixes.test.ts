@@ -122,7 +122,7 @@ describe('every workflow step that runs an emitter', () => {
     return runs
   }
 
-  it.each(['scripts/wiki-ingest.ts', 'scripts/render-corrections-context.ts', 'scripts/wiki-query.ts'])(
+  it.each(['scripts/wiki-ingest.ts', 'scripts/render-corrections-context.ts', 'scripts/wiki-index.ts'])(
     'runs %s only as the command the router wraps',
     script => {
       const running = allRuns().filter(({run}) => run.includes(script))
@@ -135,11 +135,11 @@ describe('every workflow step that runs an emitter', () => {
     },
   )
 
-  it('counts three writer steps for wiki-ingest.ts, one for the corrections render and three for the wiki query', () => {
+  it('counts three writer steps for wiki-ingest.ts, one for the corrections render and two for the wiki index', () => {
     const count = (script: string): number => allRuns().filter(({run}) => run.includes(script)).length
     expect(count('scripts/wiki-ingest.ts')).toBe(3)
     expect(count('scripts/render-corrections-context.ts')).toBe(1)
-    expect(count('scripts/wiki-query.ts')).toBe(3)
+    expect(count('scripts/wiki-index.ts')).toBe(2)
   })
 })
 
@@ -287,12 +287,12 @@ describe('the corrections emitter', () => {
   })
 })
 
-describe('the wiki-query emitter', () => {
-  const PREFIX = 'wiki-query:warn:'
+describe('the wiki-index emitter', () => {
+  const PREFIX = 'wiki-index:warn:'
 
-  /** Kinds the wiki query can write after `wiki-query:warn:`, from its source: lowercase letters and dashes. */
+  /** Kinds the wiki index can write after `wiki-index:warn:`, from its source: lowercase letters and dashes. */
   function emittedKinds(): string[] {
-    const text = readFileSync(join(REPOSITORY_ROOT, 'packages/wiki-ops/src/wiki-query.ts'), 'utf8')
+    const text = readFileSync(join(REPOSITORY_ROOT, 'packages/wiki-ops/src/wiki-index.ts'), 'utf8')
     const kinds = new Set<string>()
     for (let at = text.indexOf(PREFIX); at !== -1; at = text.indexOf(PREFIX, at + 1)) {
       let end = at + PREFIX.length
@@ -304,18 +304,18 @@ describe('the wiki-query emitter', () => {
     return [...kinds].sort()
   }
 
-  const queryRoutes = (): Route[] => steps.filter(step => step.key === 'wiki-query').flatMap(step => routesOf(step))
+  const indexRoutes = (): Route[] => steps.filter(step => step.key === 'wiki-index').flatMap(step => routesOf(step))
   const routedBy = (kind: string, route: Route): boolean => `${PREFIX}${kind} path="x"`.startsWith(route.prefix)
 
-  it('writes exactly the kinds baseline-query-failed and page-skipped', () => {
-    expect(emittedKinds()).toStrictEqual(['baseline-query-failed', 'page-skipped'])
+  it('writes exactly the kinds index-unavailable and page-skipped', () => {
+    expect(emittedKinds()).toStrictEqual(['index-unavailable', 'page-skipped'])
   })
 
-  it('routes every kind in each of the three steps, each under its own heading, and none twice', () => {
-    const queryStepRoutes = steps.filter(step => step.key === 'wiki-query').map(step => routesOf(step))
-    expect(queryStepRoutes).toHaveLength(3)
-    for (const routes of queryStepRoutes) {
-      expect(routes.map(route => route.heading)).toStrictEqual(['Wiki pages skipped', 'Wiki context unavailable'])
+  it('routes every kind in each of the two steps, each under its own heading, and none twice', () => {
+    const indexStepRoutes = steps.filter(step => step.key === 'wiki-index').map(step => routesOf(step))
+    expect(indexStepRoutes).toHaveLength(2)
+    for (const routes of indexStepRoutes) {
+      expect(routes.map(route => route.heading)).toStrictEqual(['Wiki pages skipped', 'Wiki index unavailable'])
       for (const kind of emittedKinds()) {
         const matching = routes.filter(route => routedBy(kind, route))
         expect(matching.length, kind).toBe(1)
@@ -323,9 +323,15 @@ describe('the wiki-query emitter', () => {
     }
   })
 
-  it('has no route that matches a line the query does not write', () => {
-    for (const route of queryRoutes()) {
+  it('has no route that matches a line the index does not write', () => {
+    for (const route of indexRoutes()) {
       expect(emittedKinds().filter(kind => routedBy(kind, route)).length, route.prefix).toBe(1)
     }
+  })
+
+  it('gives the two steps the same router flags', () => {
+    const [first, second] = steps.filter(step => step.key === 'wiki-index').map(step => step.routerFlags)
+
+    expect(second).toStrictEqual(first)
   })
 })

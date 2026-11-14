@@ -505,14 +505,6 @@
       "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-handoff-apply-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-handoff-apply.ts, pinned by packages/wiki-ops/src/wiki-handoff-core.test.ts and scripts/wiki-handoff-sequence.test.ts. The shim's surface, including a usage error on unmatched argv and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     },
     {
-      "path": "packages/wiki-ops/src/wiki-query.ts",
-      "reason": "The baseline wiki context query: it scores the wiki pages against the event, trims the excerpt to the byte budget on a character boundary, appends `excerpt`, `selected-paths` and `byte-length` to `$GITHUB_OUTPUT`, leaves out a page whose frontmatter cannot be read and warns once per page by path and a fixed reason, and fails soft on a corpus error. Pinned by packages/wiki-ops/src/wiki-query.test.ts (scoring, budget, multi-byte truncation and the real shim run against a malformed or unreadable corpus) and by packages/wiki-ops/src/wiki-query-bad-page.test.ts (the skip, its warnings and the unchanged output for a wiki with no bad page). It writes only caller-supplied paths and has no rejection path that gates a write, so it is not in the mutation set."
-    },
-    {
-      "path": "packages/wiki-ops/src/wiki-query-cli.ts",
-      "reason": "The goke entrypoint of wiki-query: one read-only root command that takes no argument. Argv that matches nothing declared is a usage error and runs no query. Pinned by packages/wiki-ops/src/wiki-query-cli.test.ts (the config, the usage errors and `main`) and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
-    },
-    {
       "path": "packages/wiki-ops/src/wiki-index.ts",
       "reason": "The wiki index for the daily passes: it reads the four wiki directories through the shared page parser, writes one line per page (path, title, type, opening sentence) with every field on one line, finds the opening sentence by one linear scan, fits the whole value to 12 KiB by dropping sentences and then lines, appends the `index` output to `$GITHUB_OUTPUT`, prints one status line, warns once per skipped page by encoded path and a fixed reason, and fails soft to an empty index and an unavailable status line. Pinned by packages/wiki-ops/src/wiki-index.test.ts (the sentence rule, the one-line fields, the order, the size rule and the loader outcomes), by packages/wiki-ops/src/wiki-index-route.test.ts (the run behind the stderr router), by packages/wiki-ops/src/regex-scaling.test.ts (linear growth) and by scripts/wiki-ops-flows.test.ts (the real shim). It writes only caller-supplied paths and has no rejection path that gates a write, so it is not in the mutation set."
     },
@@ -563,10 +555,6 @@
     {
       "path": "packages/wiki-ops/src/rebuild-wiki-index-cli.ts",
       "reason": "The goke entrypoint of rebuild-wiki-index: one writing root command with a `--merge-logs <path>` option and variadic paths. Log paths without the option, a missing option value, a flag it does not declare and `--help` are usage errors and write nothing. Pinned by packages/wiki-ops/src/rebuild-wiki-index-cli.test.ts and by scripts/wiki-ops-flows.test.ts, which spawns the shim."
-    },
-    {
-      "path": "scripts/wiki-query.ts",
-      "reason": "Entrypoint shim: it imports main from @fro-bot/wiki-ops/wiki-query-cli and runs it under the entry guard. The behaviour is in packages/wiki-ops/src/wiki-query.ts, pinned by packages/wiki-ops/src/wiki-query.test.ts. The shim's surface, including a usage error on unmatched argv (where the CLI is on the runner) and that importing it runs nothing, is pinned by scripts/wiki-ops-flows.test.ts."
     },
     {
       "path": "scripts/wiki-index.ts",

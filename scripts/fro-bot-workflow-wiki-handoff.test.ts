@@ -5,8 +5,10 @@ import {parse} from 'yaml'
 
 // Regression guard: the prompts name the two `knowledge_*` tools and carry no bash recipe and no hand-off
 // path. The `<wiki_context_expansion>` block also carries the prompt contract for the tools: the three jobs
-// get one block each, identical apart from the repository duty that only the daily-pass jobs carry, and none
-// of them describes the tools as optional or as something to avoid by default.
+// get one block each: a shared core, plus the sentences that belong to one job (the index guidance and the
+// repository duty in the two daily-pass jobs, the older-checkout sentence in Remediate only). None of them
+// describes the tools as optional or as something to avoid by default, and the pull request job's
+// `<wiki_context>` says no wiki context is provided.
 
 interface WorkflowStep {
   name?: string
@@ -39,6 +41,12 @@ function assertFroBotWorkflow(value: unknown): asserts value is {
 const AGENT_USES_PREFIX = 'fro-bot/agent@'
 const TOOL_IDS = ['knowledge_wiki_search', 'knowledge_solutions_search'] as const
 const DAILY_PASS_JOBS = ['fro-bot-remediate', 'fro-bot-observe'] as const
+const OPENING_SENTENCE = 'The `knowledge` tools search the wiki and the documented solutions.'
+const INDEX_GUIDANCE =
+  'The wiki index above lists the pages the wiki holds: each line gives the path, title and type of a page, and its opening sentence when it has one. Read a page from disk, or find one with `knowledge_wiki_search`.'
+const OLDER_CHECKOUT_SENTENCE =
+  'The index reflects the wiki on `data`. The checkout may hold an older copy of a listed page, or lack it.'
+const NO_WIKI_CONTEXT_SENTENCE = 'No wiki context is provided for this run.'
 
 /** Wording the old block used to keep runs on the baseline; no knowledge block may carry any of it. */
 const FORBIDDEN_WORDING = [/optional/iu, /do not expand by default/iu, /usually enough on its own/iu, /look further/iu]
@@ -60,6 +68,7 @@ const flat = (text: string): string => text.replaceAll(/\s+/gu, ' ').trim()
 interface AgentJobWiring {
   readonly jobKey: string
   readonly prompt: string
+  readonly env: Record<string, unknown>
 }
 
 /** Every job that runs the fro-bot/agent action, with its prompt. */
@@ -71,9 +80,19 @@ function collectAgentJobs(jobs: Record<string, WorkflowJob>): AgentJobWiring[] {
     if (agentStep === undefined) {
       continue
     }
-    wirings.push({jobKey, prompt: String(agentStep.with?.prompt ?? '')})
+    wirings.push({jobKey, prompt: String(agentStep.with?.prompt ?? ''), env: agentStep.env ?? {}})
   }
   return wirings
+}
+
+/** The text between the `<wiki_context>` tags of a prompt. */
+function wikiContextBlock(prompt: string): string {
+  const open = prompt.indexOf('<wiki_context>')
+  const close = prompt.indexOf('</wiki_context>')
+  if (open === -1 || close === -1 || close < open) {
+    throw new TypeError('prompt has no <wiki_context> block')
+  }
+  return prompt.slice(open + '<wiki_context>'.length, close)
 }
 
 /** The text between the `<wiki_context_expansion>` tags of a prompt. */
@@ -156,16 +175,55 @@ describe('fro-bot.yaml agent prompts', () => {
         expect(block).not.toContain('metadata/repos.yaml')
       }
     })
+
+    it('carries the index guidance only in the daily-pass jobs, and the older-checkout sentence only in Remediate', () => {
+      const block = flat(expansionBlock(wiring.prompt))
+      const isDailyPass = (DAILY_PASS_JOBS as readonly string[]).includes(wiring.jobKey)
+
+      expect(block.includes(INDEX_GUIDANCE), `job ${wiring.jobKey}`).toBe(isDailyPass)
+      expect(block.includes(OLDER_CHECKOUT_SENTENCE), `job ${wiring.jobKey}`).toBe(
+        wiring.jobKey === 'fro-bot-remediate',
+      )
+      if (!isDailyPass) {
+        expect(block).not.toMatch(/\bindex\b/iu)
+      }
+    })
+
+    it('opens with the tools, not with a baseline context that no job hands over any more', () => {
+      const block = flat(expansionBlock(wiring.prompt))
+
+      expect(block, `job ${wiring.jobKey}`).toContain(OPENING_SENTENCE)
+      expect(block, `job ${wiring.jobKey}`).not.toMatch(/baseline|reach past/iu)
+    })
   })
 
-  it('gives the three agent jobs one block, identical apart from the repository duty', () => {
+  it('gives the three agent jobs one shared core, and each job only its own sentences', () => {
     const blocks = new Map(agentJobs.map(wiring => [wiring.jobKey, flat(expansionBlock(wiring.prompt))]))
     const content = blocks.get('fro-bot')
+    const without = (block: string | undefined, sentences: readonly string[]): string | undefined =>
+      sentences.reduce((text, sentence) => text?.replace(` ${sentence}`, ''), block)
 
     expect([...blocks.keys()].toSorted()).toStrictEqual(['fro-bot', 'fro-bot-observe', 'fro-bot-remediate'])
     expect(content).toBeDefined()
-    for (const jobKey of DAILY_PASS_JOBS) {
-      expect(blocks.get(jobKey)?.replace(` ${REPOSITORY_DUTY}`, ''), `job ${jobKey}`).toBe(content)
+    expect(without(blocks.get('fro-bot-observe'), [INDEX_GUIDANCE, REPOSITORY_DUTY])).toBe(content)
+    expect(without(blocks.get('fro-bot-remediate'), [INDEX_GUIDANCE, OLDER_CHECKOUT_SENTENCE, REPOSITORY_DUTY])).toBe(
+      content,
+    )
+  })
+
+  it("says in the pull request job's wiki context that none is provided, and hands the daily jobs the wiki context variable", () => {
+    for (const wiring of agentJobs) {
+      const context = wikiContextBlock(wiring.prompt)
+      const isDailyPass = (DAILY_PASS_JOBS as readonly string[]).includes(wiring.jobKey)
+
+      if (isDailyPass) {
+        expect(flat(context), `job ${wiring.jobKey}`).toBe('$' + '{{ env.WIKI_CONTEXT }}')
+        expect(wiring.env.WIKI_CONTEXT, `job ${wiring.jobKey}`).toBeDefined()
+      } else {
+        expect(flat(context), `job ${wiring.jobKey}`).toBe(NO_WIKI_CONTEXT_SENTENCE)
+        expect(wiring.prompt).not.toContain('env.WIKI_CONTEXT')
+        expect(wiring.env.WIKI_CONTEXT).toBeUndefined()
+      }
     }
   })
 
@@ -181,12 +239,6 @@ describe('fro-bot.yaml agent prompts', () => {
   it('the workflow file sets no hand-off path for the knowledge tools', () => {
     expect(raw).not.toContain('WIKI_CONTEXT_HANDOFF_PATH')
     expect(raw).not.toContain('handoff-path')
-  })
-
-  it('baseline wiki context is still injected as before', () => {
-    // #then the <wiki_context> block referencing WIKI_CONTEXT remains in the prompt
-    expect(raw).toContain('<wiki_context>')
-    expect(raw).toContain('env.WIKI_CONTEXT')
   })
 
   it('no precomputed <wiki_deep_context> block is introduced', () => {
