@@ -479,7 +479,8 @@ What each site does with the three outcomes, after both PRs:
 
 - Second PR: #4203 merged on 2026-11-12 and cut no release. #4148 and #4183 closed.
 - Strict gate over `data`: the gate's CLI, run on the `data` tree after promotion #4204 with `main`'s pages as the unchanged set, reported no leaks across 33 repo pages. That run was local, before the merge.
-- First promotion with the strict gate, the knowledge tools in an agent run, a capture run and a metrics run: not yet run.
+- First promotion with the strict gate: run 43543306120 (scheduled) on 2026-11-14 passed on the pinned `data` commit `0cfe4c0`. "Block private wiki pages" printed `no private wiki leaks detected`, "Block private repo names in promotion diff" printed `check-private-leak [promotion]: ok`, and "Qualify promotion at the pinned commit" passed. The run opened #4225 (`knowledge/` and `metadata/` paths only, 7 files, label `automerge`). The self-merge step approved it as `fro-bot` and squash-merged it at 01:59:18Z (`promotion-self-merge: MERGED`).
+- The knowledge tools in an agent run, a capture run and a metrics run: not yet run.
 
 ## System-Wide Impact
 
