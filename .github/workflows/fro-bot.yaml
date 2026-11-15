@@ -973,6 +973,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.FRO_BOT_PAT }}
+          persist-credentials: false
 
       - name: Resolve the agent model
         id: agent-model
@@ -1070,6 +1071,7 @@ jobs:
           model: ${{ steps.agent-model.outputs.model }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: branch-pr
+          isolate-agent: 'true'
           repo-skills: 'true'
           prompt: |
             <persona>
