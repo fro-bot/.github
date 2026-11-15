@@ -295,6 +295,15 @@ Requirement IDs are the origin document's.
 
 - The results are recorded here with run and commit references. The median lines added is compared with 10 and with the baseline of 69.
 
+**Results (2026-11-15):**
+
+- [x] **Release.** `@fro.bot/wiki-write-core` 0.4.0 was published by the `Release Wiki Write Core` run [43674957772](https://github.com/fro-bot/.github/actions/runs/43674957772) at 04:02Z (`npm view` lists 0.4.0).
+- [x] **A repeat survey of an unchanged repository.** The dispatched survey run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468) (05:34Z) found the target's `main` unchanged. Its persist step reported `{"committed":true,"commitSha":"ec6df5684831a66b0a33ddd131dac1acd8ead06a","attempts":1,"pagesChanged":0}`, so it succeeded on the first attempt. Commit `ec6df56` on `data` touched only `knowledge/log.md` (+20). The repository's page was not in the commit, so it is byte-identical and gained no `sources` entry. The log gained one entry, headed `Verified the target; no wiki page changed.`, which names the page as left untouched.
+- [x] **The schema rule on `data`.** The survey above ran before the schema bullet reached `data`: `data` was at `234958d` (06:03Z) and its `knowledge/schema.md` held no repeat-survey text. The merge-back in the promotion run [43705065121](https://github.com/fro-bot/.github/actions/runs/43705065121) (dispatched, 10:38Z) made commit `6704613` at 10:39:01Z, and `origin/data:knowledge/schema.md` line 78 now carries the repeat-survey exception. The survey's own instructions (`survey-repo.yaml` at the run's head, which includes #4247) carried the repeat-survey rules, and its log entry cites them, so that run applied the rule without the schema bullet.
+- [ ] **The first three scheduled repeat surveys.** Not yet run.
+- [ ] **A repeat survey of a repository that changed, from a schedule.** Not yet run. Two operator-dispatched surveys ran after the merge-back (both from `33b2db9`): run [43715597103](https://github.com/fro-bot/.github/actions/runs/43715597103) committed `2748be2` with `pagesChanged: 0` and a log-only change (+27), although its target's `main` had moved across five Renovate commits; run [43715725875](https://github.com/fro-bot/.github/actions/runs/43715725875) committed `b37a116` with `pagesChanged: 1`, a page change of +7 and −5 lines (one of them the `updated` date) and a log change of +27, and its log entry records a repeat survey in which only versions moved. Both succeeded on the first attempt.
+- [ ] **The 30-day measure.** Not yet run. The baseline is 23 repeat surveys in 14 days with a median of 69 lines added.
+
 ## System-Wide Impact
 
 - **Interaction graph:** the writer serves the survey, the event ingest and the Observe ingest through the same CLI path. Repair and rename call its functions directly and are not touched.
