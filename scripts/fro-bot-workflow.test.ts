@@ -1287,14 +1287,20 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     )
   })
 
-  it('fro-bot-remediate keeps checkout credential persistence effective (its branch-pr push needs it)', () => {
-    const remediateCheckout = froBotParsed.jobs['fro-bot-remediate']?.steps?.find(
-      step => step.name === 'Checkout repository',
-    )
+  it('fro-bot-remediate runs isolated with unpersisted checkout credentials and keeps its explicit token inputs', () => {
+    const expressionStart = '$' + '{{'
+    const remediate = froBotParsed.jobs['fro-bot-remediate']
+    const remediateCheckout = remediate?.steps?.find(step => step.name === 'Checkout repository')
+    const remediateAgent = remediate?.steps?.find(step => step.id === 'fro-bot-agent')
     expect(remediateCheckout).toBeDefined() // guards against a vacuous pass if the step were renamed/removed
-    // output-mode: branch-pr commits and pushes from this job, so persist-credentials must
-    // stay effective — the actions/checkout default (undefined) or an explicit true; never false.
-    expect(remediateCheckout?.with?.['persist-credentials']).not.toBe(false)
+    expect(remediateAgent).toBeDefined()
+    // Under isolate-agent the agent can read the checkout, so no git credential may be persisted into it. The
+    // branch-pr push authenticates through the agent step's explicit github-token input, not through checkout.
+    expect(remediateCheckout?.with?.['persist-credentials']).toBe(false)
+    expect(remediateCheckout?.with?.token).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
+    expect(remediateAgent?.with?.['isolate-agent']).toBe('true')
+    expect(remediateAgent?.with?.['output-mode']).toBe('branch-pr')
+    expect(remediateAgent?.with?.['github-token']).toBe(`${expressionStart} secrets.FRO_BOT_PAT }}`)
   })
 
   it('sets persist-credentials: false on the content-trigger job checkout while keeping the PAT token', () => {

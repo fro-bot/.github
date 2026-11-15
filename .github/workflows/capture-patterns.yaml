@@ -140,6 +140,7 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 1
+          persist-credentials: false
 
       - name: Resolve the agent model
         id: agent-model
@@ -173,7 +174,7 @@ jobs:
       - name: 🤖 Draft pattern proposal bodies
         id: agent
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
-        uses: fro-bot/agent@95b0fbf4e39ff2d1c8431050c51260de7bbd34ed # v0.144.1
+        uses: fro-bot/agent@4e394905b7eafda2d7424816eb7846d3f09c40df # v0.144.2
         env:
           TASK_PROMPT: |
             You are authoring recurring-pattern proposal bodies. Each candidate in the
@@ -236,6 +237,7 @@ jobs:
             - Never write to any path other than .capture-patterns/capture-patterns-bodies.json.
             - Output only the bodies file. No summary issue. No comments.
         with:
+          isolate-agent: 'true'
           # The action requires a github-token input. The workflow's auto-provisioned
           # GITHUB_TOKEN is scoped to `contents: read`/`issues: read` by this job's
           # permissions block — it carries no `issues: write`. Issue creation stays

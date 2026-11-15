@@ -48,6 +48,10 @@ coverage
 .capture-patterns/
 .drafted-solutions/
 
+# Knowledge MCP call logs: the knowledge-mcp-config action makes this directory in the workspace, where the
+# isolated agent can write; the summary step reads the log back from it
+.knowledge-mcp/
+
 # Wiki lint local artifacts (CI uploads them to actions/upload-artifact; never tracked in git)
 wiki-lint-report.md
 wiki-lint-report.json
