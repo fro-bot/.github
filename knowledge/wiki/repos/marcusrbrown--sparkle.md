@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/sparkle
 created: 2026-04-28
-updated: 2026-10-29
+updated: 2026-11-14
 sources:
+  - url: https://github.com/marcusrbrown/sparkle
+    sha: 1a6b44ef092a5c0fac52497250bf1e65edfa55d2
+    accessed: 2026-11-14
   - url: https://github.com/marcusrbrown/sparkle
     sha: b6116202d97cef5c6a535ffa9555f745729772e8
     accessed: 2026-10-29
@@ -75,12 +78,97 @@ related:
   - marcusrbrown--github
   - bfra-me--works
   - fro-bot--dashboard
+  - security-remediation-integration
 node_id: MDEwOlJlcG9zaXRvcnkzMTYxMDA5ODY=
 ---
 
 # marcusrbrown/sparkle
 
 **Sparkle** — a TypeScript playground and monorepo showcasing cross-platform web and mobile development. React component library, design token system, Expo/React Native mobile app, Astro Starlight documentation site, and comprehensive build tooling via Turborepo and pnpm workspaces.
+
+## 2026-11-14 Limited Re-survey — A Pure Bump Interval and a Lockfile-Only Security Fix
+
+_Public `main` at `1a6b44ef092a5c0fac52497250bf1e65edfa55d2`, 42 commits ahead
+of the 2026-10-29 snapshot. Reads were limited to the root and workflow
+directory listings, the compare file list and commit subjects, and the
+manifest and workflow diffs. The README, workspace manifest, and the other six
+workflows are unchanged in the compare. Earlier issue/PR states, run results
+and live-site claims are still dated observations and were not reverified._
+
+### The interval was almost all Renovate
+
+41 of the 42 commits are `mrbro-bot[bot]` Renovate PRs (#2201–#2244). The
+other one is `marcusrbrown`'s **#2219** "add Systematic config support", which
+adds a root `.systematic.jsonc` (+8) and touches `eslint.config.ts` (+8).
+Neither file is a manifest, README or workflow, so their bodies were not read.
+The new root config is the only structural change in the tree. It sits next
+to `opencode.jsonc`, so this repo now carries both OpenCode and Systematic
+config.
+
+Declared version movement:
+
+| Declaration | 2026-10-29 | 2026-11-14 |
+| --- | --- | --- |
+| `fro-bot/agent` pin | `d372d01` v0.129.0 | `00c4608` **v0.141.0** |
+| root `packageManager` | pnpm 11.28.8 | **pnpm 11.28.11** |
+| `.node-version` | 24.22.2 | **24.22.3** |
+| `vite` (fro-jive, moo-dang, storybook, ui) | 8.3.5 | **8.3.8** |
+| `playwright` / `@playwright/test` (docs, storybook) | 1.64.1 | **1.65.0** |
+| `@storybook/addon-a11y` | 10.6.3 | **10.6.7** |
+| `@microsoft/api-extractor` (docs) | 7.59.4 | **7.60.1** |
+| `react-native-safe-area-context` (fro-jive) | 5.10.1 | **5.11.1** |
+
+The `.node-version` value at 10-29 comes from this compare's diff; the
+10-29 section above did not record it. TypeScript 5.9.3, TypeDoc 0.28.20 (root
+and docs), `doctrine` 3.0.0, Astro `^7.0.0` and Starlight `^0.41.0` did not
+change. The root TypeDoc workaround is therefore still declared, as it has
+been since 09-13.
+
+### The agent pin went through 25 Renovate PRs in about two weeks
+
+The `fro-bot.yaml` diff is one line, the agent SHA. Commit subjects show
+**25 separate `fro-bot/agent` bump PRs** (v0.130.0 through v0.141.0, 10-30 → 11-14, including
+patch releases). Each went through its own merged PR, the same pattern the
+09-13 survey recorded for 13 bumps in 16 days. The schedules (`0 5` autoheal,
+`0 17` maintenance), the delivery-mode gate and the prompts are byte-identical
+to 10-29. The Fro Bot workflow is present, so **no follow-up onboarding draft
+is needed**.
+
+These earlier findings still hold in the unchanged source:
+
+- The comment-path fork preflight still reads `.head.repo.fork // "unknown"`,
+  so the 10-13 correction still applies: `//` replaces `false` too, so a
+  same-repository head gets rejected.
+- `PR_REVIEW_PROMPT` still says `pnpm@10.x`. The manifest pins pnpm 11.28.11.
+- The autoheal convention scan still says "No ES6 `class` declarations outside
+  of `Error` subclasses", while the review prompt allows justified exceptions.
+- The README's pnpm `>=10` minimum still conflicts with `engines.pnpm >=11.8.0`.
+- The regeneration detector/trigger extension mismatch and the
+  components-tree staging gap are unchanged.
+
+These are contract discrepancies in source, not observed run failures.
+
+### A `[SECURITY]` fix that exists only in the lockfile
+
+Commit `414b5d7` (**#2242**, "fix(deps): update dependency astro to v7.4.7
+[SECURITY]") changed **only `pnpm-lock.yaml`** (+529 −373, by file stats; the
+lockfile body was not read). `docs/package.json` still declares
+`"astro": "^7.0.0"`. That range allows every vulnerable 7.x release below
+7.4.7, so only the lockfile enforces the patched version. Nothing in the
+manifest stops a fresh resolution, or a consumer with a different lockfile,
+from installing a version below 7.4.7. In practice the risk is small: a
+fresh `^7` resolution picks the newest 7.x, and `docs` is the site, not a
+published package. The useful point is about evidence: a `[SECURITY]` commit
+title tells you the lockfile moved, not that the declared range now excludes
+the vulnerable versions. This is the same gap the 2026-07-28 `pnpm.overrides`
+PRs closed by raising floors explicitly. Recorded in
+[[security-remediation-integration]].
+
+Sources: [compare `b611620…1a6b44e`](https://github.com/marcusrbrown/sparkle/compare/b6116202d97cef5c6a535ffa9555f745729772e8...1a6b44ef092a5c0fac52497250bf1e65edfa55d2),
+[Fro Bot workflow](https://github.com/marcusrbrown/sparkle/blob/1a6b44ef092a5c0fac52497250bf1e65edfa55d2/.github/workflows/fro-bot.yaml),
+[docs manifest](https://github.com/marcusrbrown/sparkle/blob/1a6b44ef092a5c0fac52497250bf1e65edfa55d2/docs/package.json),
+[root manifest](https://github.com/marcusrbrown/sparkle/blob/1a6b44ef092a5c0fac52497250bf1e65edfa55d2/package.json),
+and [commit `414b5d7`](https://github.com/marcusrbrown/sparkle/commit/414b5d7).
 
 ## 2026-10-29 Limited Re-survey — Documentation Delivery Boundaries
 
@@ -877,3 +965,4 @@ _Issue #57 ("Uplift `sparkle`") and the Astro v6 security PR #1604 are no longer
 | 2026-06-27 | `81cbd99` | Re-survey — Fro Bot agent bumped v0.65.0 → **v0.79.1** (SHA `720b721`); checkout pinned `df4cb1c` v6.0.3. pnpm `10.34.3` → `10.34.4`. **`.node-version` bumped `24.16.0` → `24.18.0`** (first Node minor since 24.16.0). turbo 2.9.18 and full `@bfra.me/*` + TypeScript 5.9.3 toolchain unchanged. Workflow count steady at 7; `fro-bot.yaml` prompts (PR review / maintenance / autoheal categories 1–8) unchanged in structure. **#1666 "Daily Maintenance Report" now OPEN** (was CLOSED at 2026-06-16) — resolves the prior maintenance-report lifecycle question; the prompt's reopen-if-closed rule explains the transition. Open PRs 0 → 3 (#1773 pnpm v11 security, #1771 grouped non-majors, #1745 docs regen). Open issues 4 → 5 (#1666 returns to open set). `apps/` (fro-jive, moo-dang) and `packages/` (config, error-testing, storybook, test-utils, theme, types, ui, utils) layout unchanged. `llms.txt` still pins `pnpm@10.33.4` — doc drift now 3 patches behind actual `10.34.4`; autoheal category-3 llms.txt-accuracy check apparently not flagging it. No structural/architecture changes. |
 | 2026-07-28 | `9c215ee` | Re-survey — Fro Bot agent bumped v0.85.0 → **v0.95.0** (SHA `4ad0054`); checkout `df4cb1c` v6.0.3 → **`d23441a` v6.1.0**. pnpm `11.10.0` → **`11.17.0`**; turbo `2.10.4` → **`2.10.7`** (HEAD commit is Renovate turbo bump #1876). prettier `3.9.4`→`3.9.6`, tsx `4.23.0`→`4.23.1`, `@types/node` `24.13.2`→`24.13.3`, eslint `9.39.4`→`9.39.5`, `@changesets/cli` `2.31.0`→`2.31.1`. Renovate preset `#5.2.0` → **`#5.2.9`**. `.node-version` holds `24.18.0`; `@bfra.me/*` toolchain + TypeScript 5.9.3 unchanged. **Stars 1 → 2, watchers 1 → 2.** Workflow count steady at 7; `apps/`+`packages/` layout unchanged. Open PRs steady at 3 but reshaped again: #1787/#1816 (lint-fixes) + #1812 (Renovate typedoc) all cleared; queue now **#1875 (moo-dang test-utils dep), #1866 (brace-expansion security override), #1862 (postcss security override)** — a **security-override + manifest-hygiene** shape, all fro-bot autoheal-authored. Open non-PR issues steady at 7 (identical set). **#1800 "llms.txt drift" still OPEN and `llms.txt` still pins `pnpm@10.33.4`** (now a full major behind actual `11.17.0`) — the category-3 check flags but does not heal; remediation waits on human action across two surveys. No structural/architecture changes. |
 | 2026-07-11 | `2ef1cf1` | Re-survey — Fro Bot agent bumped v0.79.1 → **v0.85.0** (SHA `e7453bd`); checkout still `df4cb1c` v6.0.3. **pnpm major cutover `10.34.4` → `11.10.0`** — the #1773 pnpm v11 security bump landed; `engines.pnpm` floor raised `>=9.15.4` → `>=11.8.0`. **turbo `2.9.18` → `2.10.4`** (first 2.10 minor). prettier `3.8.4` → `3.9.4`; tsx `4.22.4` → `4.23.0`; new devDeps observed (`@axe-core/cli` 4.12.1, `@lhci/cli` 0.15.1, `markdownlint` 0.39.0). `.node-version` holds `24.18.0`; `@types/node` 24.13.2, `tsdown` 0.16.8, `@bfra.me/*` toolchain, TypeScript 5.9.3 — all unchanged. Workflow count steady at 7; `apps/`+`packages/` layout unchanged. **#1666 "Daily Maintenance Report" stays OPEN.** Open PRs steady at 3 but reshaped: #1773/#1771/#1745 all cleared; queue now #1816 + #1787 (two fro-bot autoheal lint-fix PRs — new archetype) + #1812 (Renovate typedoc). Open issues 5 → 7 with two fresh autoheal issues: **#1800 "llms.txt drift: pnpm version reference is stale"** and **#1799 "Stale TODOs"**. **#1800 resolves the prior open question**: the category-3 llms.txt-accuracy check *is* firing and correctly opened an issue (not a PR) for the stale `pnpm@10.33.4` reference (now a full major behind actual `11.10.0`). No structural/architecture changes. |
+| 2026-11-14 | `1a6b44e` | Limited re-survey. 42 commits, 41 of them Renovate. **25 `fro-bot/agent` bump PRs**, v0.129.0 → **v0.141.0**. pnpm 11.28.8 → 11.28.11, Node 24.22.2 → 24.22.3, vite 8.3.8, playwright 1.65.0. New root `.systematic.jsonc` (#2219), body not read. **#2242 astro 7.4.7 `[SECURITY]` changed only the lockfile**: docs still declares `^7.0.0`, so only the lockfile enforces the patched version. Prompt, fork-guard, README-floor and regeneration discrepancies unchanged. Fro Bot workflow present. |

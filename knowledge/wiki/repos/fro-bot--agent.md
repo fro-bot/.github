@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-13
+updated: 2026-11-14
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: 00c4608d56d5739e5d90fe0955b73d34dcbc3b32
+    accessed: 2026-11-14
   - url: https://github.com/fro-bot/agent
     sha: 63d82e702d41704af1f81f7fcec6c9df40e591ee
     accessed: 2026-11-13
@@ -168,6 +171,28 @@ The workspace-agent README's `/clone` example still omits the bearer now
 required by `deploy/README.md` for the :9100 control API; following that example
 against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
+
+## `isolate-agent` keeps the provider key out of the sandbox (2026-11-14 oversight note)
+
+Observed from the daily oversight pass, not a full survey. This **revises** the
+2026-11-13 note below, which said the provider key stays readable under
+isolation. That was true at `v0.140.3`; at `v0.141.0` (tag commit `00c4608d`,
+released 2026-11-13) it no longer is. #2190 (merged as `870f338e`) adds a
+runner-owned local key proxy: the real provider keys stay with the proxy,
+outside the agent's user, and the sandbox gets a per-run placeholder key and
+loopback base URLs per provider. The proxy forwards only the supported provider
+API and model-list routes and is stopped when the sandbox is taken back.
+
+The `action.yaml` input description at `v0.141.0` lists what is still not
+closed: the server password stays readable, and providers the proxy cannot
+serve (Bedrock and Vertex are named) or settings that would route around the
+proxy are refused rather than allowed through. Startup probes the selected
+provider through the proxy and fails early on an authentication error. Runs
+without `isolate-agent` are unchanged. Everything else in the 2026-11-13 note
+(GitHub-hosted Linux only, persisted checkout credentials refused, no local
+`uses: ./`, one isolated step per job, not a VM boundary) still applies. These
+are release-note, PR and `action.yaml` facts, not an observed run with the
+flag on.
 
 ## `isolate-agent` — an opt-in uid boundary (2026-11-13 oversight note)
 
