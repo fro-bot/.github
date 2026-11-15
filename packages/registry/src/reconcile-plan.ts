@@ -1280,11 +1280,26 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
   if (access.archived) {
     // Pass-1 archived detection: flip to lost-access directly, no Pass-2 probe required. The access
     // list knows the visibility, so the row stores it (fail-closed via `accessPrivateForStorage`): an
-    // archived public repository keeps its name; only a private or ambiguous one is redacted.
+    // archived public repository keeps its name; only a private or ambiguous one is redacted. The stored
+    // visibility is the access list's at read time; the next run corrects a flip that happens after it.
     const accessPrivate = accessPrivateForStorage(access, accessNodePrivacy)
     if (entry.onboarding_status === 'lost-access') {
+      // Redact a named or unknown-visibility row whose repository is now private. The stored node wins over
+      // the access entry's, so a name reused by another node never replaces this row's identity.
+      if (accessPrivate && entry.private !== true) {
+        const redactNodeId = storedNodeId ?? access.node_id
+        summary.refreshed += 1
+        maybeQueueVisibilityTransition({
+          storedPrivate: entry.private,
+          newPrivate: true,
+          node_id: redactNodeId,
+          summary,
+          transitionIssues,
+        })
+        return normalizeRepoEntryForStorage(entry, {private: true, node_id: redactNodeId})
+      }
       // Heal a row an earlier run stored as private when the same node is archived and public.
-      if (entry.private === true && !accessPrivate) {
+      if (!accessPrivate && entry.private === true && storedNodeId === access.node_id) {
         summary.refreshed += 1
         return normalizeRepoEntryForStorage(entry, {
           owner: identityOwner,

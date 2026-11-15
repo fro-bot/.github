@@ -9,6 +9,7 @@ import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
 import {
   containsFroBotAgentReference,
+  fetchAccessList,
   fetchFieldProbes,
   fetchPerRepoStatus,
   mergeAccessChannels,
@@ -10573,6 +10574,217 @@ describe('reconcileRepos archived repositories in the access list', () => {
       onboarding_status: 'lost-access',
     })
     expect(result.summary.lostAccess).toBe(1)
+    expect(result.summary.visibilityTransitions).toBe(1)
+  })
+})
+
+describe('reconcileRepos archived repositories that change visibility after being stored', () => {
+  const archivedAccess = (overrides: Partial<AccessListEntry> = {}) =>
+    makeAccess({owner: 'acme', name: 'widget', archived: true, private: false, node_id: 'R_arch', ...overrides})
+  const namedLostAccess = (overrides: Partial<RepoEntry> = {}) =>
+    makeEntry({
+      owner: 'acme',
+      name: 'widget',
+      private: false,
+      node_id: 'R_arch',
+      onboarding_status: 'lost-access',
+      ...overrides,
+    })
+
+  it('redacts an archived public repo that later turns private, and queues one went-private issue', () => {
+    const first = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [makeEntry({owner: 'acme', name: 'widget', private: false, node_id: 'R_arch'})],
+        },
+        accessList: [archivedAccess()],
+      }),
+    )
+    expect(first.nextRepos.repos[0]).toMatchObject({
+      owner: 'acme',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'lost-access',
+    })
+
+    const second = reconcileRepos(
+      makeInput({
+        currentRepos: first.nextRepos,
+        accessList: [archivedAccess({private: true})],
+      }),
+    )
+
+    expect(second.nextRepos.repos).toHaveLength(1)
+    expect(second.nextRepos.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: 'R_arch',
+      private: true,
+      node_id: 'R_arch',
+      onboarding_status: 'lost-access',
+    })
+    expect(JSON.stringify(second.nextRepos)).not.toContain('widget')
+    expect(JSON.stringify(second.nextRepos)).not.toContain('acme')
+    expect(second.issues).toEqual([{kind: 'visibility-transition', node_id: 'R_arch'}])
+    expect(second.summary.visibilityTransitions).toBe(1)
+    expect(second.summary.refreshed).toBe(1)
+    expect(second.summary.lostAccess).toBe(0)
+    expect(second.summary.byChannel.collab.lostAccess).toBe(0)
+    expect(second.summary.unchanged).toBe(0)
+  })
+
+  it('redacts a named lost-access row with unknown visibility when the access entry is private', () => {
+    const entry = makeEntry({owner: 'acme', name: 'widget', node_id: 'R_arch', onboarding_status: 'lost-access'})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [archivedAccess({private: true})],
+      }),
+    )
+
+    expect(result.nextRepos.repos[0]).toMatchObject({
+      owner: '[REDACTED]',
+      name: 'R_arch',
+      private: true,
+      node_id: 'R_arch',
+      onboarding_status: 'lost-access',
+    })
+    expect(result.summary.refreshed).toBe(1)
+    expect(result.summary.lostAccess).toBe(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+    expect(result.issues).toEqual([])
+  })
+
+  it('redacts with the stored node, never the access entry node, when a named row is matched by name to another node', () => {
+    const entry = namedLostAccess({node_id: 'R_stored'})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [archivedAccess({private: true, node_id: 'R_reused'})],
+      }),
+    )
+
+    expect(result.nextRepos.repos[0]).toMatchObject({owner: '[REDACTED]', name: 'R_stored', node_id: 'R_stored'})
+    expect(result.issues).toEqual([{kind: 'visibility-transition', node_id: 'R_stored'}])
+  })
+
+  it('leaves an already private and redacted lost-access row alone when the access entry is private', () => {
+    const entry = makeEntry({
+      owner: '[REDACTED]',
+      name: 'R_arch',
+      private: true,
+      node_id: 'R_arch',
+      onboarding_status: 'lost-access',
+    })
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [archivedAccess({private: true})],
+      }),
+    )
+
+    expect(result.nextRepos.repos[0]).toBe(entry)
+    expect(result.summary.unchanged).toBe(1)
+    expect(result.summary.refreshed).toBe(0)
+    expect(result.summary.visibilityTransitions).toBe(0)
+    expect(result.issues).toEqual([])
+  })
+
+  it('does not heal a named private lost-access row matched by name to an archived public repo with another node', () => {
+    const entry = namedLostAccess({private: true, node_id: 'R_stored'})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [archivedAccess({node_id: 'R_reused'})],
+      }),
+    )
+
+    expect(result.nextRepos.repos[0]).toBe(entry)
+    expect(result.nextRepos.repos[0]).toMatchObject({private: true, node_id: 'R_stored'})
+    expect(result.summary.unchanged).toBe(1)
+    expect(result.summary.refreshed).toBe(0)
+  })
+
+  it('does not heal a named private lost-access row that has no stored node id', () => {
+    const entry = makeEntry({owner: 'acme', name: 'widget', private: true, onboarding_status: 'lost-access'})
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {version: 1, repos: [entry]},
+        accessList: [archivedAccess()],
+      }),
+    )
+
+    expect(result.nextRepos.repos[0]).toBe(entry)
+    expect(result.nextRepos.repos[0]).not.toHaveProperty('node_id')
+    expect(result.summary.unchanged).toBe(1)
+    expect(result.summary.refreshed).toBe(0)
+  })
+
+  it('keeps a healed row as stored when its repository later leaves the access list', () => {
+    const healed = namedLostAccess()
+    const missing = reconcileRepos(makeInput({currentRepos: {version: 1, repos: [healed]}}))
+    expect(missing.nextRepos.repos[0]).toBe(healed)
+    expect(missing.summary.unchanged).toBe(1)
+
+    for (const status of ['archived', 'deleted', 'revoked'] as const) {
+      const probed = reconcileRepos(
+        makeInput({
+          currentRepos: {version: 1, repos: [healed]},
+          perRepoStatus: new Map([['acme/widget', {status}]]),
+        }),
+      )
+      expect(probed.nextRepos.repos[0]).toBe(healed)
+      expect(probed.summary.unchanged).toBe(1)
+      expect(probed.summary.lostAccess).toBe(0)
+    }
+  })
+
+  it('treats an archived collab entry whose private flag is missing as private', async () => {
+    const apiRepos = [
+      {owner: {login: 'acme'}, name: 'widget', archived: true, node_id: 'R_arch'},
+      {owner: {login: 'acme'}, name: 'gadget', archived: true, private: null, node_id: 'R_gadget'},
+      {owner: {login: 'acme'}, name: 'sprocket', archived: true, private: false, node_id: 'R_sprocket'},
+    ]
+    const client = {
+      paginate: async () => apiRepos,
+      rest: {repos: {listForAuthenticatedUser: async () => ({data: apiRepos})}},
+    } as unknown as OctokitClient
+
+    const accessList = await fetchAccessList(client)
+    expect(accessList.map(entry => entry.private)).toEqual([true, true, false])
+
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [
+            makeEntry({owner: 'acme', name: 'widget', private: false, node_id: 'R_arch'}),
+            makeEntry({owner: 'acme', name: 'gadget', private: false, node_id: 'R_gadget'}),
+            makeEntry({owner: 'acme', name: 'sprocket', private: false, node_id: 'R_sprocket'}),
+          ],
+        },
+        accessList,
+      }),
+    )
+
+    expect(result.nextRepos.repos.map(entry => entry.private)).toEqual([true, true, false])
+    expect(result.nextRepos.repos[0]).toMatchObject({owner: '[REDACTED]', name: 'R_arch'})
+    expect(result.nextRepos.repos[1]).toMatchObject({owner: '[REDACTED]', name: 'R_gadget'})
+    expect(result.nextRepos.repos[2]).toMatchObject({owner: 'acme', name: 'sprocket'})
+  })
+
+  it('stores a node private when the access list holds it twice with disagreeing visibility', () => {
+    const result = reconcileRepos(
+      makeInput({
+        currentRepos: {
+          version: 1,
+          repos: [makeEntry({owner: 'acme', name: 'widget', private: false, node_id: 'R_arch'})],
+        },
+        accessList: [archivedAccess(), archivedAccess({name: 'widget-twin', private: true})],
+      }),
+    )
+
+    expect(result.nextRepos.repos[0]).toMatchObject({owner: '[REDACTED]', name: 'R_arch', private: true})
     expect(result.summary.visibilityTransitions).toBe(1)
   })
 })
