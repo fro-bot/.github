@@ -65,15 +65,18 @@ runs:
         # debug log, so this file is the only record a run leaves of a call. The name carries the run,
         # the attempt and the job, so a re-run or a second job on the runner never shares a file. It is
         # built from runner-provided variables only, never from an input.
-        runner_temp="${RUNNER_TEMP:-}"
-        case "$runner_temp" in
-          /*) ;;
-          *) fail 'the runner temp path is not absolute' ;;
-        esac
-        call_log="${runner_temp}/knowledge-mcp-calls-${GITHUB_RUN_ID:-}-${GITHUB_RUN_ATTEMPT:-}-${GITHUB_JOB:-}.log"
+        #
+        # It lives in a dedicated directory of the workspace, not in the runner's temp directory: under
+        # `isolate-agent` the agent's user can write the checkout but not that directory, and the server
+        # swallows a failed write, so a log there would read as no log. The directory is gitignored and
+        # is made here, before the agent step, so the checkout hand-over covers it. mkdir's own stderr
+        # is kept: it names only the path, never the secret.
+        call_log_dir="${workspace}/.knowledge-mcp"
+        call_log="${call_log_dir}/knowledge-mcp-calls-${GITHUB_RUN_ID:-}-${GITHUB_RUN_ATTEMPT:-}-${GITHUB_JOB:-}.log"
         case "$call_log" in
           *$'\n'* | *$'\r'*) fail 'the call log path is not a single line' ;;
         esac
+        mkdir -p -- "$call_log_dir" || fail 'could not create the call log directory'
 
         # An unset secret is an empty config. Anything else must be one JSON object.
         base='{}'

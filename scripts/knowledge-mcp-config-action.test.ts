@@ -6,10 +6,11 @@
  * (`src/services/setup/mcp-servers-v2.ts`), which reject a string `command` and fail the whole setup.
  */
 
-import {readFileSync} from 'node:fs'
-import {resolve} from 'node:path'
+import {existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join, resolve} from 'node:path'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
-import {describe, expect, it} from 'vitest'
+import {afterAll, describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
 interface ActionStep {
@@ -33,18 +34,21 @@ const mergeStep = action.runs?.steps?.find(step => step.id === 'merge')
 const runScript = String(mergeStep?.run ?? '')
 const expressionStart = '$' + '{{'
 
-const WORKSPACE = '/home/runner/work/repo/repo'
+// A real directory: the step makes the call log directory under the workspace.
+const WORKSPACE = mkdtempSync(join(tmpdir(), 'knowledge-mcp-config-'))
+afterAll(() => {
+  rmSync(WORKSPACE, {recursive: true, force: true})
+})
 const SERVER_COMMAND = ['bun', 'scripts/knowledge-mcp.ts']
 const SENTINEL = 'sentinel-secret-value-7d3e'
 const RUNNER_TEMP = '/home/runner/work/_temp'
-const CALL_LOG = `${RUNNER_TEMP}/knowledge-mcp-calls-4242-2-fro-bot.log`
+const CALL_LOG_DIR = `${WORKSPACE}/.knowledge-mcp`
+const CALL_LOG = `${CALL_LOG_DIR}/knowledge-mcp-calls-4242-2-fro-bot.log`
 
 interface MergeOptions {
   config?: string
   fork?: string
   workspace?: string
-  /** `null` leaves `RUNNER_TEMP` unset. The step helper always sets it, so the script sets it itself. */
-  runnerTemp?: string | null
   runId?: string
   attempt?: string
   job?: string
@@ -60,8 +64,8 @@ function bashQuote(value: string): string {
 }
 
 function runMerge(options: MergeOptions = {}) {
-  const runnerTemp = options.runnerTemp === undefined ? RUNNER_TEMP : options.runnerTemp
-  const prelude = runnerTemp === null ? 'unset RUNNER_TEMP\n' : `export RUNNER_TEMP=${bashQuote(runnerTemp)}\n`
+  // RUNNER_TEMP is set but never read: the call log must not land there, where the isolated agent cannot write.
+  const prelude = `export RUNNER_TEMP=${bashQuote(RUNNER_TEMP)}\n`
   return runStepWithStubs(prelude + runScript, {
     env: {
       KNOWLEDGE_MCP_CONFIG: options.config ?? '',
@@ -228,9 +232,10 @@ describe('knowledge-mcp-config action: shape', () => {
     expect(runScript).toContain('command: ["bun", "scripts/knowledge-mcp.ts"]')
   })
 
-  it('derives the call log from RUNNER_TEMP and the run, attempt and job, and from no input', () => {
+  it('derives the call log from the workspace and the run, attempt and job, and from no input', () => {
     const variable = (name: string): string => `${'$' + '{'}${name}:-}`
-    expect(runScript).toContain(variable('RUNNER_TEMP'))
+    expect(runScript).toContain(`call_log_dir="${'$' + '{'}workspace}/.knowledge-mcp"`)
+    expect(runScript).not.toContain('RUNNER_TEMP')
     expect(runScript).toContain(
       `knowledge-mcp-calls-${variable('GITHUB_RUN_ID')}-${variable('GITHUB_RUN_ATTEMPT')}-${variable('GITHUB_JOB')}.log`,
     )
@@ -381,13 +386,44 @@ describe('knowledge-mcp-config action: the server entry', () => {
     expect(localServerFault(knowledge)).toBeUndefined()
   })
 
-  it('does not resolve the call log against the workspace: it sits under RUNNER_TEMP as given', () => {
-    const {config} = merged({runnerTemp: '/mnt/runner temp/_temp'})
+  it('puts the call log in a workspace directory, not under RUNNER_TEMP, which the isolated agent cannot write', () => {
+    const {config} = merged()
 
     const knowledge = (config.mcp as Json).knowledge as {environment: Json}
-    expect(knowledge.environment.KNOWLEDGE_MCP_CALL_LOG).toBe(
-      '/mnt/runner temp/_temp/knowledge-mcp-calls-4242-2-fro-bot.log',
-    )
+    expect(knowledge.environment.KNOWLEDGE_MCP_CALL_LOG).toBe(CALL_LOG)
+    expect(CALL_LOG.startsWith(`${WORKSPACE}/`)).toBe(true)
+    expect(CALL_LOG).not.toContain(RUNNER_TEMP)
+  })
+
+  it('makes the call log directory, and leaves it empty of files: the server creates the log itself', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'knowledge-mcp-config-ws-'))
+    try {
+      expect(existsSync(join(workspace, '.knowledge-mcp'))).toBe(false)
+
+      const result = runMerge({workspace})
+
+      expect(result.status, result.stderr).toBe(0)
+      expect(existsSync(join(workspace, '.knowledge-mcp'))).toBe(true)
+      expect(result.outputs['call-log']).toBe(`${workspace}/.knowledge-mcp/knowledge-mcp-calls-4242-2-fro-bot.log`)
+      expect(existsSync(result.outputs['call-log'] ?? '')).toBe(false)
+    } finally {
+      rmSync(workspace, {recursive: true, force: true})
+    }
+  })
+
+  it('succeeds when the call log directory already exists, as on a re-run in the same workspace', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'knowledge-mcp-config-ws-'))
+    try {
+      expect(runMerge({workspace}).status).toBe(0)
+      expect(runMerge({workspace}).status).toBe(0)
+    } finally {
+      rmSync(workspace, {recursive: true, force: true})
+    }
+  })
+
+  it('has the call log directory gitignored, so the log never reaches a commit or the wiki diff', () => {
+    const ignore = readFileSync(resolve(import.meta.dirname, '../.gitignore'), 'utf8').split('\n')
+    expect(ignore).toContain('.knowledge-mcp/')
   })
 
   it('passes the entry through a copy of the agent shape rules, and a string command would fail them', () => {
@@ -441,7 +477,7 @@ describe('knowledge-mcp-config action: the call log', () => {
   ] as const)('is unique per run, attempt and job: %j', (change, name) => {
     const {result} = merged(change)
 
-    expect(result.outputs['call-log']).toBe(`${RUNNER_TEMP}/${name}`)
+    expect(result.outputs['call-log']).toBe(`${CALL_LOG_DIR}/${name}`)
     expect(result.outputs['call-log']).not.toBe(CALL_LOG)
   })
 
@@ -479,9 +515,9 @@ describe('knowledge-mcp-config action: a fork', () => {
     expect(result.outputs['opencode-config']).toBe('not json')
   })
 
-  it('leaves call-log empty and adds no environment, whatever RUNNER_TEMP holds', () => {
-    for (const runnerTemp of [RUNNER_TEMP, 'relative/temp', null]) {
-      const result = runMerge({config: '{"model":"m"}', fork: 'true', runnerTemp})
+  it('leaves call-log empty, adds no environment and makes no directory, whatever the workspace holds', () => {
+    for (const workspace of [WORKSPACE, 'relative/path', '']) {
+      const result = runMerge({config: '{"model":"m"}', fork: 'true', workspace})
 
       expect(result.status).toBe(0)
       expect(result.outputs['call-log']).toBeUndefined()
@@ -549,22 +585,29 @@ describe('knowledge-mcp-config action: refusals', () => {
     expect(result.githubOutput).toBe('')
   })
 
-  it.each([
-    ['unset', null],
-    ['empty', ''],
-    ['relative', 'runner/_temp'],
-    ['dot-relative', './_temp'],
-  ])('refuses a RUNNER_TEMP that is %s, with a fixed message and no output', (_label, runnerTemp) => {
-    const result = runMerge({config: JSON.stringify({model: SENTINEL}), runnerTemp})
+  it('refuses a call log directory it cannot make, with a fixed message and no output', () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'knowledge-mcp-config-ws-'))
+    try {
+      // A file where the directory belongs, so `mkdir -p` fails whoever runs the test.
+      writeFileSync(join(workspace, '.knowledge-mcp'), '')
 
-    expect(result.status).not.toBe(0)
-    expect(result.stderr).toBe('::error::knowledge-mcp-config: the runner temp path is not absolute\n')
-    expect(result.stdout).toBe('')
-    expect(result.githubOutput).toBe('')
+      const result = runMerge({config: JSON.stringify({model: SENTINEL}), workspace})
+
+      expect(result.status).not.toBe(0)
+      // mkdir's own message names the path only; the fixed error line closes it.
+      expect(result.stderr.endsWith('::error::knowledge-mcp-config: could not create the call log directory\n')).toBe(
+        true,
+      )
+      expect(result.stderr).not.toContain(SENTINEL)
+      expect(result.stdout).toBe('')
+      expect(result.githubOutput).toBe('')
+    } finally {
+      rmSync(workspace, {recursive: true, force: true})
+    }
   })
 
   it('refuses a call log path that would span lines', () => {
-    const result = runMerge({runnerTemp: '/tmp/a\nb'})
+    const result = runMerge({workspace: `${WORKSPACE}/a\nb`})
 
     expect(result.status).not.toBe(0)
     expect(result.stderr).toBe('::error::knowledge-mcp-config: the call log path is not a single line\n')
