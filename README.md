@@ -482,6 +482,8 @@ The `node_id` for each tracked repo is stored in `metadata/repos.yaml` on the `d
 
 The optional `rewrite` input (`-f rewrite=true`, default `false`) makes the survey rewrite the repo page from the repository's current state and discard its existing body instead of updating it; use it when a page describes the wrong repo after a rename collision. Other pages stay additive, and a conflict re-run keeps the setting.
 
+A repeat survey updates the repo page in place. A statement changes only when the survey has evidence against it, dated history stays as written, and a dated note is added only for a material change: the default branch, visibility or archived state; the language, runtime or package manager; how the project builds, tests or releases; whether Fro Bot or Renovate is set up; the license; or what the project is for. A survey that finds nothing changed leaves the page untouched and changes only `knowledge/log.md`. The survey's ingest leaves one log entry, and the wiki writer writes only the pages a hand-off carries.
+
 A persist step that another writer beats to `data` (a page the survey edited changed, or a concurrent survey changed `knowledge/log.md`) exits 3 and re-runs the survey from the current `data`, up to 3 runs in total. Any other persist failure takes the normal cadence.
 
 ### Status-Truth Proposals
