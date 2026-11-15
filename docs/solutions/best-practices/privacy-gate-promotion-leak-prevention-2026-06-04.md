@@ -74,8 +74,9 @@ mis-scoped or expired credential makes *every* private repo look `access-lost`, 
 silently passes everything: a single credential failure disables the entire control (mass
 fail-open). Treat ambiguous resolution — and any missing/unresolvable identifier — as a **block**.
 
-Document any intentional asymmetry: a lower-trust per-PR path may legitimately skip `access-lost`,
-while the trusted promotion chokepoint blocks it. The trust context, not the result type, decides.
+Document any intentional asymmetry between modes. Here both scans treat `access-lost` as a failure:
+the promotion scan blocks with no override, and the per-PR scan reports an error that only the
+operator override can pass.
 
 ### 3. Enforce at the trusted chokepoint, not per-PR
 
