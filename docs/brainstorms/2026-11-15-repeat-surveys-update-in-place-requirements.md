@@ -113,7 +113,7 @@ Two rules produce this. The survey's instructions say to update pages additively
 - The trusted writer's current stamping does not add a second entry for a repository already in a page's `sources`. The repeated entries on today's pages match the agent's own edits; the author of every old entry is not established.
 - A schema change is an ordinary pull request against `main`. Surveys read the `data` branch's copy of `knowledge/`, so the new rule takes effect after the next merge of `main` into `data`.
 - The log is read by other tools. Not checked: whether any reader depends on the trusted summary's current wording.
-- Instructions are followed by a model, so the result is likely, not certain. R13 and R14 are the check.
+- Instructions are followed by a model, so the result is likely, not certain. R15 and R16 are the check.
 - Other writers also edit repository pages, so a page can change between surveys for reasons that are not a survey.
 - The 20-pair sample sizes the problem. It used the commit the agent wrote into each page, which is not trusted.
 
