@@ -1,6 +1,7 @@
 ---
 title: Agent handoff snapshots replaced shared wiki files and lost survey updates
 date: 2026-10-22
+last_updated: 2026-11-15
 category: integration-issues
 module: packages/wiki-write-core
 problem_type: integration_issue
@@ -89,7 +90,7 @@ export function deriveAgentLogEntries(baseLog: string, handoffLog: string): stri
 }
 ```
 
-Those entries are appended to the writer's synced `log.md`. If the agent rewrote any earlier entry, its entries are dropped with an `agent-log-entries-dropped` warning.
+Those entries are appended to the writer's synced `log.md`. The survey's ingest now builds one entry from them instead (`WIKI_LOG_MODE=single`, #4244 and #4247); the other ingests append as before. If the agent rewrote any earlier entry, its entries are dropped with an `agent-log-entries-dropped` warning.
 
 **Handed-off pages are checked against the commit the agent read.** The agent job exports its sync commit before the agent runs, and the writer receives it:
 

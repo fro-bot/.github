@@ -65,7 +65,7 @@ Requirement IDs are the origin document's.
 - **The single log entry is an option of the build function, off by default.** The CLI sets it from the environment, and only the survey's persist step sets that. The other ingests keep their output byte for byte, which a differential test shows.
 - **The single entry is built by the writer from the agent's text as data.** The transformation is fixed:
   1. Take the agent's append-only log suffix. A suffix that is not append-only is dropped with today's warning, and the outcome for that case is today's.
-  2. Drop every line that has the shape of an entry heading (`## [` at the start), and every line that starts with `Sources:`. Nothing in the agent's text can then start an entry or name a source.
+  2. Normalise line breaks (CRLF and bare CR become LF), then drop every line that starts with `## [` or `Sources:` once its leading whitespace is removed. Nothing in the agent's text can then start an entry or name a source.
   3. Trim, and collapse runs of blank lines. Keep at most 4,000 characters; when text is cut, end with a fixed line saying so.
   4. Emit one entry: the trusted heading (timestamp, operation, target), the summary sentence, the kept text if any, then `Sources:` from the trusted input.
 
