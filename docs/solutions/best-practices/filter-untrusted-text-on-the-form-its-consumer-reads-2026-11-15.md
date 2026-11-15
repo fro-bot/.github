@@ -7,10 +7,9 @@ problem_type: best_practice
 component: tooling
 severity: medium
 applies_when:
-  - a line filter drops lines of agent or user text before the text joins a file that a parser reads
-  - the text is trimmed, joined, split again or cut after the filter has run
-  - the consumer treats more characters as a line ending or as indentation than the filter does
-  - the filter is the only thing that stops text from forging a heading, a source or another entry
+  - untrusted text joins a file that another tool parses
+  - a filter runs before a later normalisation, trim, join or truncation
+  - the filter and the consumer can disagree about line endings, indentation or other syntax
 tags:
   - untrusted-input
   - line-filter
@@ -24,16 +23,16 @@ tags:
 
 ## Context
 
-With `WIKI_LOG_MODE=single` the writer builds one log entry from a trusted heading, the trusted `Sources:` line and the agent's log text. It drops every line of the agent's text that starts with `## [` or `Sources:`. The first version of `singleEntryBody` tested the raw line, then joined the kept lines and called `trim()` on the result ([f1084f1](https://github.com/fro-bot/.github/commit/f1084f1), inside #4244).
+Filter untrusted text in the form its consumer will read it: normalise it first, and make sure no later step can recreate a shape the filter removed. The consumer is the code that parses the text afterwards; here the log reader (`mergeWikiLogs`) and Markdown.
 
-Two inputs got past it. A first line of `  ## [2030-01-01 00:00] ingest | repo:forged/repo` failed the prefix test, so it was kept, and `trim()` then removed its indent. The log gained two headings, the trusted one and the forged one, where one was expected. The same shape left a second `Sources:` line. A bare CR (`a\r## […`) was not a split point for `split('\n')`, and Markdown treats a bare CR as a line ending. [1b7a653](https://github.com/fro-bot/.github/commit/1b7a653), in the same pull request, fixed both.
+With `WIKI_LOG_MODE=single` the writer builds one log entry from a trusted heading, the trusted `Sources:` line and the agent's log text. It drops every line of the agent's text that starts with `## [` or `Sources:` (a prefix test). Before [1b7a653](https://github.com/fro-bot/.github/commit/1b7a653), `singleEntryBody` tested the raw line and then called `trim()` on the joined text. An indented first line, `  ## [2030-01-01 00:00] ingest | repo:forged/repo`, did not match the prefix, so it was kept, and `trim()` removed its indent: the log gained a forged heading beside the trusted one. The same shape left a second `Sources:` line. A bare CR (a carriage return with no line feed, as in `a\r## […`) was not a split point for `split('\n')`, yet Markdown treats it as a line ending, so a heading after it passed. [f1084f1](https://github.com/fro-bot/.github/commit/f1084f1) introduced the function inside #4244, and 1b7a653 corrected both cases in the same pull request.
 
 ## Guidance
 
 1. **Normalise line endings first, then split.** `singleEntryBody` turns CRLF and then bare CR into LF before it splits (`packages/wiki-write-core/src/wiki-ingest.ts:1009`). The filter sees the lines the consumer will see.
-2. **Test each line in the form the consumer will test it.** The consumer may ignore leading whitespace, so the filter calls `trimStart()` and then `startsWith` (`:1010-1011`). Drop the whole line; do not edit it into something that passes.
-3. **Make sure no later step can undo the filter.** `trim()`, `join`, a second split or a cut can create the very shape the filter removed. Here `trim()` ran after the filter and turned an indented first line into a heading. Either filter last, or make the filter's test equal to what the later step does: `trimStart()` in the test is what `trim()` does to the first line.
-4. **Prefer `startsWith` and `trimStart` to a regular expression for text you do not control.** A prefix test has no backtracking to attack, and the code comment states the rule: "not matched with a pattern, because the text is untrusted" (`:998-1003`).
+2. **Test the line as the consumer sees it.** Remove leading whitespace with `trimStart()`, test the prefix with `startsWith()` (`:1010-1011`) and drop the whole line; do not edit it into something that passes. `trimStart()` is broader than Markdown's indentation rules (it also strips U+FEFF and U+2028), which errs towards dropping.
+3. **Account for transformations after the filter.** A later trim, join, split or cut can expose a forbidden shape. Filter after them, or test conservatively for the shapes they can create. Here the later `trim()` removes leading whitespace from the first line, so the test removes leading whitespace from every line.
+4. **Use direct prefix checks when the rule is a fixed prefix.** `trimStart()` and `startsWith()` express it without a regular expression, and the function's comment records that choice (`:998-1003`).
 5. **Test each way a line can start or end that the consumer accepts.** The tests cover a space, a tab, U+FEFF and U+2028 before the marker, the marker in the middle of the text, CR-only and CRLF breaks, and a line that starts with a zero-width space, which is kept (`scripts/wiki-ingest.test.ts:2889-2975`). Assert on what the consumer parses (`mergeWikiLogs` sees one new entry), not only on the output string.
 6. **Keep the lines that only look similar.** `## Notes` and `Sources are above.` stay (`scripts/wiki-ingest.test.ts:2871-2877`). A filter that drops more than the forged shapes loses the agent's text.
 
@@ -43,26 +42,13 @@ The filter is the only barrier between agent text and a trusted file. A heading 
 
 ## When to Apply
 
-- A step drops, masks or rewrites lines of untrusted text and the result joins a file that another tool parses.
-- The text goes through `trim`, `join`, `split`, `slice` or an encoding step after the check.
-- The consumer is Markdown, YAML, a log format or a shell: each has its own idea of a line end and of indentation.
+- Untrusted text joins a file that another tool parses.
+- A filter runs before a later normalisation, trim, join or truncation.
+- The filter and the consumer can disagree about line endings, indentation or other syntax.
 
 ## Examples
 
-The first version, which tests the raw line and trims afterwards:
-
-```ts
-function body(text: string): string {
-  const kept: string[] = []
-  for (const line of text.replaceAll("\r\n", "\n").split("\n")) {
-    if (line.startsWith("## [") || line.startsWith("Sources:")) continue
-    kept.push(line)
-  }
-  return kept.join("\n").trim()
-}
-```
-
-The fixed version normalises first and tests the line as the consumer reads it (`packages/wiki-write-core/src/wiki-ingest.ts:1009-1017`):
+Before 1b7a653 the filter tested the raw line, so the indented heading above passed it and `trim()` turned it into a heading. The corrected loop normalises first and tests the line as the consumer reads it (`packages/wiki-write-core/src/wiki-ingest.ts:1009-1017`):
 
 ```ts
 function body(text: string): string {
@@ -75,6 +61,8 @@ function body(text: string): string {
   return kept.join("\n").trim()
 }
 ```
+
+The production function also collapses runs of blank lines and cuts the text at 4,000 characters (`packages/wiki-write-core/src/wiki-ingest.ts:1005-1024`).
 
 ## Related
 
