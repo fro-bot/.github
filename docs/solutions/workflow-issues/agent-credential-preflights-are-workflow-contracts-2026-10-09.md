@@ -1,7 +1,7 @@
 ---
 title: Agent credential preflights make checkout persistence a workflow contract
 date: 2026-10-09
-last_updated: 2026-10-10
+last_updated: 2026-11-14
 category: workflow-issues
 module: github-actions-workflows
 problem_type: workflow_issue
@@ -64,10 +64,20 @@ github.event_name == 'issues' &&
 contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.issue.author_association || '')
 ```
 
-`github.event.issue.body` feeds the wiki-context query (`WIKI_QUERY_BODY`) and, through it, the
-agent prompt, so an untrusted issue body reaching that path is an event-boundary problem. The `issues`
-trigger includes `edited`, but the gate reads the issue author's association from the payload, not the
-editor's.
+The `Query solutions context` step uses `github.event.issue.body` as `SOLUTIONS_QUERY_BODY` to rank
+solution documents (`.github/workflows/fro-bot.yaml:746-752`). The query splits the body into words and
+scores documents against them (`packages/wiki-ops/src/solutions-query.ts:219-237` and `:298-311`). It
+never renders the body. The agent gets the selected excerpt, which is built from the documents' own
+text (`solutions-query.ts:285-292`), as `SOLUTIONS_CONTEXT` in `<solutions_context>`
+(`fro-bot.yaml:770` and `:797-799`). So an untrusted body can steer which documents are selected, and it
+cannot put its own text into the prompt through this step. It is still an event-boundary input: the gate
+decides who can start the run. At the time of #3878 the body ranked wiki pages through `WIKI_QUERY_BODY`
+in the same way ([`fa525df`](https://github.com/fro-bot/.github/blob/fa525df4f952471834bc6fe5d19ea89f34456c51/.github/workflows/fro-bot.yaml#L741),
+the last commit that had it). #4232 removed that step, and the content job now gets no wiki context
+(`fro-bot.yaml:794`).
+
+The `issues` trigger includes `edited`, but the gate reads the issue author's association from the
+payload, not the editor's.
 
 Review also flagged a second-order risk. Once checkout stops persisting credentials, every later
 `git fetch`, `git restore`, or `git push` that relied on them has to be audited. The wiki sync step
@@ -134,10 +144,11 @@ from the change that caused it.
 
 ### The event gate sits where the untrusted event becomes a run
 
-The body reaches the agent through the wiki-context step:
+The step that ranks solution documents by the event's title and body runs after checkout
+(`.github/workflows/fro-bot.yaml:733-753`):
 
 ```yaml
-WIKI_QUERY_BODY: >-
+SOLUTIONS_QUERY_BODY: >-
   ${{
     github.event.pull_request.body ||
     github.event.issue.body ||
@@ -146,8 +157,8 @@ WIKI_QUERY_BODY: >-
   }}
 ```
 
-The gate belongs in the job's `if:`, before checkout and before this step runs, not in prompt text
-downstream.
+The gate belongs in the job's `if:` (`:668-688`, with the `issues` branch at `:669-673`), before
+checkout and before this step runs, not in prompt text downstream.
 
 ### Separate "branch absent" from "probe failed"
 
