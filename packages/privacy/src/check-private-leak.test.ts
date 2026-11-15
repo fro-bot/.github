@@ -909,7 +909,7 @@ describe('runPromotionScan — happy path: all resolve, no match → exit 0', ()
 
     const result = await runPromotionScan({reposYaml, resolver, diff})
 
-    expect(result).toEqual({ok: true})
+    expect(result).toEqual({ok: true, publicSkipped: 0})
   })
 
   it('does not flag a diff line containing literal "Stryker was here" text (ArrayDeclaration seed-pollution check on privateTokens)', async () => {
@@ -926,7 +926,7 @@ describe('runPromotionScan — happy path: all resolve, no match → exit 0', ()
 
     const result = await runPromotionScan({reposYaml, resolver, diff})
 
-    expect(result).toEqual({ok: true})
+    expect(result).toEqual({ok: true, publicSkipped: 0})
   })
 })
 
@@ -943,7 +943,7 @@ describe('runPromotionScan — happy path: diff contains private owner/name → 
     const result = await runPromotionScan({reposYaml, resolver, diff})
 
     // #then: blocked, file listed, no resolved name in matchedFiles (paths only)
-    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md']})
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/rust.md'], publicSkipped: 0})
     // Verify the result does NOT contain the resolved name itself (only file paths)
     if (!result.ok && 'matchedFiles' in result) {
       for (const file of result.matchedFiles) {
@@ -1223,7 +1223,7 @@ repos:
     const result = await runPromotionScan({reposYaml, resolver: resolverSpy, diff})
 
     // #then: ok immediately, resolver never called
-    expect(result).toEqual({ok: true})
+    expect(result).toEqual({ok: true, publicSkipped: 0})
     expect(resolverSpy).not.toHaveBeenCalled()
   })
 
@@ -1234,7 +1234,7 @@ repos:
 
     const result = await runPromotionScan({reposYaml, resolver: resolverSpy, diff})
 
-    expect(result).toEqual({ok: true})
+    expect(result).toEqual({ok: true, publicSkipped: 0})
     expect(resolverSpy).not.toHaveBeenCalled()
   })
 })
@@ -5935,5 +5935,543 @@ describe('runPromotionCli — default seam coverage (uninjected production defau
       delete process.env.FRO_BOT_POLL_PAT
       mockReadFile.mockReset()
     }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Live visibility — a node GitHub reports as PUBLIC contributes no private name
+// ---------------------------------------------------------------------------
+
+const archivedPublicName = 'acme-labs/archived-widget'
+const hiddenPrivateName = 'acme-labs/hidden-gadget'
+
+/** A resolver answering from a table keyed by node ID; an absent ID is a transient error. */
+function tableResolver(table: Readonly<Record<string, Awaited<ReturnType<NodeIdResolver>>>>): NodeIdResolver {
+  return async nodeId => table[nodeId] ?? {error: 'error'}
+}
+
+/** One diff naming `names` (owner/name and owner--name forms) on added lines of a wiki page. */
+function diffNaming(names: readonly string[], filePath = 'knowledge/wiki/topics/notes.md'): string {
+  return makePromoDiff(
+    filePath,
+    names.flatMap(name => [`See ${name} for details.`, `[[${name.replace('/', '--')}]]`]),
+  )
+}
+
+describe('runPromotionScan — live visibility: a node reported PUBLIC is not scanned', () => {
+  it('passes when the only private row resolves PUBLIC and the diff names it, and reports one skipped row', async () => {
+    const reposYaml = makeReposYaml(['R_pub'])
+    const resolver = tableResolver({R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}})
+    const diff = diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md')
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(result).toEqual({ok: true, publicSkipped: 1})
+  })
+
+  it('still fails when the same row resolves PRIVATE, redacting the matched path', async () => {
+    const reposYaml = makeReposYaml(['R_priv'])
+    const resolver = tableResolver({R_priv: {nameWithOwner: archivedPublicName, visibility: 'PRIVATE'}})
+    const diff = diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md')
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+  })
+
+  it.each([
+    ['INTERNAL', {visibility: 'INTERNAL'}],
+    ['a missing visibility', {}],
+    ['an undefined visibility', {visibility: undefined}],
+    ['a null visibility', {visibility: null}],
+    ['a lowercase public', {visibility: 'public'}],
+    ['a padded PUBLIC', {visibility: 'PUBLIC '}],
+    ['a number', {visibility: 1}],
+    ['a boolean true', {visibility: true}],
+    ['an object', {visibility: {value: 'PUBLIC'}}],
+    ['an array', {visibility: ['PUBLIC']}],
+    ['an unexpected string', {visibility: 'ARCHIVED'}],
+    ['an empty string', {visibility: ''}],
+  ])('treats %s as private: the row still fails the scan and counts as no skip', async (_label, extra) => {
+    const reposYaml = makeReposYaml(['R_odd'])
+    const resolver = tableResolver({R_odd: {nameWithOwner: hiddenPrivateName, ...extra}})
+    const diff = diffNaming([hiddenPrivateName])
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/notes.md'], publicSkipped: 0})
+  })
+
+  it('fails on a two-row file when the diff names both, redacting only the private row in a path', async () => {
+    const reposYaml = makeReposYaml(['R_pub', 'R_priv'])
+    const resolver = tableResolver({
+      R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+      R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+    })
+    const diff = [
+      diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+      diffNaming([hiddenPrivateName], 'knowledge/wiki/repos/acme-labs--hidden-gadget.md'),
+    ].join('\n')
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    // The public row's page is not matched; the private row's page is, with its path redacted.
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 1})
+  })
+
+  it('leaves a public name in a matched path unredacted: only private tokens are redacted', async () => {
+    const reposYaml = makeReposYaml(['R_pub', 'R_priv'])
+    const resolver = tableResolver({
+      R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+      R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+    })
+    const diff = diffNaming([hiddenPrivateName], 'knowledge/wiki/repos/acme-labs--archived-widget.md')
+
+    const result = await runPromotionScan({reposYaml, resolver, diff})
+
+    expect(result).toEqual({
+      ok: false,
+      matchedFiles: ['knowledge/wiki/repos/acme-labs--archived-widget.md'],
+      publicSkipped: 1,
+    })
+  })
+
+  it('passes a two-row file when the diff names only the public row', async () => {
+    const reposYaml = makeReposYaml(['R_pub', 'R_priv'])
+    const resolver = tableResolver({
+      R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+      R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+    })
+
+    const result = await runPromotionScan({reposYaml, resolver, diff: diffNaming([archivedPublicName])})
+
+    expect(result).toEqual({ok: true, publicSkipped: 1})
+  })
+
+  it('counts every skipped public row', async () => {
+    const reposYaml = makeReposYaml(['R_pub_a', 'R_pub_b', 'R_priv'])
+    const resolver = tableResolver({
+      R_pub_a: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+      R_pub_b: {nameWithOwner: 'acme-labs/second-archive', visibility: 'PUBLIC'},
+      R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+    })
+
+    const result = await runPromotionScan({
+      reposYaml,
+      resolver,
+      diff: diffNaming([archivedPublicName, 'acme-labs/second-archive']),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 2})
+  })
+
+  it('still blocks with resolutionFailed when a public row sits beside an unresolvable row', async () => {
+    const reposYaml = makeReposYaml(['R_pub', 'R_lost', 'R_fail'])
+    const resolver = tableResolver({
+      R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+      R_lost: {error: 'access-lost'},
+    })
+
+    const result = await runPromotionScan({reposYaml, resolver, diff: diffNaming(['acme-labs/unrelated'])})
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_lost', 'R_fail']})
+  })
+
+  it('still blocks on a missing node_id when the other row resolves PUBLIC', async () => {
+    const resolver = tableResolver({R_valid: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}})
+
+    const result = await runPromotionScan({
+      reposYaml: makeReposYamlOneMissingOnePresent(),
+      resolver,
+      diff: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['<missing-node-id>']})
+  })
+
+  it('reports zero skipped rows when there are no private rows', async () => {
+    const result = await runPromotionScan({
+      reposYaml: makeReposYaml([]),
+      resolver: tableResolver({}),
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 0})
+  })
+
+  it('never puts a resolved name in the result, public or private', async () => {
+    const reposYaml = makeReposYaml(['R_pub', 'R_priv'])
+    const resolver = tableResolver({
+      R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+      R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+    })
+
+    const result = await runPromotionScan({reposYaml, resolver, diff: diffNaming([hiddenPrivateName])})
+
+    const serialized = JSON.stringify(result)
+    expect(serialized).not.toContain('archived-widget')
+    expect(serialized).not.toContain('hidden-gadget')
+  })
+})
+
+async function runWith(opts: SeamOpts): Promise<{exitCode: number; stdout: string; stderr: string}> {
+  const stdout: string[] = []
+  const stderr: string[] = []
+  vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+    stdout.push(String(msg))
+    return true
+  })
+  vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+    stderr.push(String(msg))
+    return true
+  })
+  process.env.FRO_BOT_POLL_PAT = 'test-pat'
+  try {
+    const {gitDiffRunner, reposYamlReader, resolverFactory} = makeSeams(opts)
+    const exitCode = await runPromotionCli(gitDiffRunner, reposYamlReader, resolverFactory)
+    return {exitCode, stdout: stdout.join(''), stderr: stderr.join('')}
+  } finally {
+    delete process.env.FRO_BOT_POLL_PAT
+    vi.restoreAllMocks()
+  }
+}
+
+describe('runPromotionCli — the skipped-as-public count line', () => {
+  const skippedLine =
+    'check-private-leak [promotion]: 1 private row(s) resolve to public repositories and are not scanned\n'
+
+  it('prints the count and a scanned total that excludes the skipped row when one row is public', async () => {
+    const {exitCode, stdout} = await runWith({
+      nodeIds: ['R_pub', 'R_priv'],
+      resolverResult: tableResolver({
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      }),
+      diffOutput: diffNaming([archivedPublicName]),
+    })
+
+    expect(exitCode).toBe(0)
+    expect(stdout).toContain(skippedLine)
+    expect(stdout).toContain('check-private-leak [promotion]: ok (scanned 1 private node_id(s))\n')
+    expect(stdout).not.toContain('archived-widget')
+    expect(stdout).not.toContain('hidden-gadget')
+  })
+
+  it('prints the count on a diff match too, without a name', async () => {
+    const {exitCode, stdout, stderr} = await runWith({
+      nodeIds: ['R_pub', 'R_priv'],
+      resolverResult: tableResolver({
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      }),
+      diffOutput: diffNaming([hiddenPrivateName]),
+    })
+
+    expect(exitCode).toBe(1)
+    expect(stdout).toContain(skippedLine)
+    expect(stderr).toContain('FAILED — private repository name(s) detected in promotion diff')
+    expect(stdout + stderr).not.toContain('archived-widget')
+    expect(stdout + stderr).not.toContain('hidden-gadget')
+  })
+
+  it('does not print the line when no row is public', async () => {
+    const {exitCode, stdout} = await runWith({
+      nodeIds: ['R_priv'],
+      resolverResult: tableResolver({R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'}}),
+      diffOutput: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(exitCode).toBe(0)
+    expect(stdout).not.toContain('are not scanned')
+    expect(stdout).toContain('check-private-leak [promotion]: ok (scanned 1 private node_id(s))\n')
+  })
+
+  it('does not print the line when a resolution failure blocks the scan', async () => {
+    const {exitCode, stdout} = await runWith({
+      nodeIds: ['R_pub', 'R_fail'],
+      resolverResult: tableResolver({R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}}),
+      diffOutput: '',
+    })
+
+    expect(exitCode).toBe(1)
+    expect(stdout).not.toContain('are not scanned')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Live visibility in PR mode — the same rule as the promotion scan
+// ---------------------------------------------------------------------------
+
+type PrRowAnswer = Awaited<ReturnType<NodeIdResolver>>
+
+interface PrModeRun {
+  readonly exitCode: number | undefined
+  readonly stdout: string
+  readonly stderr: string
+  readonly scanResult: string | undefined
+  readonly overrideCommentPosted: boolean
+}
+
+/**
+ * Run `main()` with one private row per `rows` key, each answered as given: a success result
+ * becomes the node JSON `gh api graphql` returns, `access-lost` a null node, `error` a thrown gh
+ * failure. `diff` is the raw unified diff the compare call returns.
+ */
+async function runPrMode(opts: {
+  readonly rows: Readonly<Record<string, PrRowAnswer>>
+  readonly diff: string
+  readonly title?: string
+  readonly author?: string
+}): Promise<PrModeRun> {
+  const headSha = 'sha-pr-visibility'
+  const stdout: string[] = []
+  const stderr: string[] = []
+  let overrideCommentPosted = false
+  mockExecFileSync.mockReset()
+  mockAppendFileSync.mockReset()
+  mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+    const joined = args.join(' ')
+    if (joined.startsWith('repo view')) return 'fro-bot/.github'
+    if (joined.includes('contents/metadata/repos.yaml')) return makeYamlBase64(Object.keys(opts.rows))
+    if (args.includes('graphql')) {
+      const nodeId = args.find(arg => arg.startsWith('id='))?.slice(3) ?? ''
+      const answer: PrRowAnswer = opts.rows[nodeId] ?? {error: 'error'}
+      if ('nameWithOwner' in answer) return JSON.stringify({data: {node: answer}})
+      if (answer.error === 'access-lost') return JSON.stringify({data: {node: null}})
+      throw new Error('server error')
+    }
+    if (joined.includes('/comments')) {
+      overrideCommentPosted = true
+      return ''
+    }
+    if (joined.includes('/compare/') && args.includes('-H')) return opts.diff
+    if (joined.includes('/compare/')) return makeCompareJson()
+    throw new Error(`unexpected gh call: ${joined}`)
+  })
+  vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+    stdout.push(String(msg))
+    return true
+  })
+  vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+    stderr.push(String(msg))
+    return true
+  })
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+    throw new Error('process.exit called')
+  })
+  process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+  process.env.FRO_BOT_POLL_PAT = 'test-pat'
+  process.env.GITHUB_OUTPUT = '/fake/output.txt'
+  try {
+    await main(
+      makeWorkflowRunReader(makeWorkflowRunEvent({headSha})),
+      makePrApiResolver({
+        prByNumber: makePrApiResponse({number: 42, headSha, title: opts.title, author: opts.author}),
+      }),
+    )
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || error.message !== 'process.exit called') throw error
+  } finally {
+    vi.restoreAllMocks()
+    delete process.env.GITHUB_EVENT_PATH
+    delete process.env.FRO_BOT_POLL_PAT
+    delete process.env.GITHUB_OUTPUT
+  }
+  const scanResultWrite = mockAppendFileSync.mock.calls
+    .map(call => String(call[1]))
+    .find(text => text.startsWith('scan_result='))
+  mockExecFileSync.mockReset()
+  mockAppendFileSync.mockReset()
+  return {
+    exitCode: exitSpy.mock.calls[0]?.[0] === undefined ? undefined : Number(exitSpy.mock.calls[0][0]),
+    stdout: stdout.join(''),
+    stderr: stderr.join(''),
+    scanResult: scanResultWrite?.trim().slice('scan_result='.length),
+    overrideCommentPosted,
+  }
+}
+
+const nonPublicVisibilities: readonly (readonly [string, Readonly<Record<string, unknown>>])[] = [
+  ['INTERNAL', {visibility: 'INTERNAL'}],
+  ['a missing visibility', {}],
+  ['an undefined visibility', {visibility: undefined}],
+  ['a null visibility', {visibility: null}],
+  ['a lowercase public', {visibility: 'public'}],
+  ['a padded PUBLIC', {visibility: 'PUBLIC '}],
+  ['a number', {visibility: 1}],
+  ['a boolean true', {visibility: true}],
+  ['an object', {visibility: {value: 'PUBLIC'}}],
+  ['an array', {visibility: ['PUBLIC']}],
+  ['an unexpected string', {visibility: 'ARCHIVED'}],
+  ['an empty string', {visibility: ''}],
+]
+
+const prSkippedLine = 'check-private-leak: 1 private row(s) resolve to public repositories and are not scanned\n'
+
+describe('main() — live visibility: a node reported PUBLIC is not scanned (PR mode)', () => {
+  it('succeeds when the only private row resolves PUBLIC and the diff names it, and prints the count', async () => {
+    const run = await runPrMode({
+      rows: {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}},
+      diff: diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 0 private name(s))\n`)
+    expect(run.stderr).not.toContain('archived-widget')
+  })
+
+  it('still detects when the same row resolves PRIVATE, with the path redacted and no count line', async () => {
+    const run = await runPrMode({
+      rows: {R_priv: {nameWithOwner: archivedPublicName, visibility: 'PRIVATE'}},
+      diff: diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toContain('FAILED — private repository name(s) detected in PR diff')
+    expect(run.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+    expect(run.stderr).not.toContain('archived-widget')
+  })
+
+  it.each(nonPublicVisibilities)('treats %s as private: detection, no skip', async (_label, extra) => {
+    const run = await runPrMode({
+      rows: {R_odd: {nameWithOwner: hiddenPrivateName, ...extra}},
+      diff: diffNaming([hiddenPrivateName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).not.toContain('hidden-gadget')
+  })
+
+  it('detects a private name beside a public row, prints the count and leaves public names unredacted in paths', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([hiddenPrivateName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stdout).toBe(prSkippedLine)
+    expect(run.stderr).toContain('  - knowledge/wiki/repos/acme-labs--archived-widget.md\n')
+    expect(run.stderr).not.toContain('hidden-gadget')
+  })
+
+  it('passes a two-row file when the diff names only the public row, and counts the scanned row', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 1 private name(s))\n`)
+  })
+
+  it.each([
+    ['an error', {error: 'error'}, 'could not resolve private node_id(s): R_bad'],
+    ['an access-lost', {error: 'access-lost'}, 'could not resolve private node_id(s): R_bad'],
+  ] as const)('keeps the error outcome when a public row sits beside %s row', async (_label, answer, message) => {
+    const run = await runPrMode({
+      rows: {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}, R_bad: answer},
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toContain(message)
+    expect(run.stderr).not.toContain('R_pub')
+  })
+
+  it('prints exactly the existing success line, and nothing else on stdout, when no row is public', async () => {
+    const run = await runPrMode({
+      rows: {R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'}},
+      diff: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.stdout).toBe('check-private-leak: ok (scanned 1 private name(s))\n')
+  })
+
+  it('honors the operator override unchanged when a public row is present, and the count line still prints', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([hiddenPrivateName]),
+      title: '[allow-private-leak] promote',
+      author: 'marcusrbrown',
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.overrideCommentPosted).toBe(true)
+    expect(run.stderr).toContain('override honored for operator marcusrbrown')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 1 private name(s))\n`)
+  })
+
+  it('does not let a public row turn a title prefix from a non-operator into an override', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([hiddenPrivateName]),
+      title: '[allow-private-leak] promote',
+      author: 'someone-else',
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.overrideCommentPosted).toBe(false)
+  })
+
+  it('does not post the override comment when a public row passes without an override', async () => {
+    const run = await runPrMode({
+      rows: {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}},
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.overrideCommentPosted).toBe(false)
+    expect(run.stderr).not.toContain('override')
+  })
+})
+
+describe('PR mode and promotion mode agree on which visibility values skip a row', () => {
+  it.each(nonPublicVisibilities)('%s is scanned by both entry points', async (_label, extra) => {
+    const answer = {nameWithOwner: hiddenPrivateName, ...extra}
+    const promotion = await runPromotionScan({
+      reposYaml: makeReposYaml(['R_odd']),
+      resolver: tableResolver({R_odd: answer}),
+      diff: diffNaming([hiddenPrivateName]),
+    })
+    const pr = await runPrMode({rows: {R_odd: answer}, diff: diffNaming([hiddenPrivateName])})
+
+    expect(promotion.ok).toBe(false)
+    expect(pr.scanResult).toBe('detection')
+  })
+
+  it('PUBLIC is skipped by both entry points', async () => {
+    const answer = {nameWithOwner: hiddenPrivateName, visibility: 'PUBLIC'}
+    const promotion = await runPromotionScan({
+      reposYaml: makeReposYaml(['R_pub']),
+      resolver: tableResolver({R_pub: answer}),
+      diff: diffNaming([hiddenPrivateName]),
+    })
+    const pr = await runPrMode({rows: {R_pub: answer}, diff: diffNaming([hiddenPrivateName])})
+
+    expect(promotion).toEqual({ok: true, publicSkipped: 1})
+    expect(pr.scanResult).toBe('success')
   })
 })

@@ -11,12 +11,16 @@ import {retry} from '@fro-bot/core/retry'
 
 /**
  * Result of a single node_id → nameWithOwner resolution attempt.
- * - `{nameWithOwner}`: resolved successfully
+ * - `{nameWithOwner; visibility?}`: resolved successfully. `visibility` is GitHub's live
+ *   `Repository.visibility` (`PUBLIC`, `PRIVATE` or `INTERNAL`), passed through unjudged and
+ *   typed `unknown` on purpose: a missing field or an unexpected value must stay
+ *   distinguishable from `PUBLIC` only by the caller's strict `=== 'PUBLIC'` test, which
+ *   fails closed. Parsing it into a narrower type here would be a second decision point.
  * - `{error:'access-lost'}`: node returned null (deleted / no access)
  * - `{error:'error'; stderr?}`: gh command failed; stderr captured when available
  */
 export type NodeIdResolverResult =
-  | {readonly nameWithOwner: string}
+  | {readonly nameWithOwner: string; readonly visibility?: unknown}
   | {readonly error: 'access-lost'}
   | {readonly error: 'error'; readonly stderr?: string}
 
@@ -31,7 +35,11 @@ export interface RetryOptions {
 // Constants
 // ---------------------------------------------------------------------------
 
-export const GRAPHQL_QUERY = 'query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner } } }'
+// `visibility` rather than `isPrivate`: it is an enum (PUBLIC / PRIVATE / INTERNAL), so a consumer
+// can demand the one exact string `PUBLIC` and treat INTERNAL, a value GitHub adds later, a missing
+// field and a wrong type alike as not public. A boolean's only positive signal is `false`, which a
+// null or an absent field can imitate under a loose test.
+export const GRAPHQL_QUERY = 'query($id: ID!) { node(id: $id) { ... on Repository { nameWithOwner visibility } } }'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -99,13 +107,12 @@ export function makeGhNodeIdResolver(
     const node = fieldOf(data, 'node')
     if (node === null || node === undefined) return {error: 'access-lost'}
 
-    const nameWithOwner = isObject(node) ? fieldOf(node, 'nameWithOwner') : undefined
-    if (typeof nameWithOwner === 'string') {
-      return {nameWithOwner}
-    }
+    // node exists but is not an object, or has no nameWithOwner (unexpected shape)
+    if (!isObject(node)) return {error: 'access-lost'}
+    const nameWithOwner = fieldOf(node, 'nameWithOwner')
+    if (typeof nameWithOwner !== 'string') return {error: 'access-lost'}
 
-    // node exists but no nameWithOwner (unexpected shape)
-    return {error: 'access-lost'}
+    return {nameWithOwner, visibility: fieldOf(node, 'visibility')}
   }
 
   return async (nodeId: string): Promise<NodeIdResolverResult> => {
