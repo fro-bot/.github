@@ -493,9 +493,9 @@ flowchart TD
 
 **Closed (2026-11-14):**
 
-- **Seen live.** Three self-merged promotions, #4175, #4204 and #4225, each merged by the `fro-bot` user. The first promotion under the strict privacy gate, run [43543306120](https://github.com/fro-bot/.github/actions/runs/43543306120). The drift watcher opening and closing #4172 (opened 2026-11-10, closed 2026-11-11).
-- **Not seen live, covered by tests only.** A `hold-merge` label stopping a promotion. A promotion whose required checks never settle. A hand edit of `main` protection through the web UI.
-- These three are accepted as test-covered, and the unit is closed on that basis.
+- **Seen live.** Three self-merged promotions, #4175, #4204 and #4225, each merged by the `fro-bot` user. The first promotion under the strict privacy gate, run [43543306120](https://github.com/fro-bot/.github/actions/runs/43543306120). The drift watcher closed #4172 after #4174 merged; the issue had been opened before that change.
+- **Not seen live, covered by tests only.** A `hold-merge` label stopping a promotion. A promotion whose required checks never settle. A hand edit of `main` protection through the web UI. A drift report opened and closed by the shipped code in one cycle. Whether GitHub's event payload carries `require_last_push_approval`.
+- These five are accepted as test-covered, and the unit is closed on that basis.
 
 ## System-Wide Impact
 
