@@ -10714,3 +10714,30 @@ context was empty.
 Run: https://github.com/fro-bot/.github/actions/runs/43715597103
 
 Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-11-15 12:52] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Repeat survey of `bfra-me/renovate-action` at `main` `6b29f189`. Nothing
+material changed. The repo is still public, unarchived, MIT-licensed and on
+`main`. It is still a composite action that runs Renovate in Docker, built with
+tsup and released by semantic-release. Fro Bot and Renovate are both still set
+up, so no onboarding follow-up is needed. Only versions moved: Renovate
+44.198.0 → 44.239.1, Fro Bot agent v0.130.3 → v0.144.1, Node 24.22.3,
+pnpm 11.28.11, ESLint 10.14.0, Prettier 3.10.0 and CodeQL v4.39.3.
+
+Changes to `wiki/repos/bfra-me--renovate-action.md`: a short current-state
+line at the top, because those versions were only stated inside dated
+sections. Stale undated pins were fixed where they stand: last push, the
+app-token action v3.3.0, CodeQL v4.39.3 and Dependency Review v5.0.0. The
+`updated` date was bumped and no sources entry was added. Still true: the
+cache-guard `|| github.event_name == 'push'` precedence finding, the stale
+v9/v10 deprecation and README copy, and no `output-mode` on the Fro Bot step.
+No topic, entity or comparison page needed changes. Reads were limited to repo
+metadata, the HEAD commit, directory listings, READMEs, manifests,
+`action.yaml` and workflow files. The corrections context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43715725875
+
+Sources: https://github.com/bfra-me/renovate-action
