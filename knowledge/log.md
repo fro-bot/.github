@@ -10647,3 +10647,23 @@ Run: https://github.com/fro-bot/.github/actions/runs/43593962671
 Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
 
 Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-11-15 05:36] ingest | repo:fro-bot/fro-bot.github.io
+
+Verified the target; no wiki page changed.
+
+Re-surveyed fro-bot/fro-bot.github.io: verified, not changed. `main` is still
+`3e44653`, last pushed 2026-02-09. The full root tree (not truncated) is still
+the one eight-byte `CNAME` blob (`208ca8c`). Visibility is public, default
+branch `main`, not archived, no language, no license, and `node_id` is
+unchanged. No README, manifest, or workflow exists. The repo page already says
+there is no Fro Bot workflow, so no new note was added. Under the repeat-survey
+rules, `wiki/repos/fro-bot--fro-bot-github-io.md` was left untouched,
+including its frontmatter and `updated` date. An unchanged tree justifies no
+topic, entity, or comparison change. This survey did not revalidate the dated
+TLS, DNS, and redirect findings. Reads were limited to repository metadata, the
+HEAD commit, and the tree listing. Corrections context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43681628468
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
