@@ -2811,6 +2811,18 @@ describe('buildWikiIngestChanges (single log entry)', () => {
     expect(log).toBe(`${existingLog}${entryText(`${noPageSummary}\n\nDetail 2.`)}`)
   })
 
+  it('uses the no-change sentence for a direct call with no page and an empty deleted list', () => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      pages: [],
+      handoffDeletedPaths: [],
+      agentLogEntries: agentEntry(2),
+      singleLogEntry: true,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${existingLog}${entryText(`${noPageSummary}\n\nDetail 2.`)}`)
+  })
+
   it('keeps the caller summary for a handoff that only deletes a page', () => {
     const result = buildWikiIngestChanges({
       ...params,
@@ -3635,6 +3647,36 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
 
       expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/old-name.md'])
       expect(Object.keys(committedFiles(commit))).toContain(page.path)
+    })
+
+    it('commits the deletion of a page the manifest lists as both changed and deleted, with no copy on disk', async () => {
+      setUp({manifestChanged: [page.path, other.path], manifestDeleted: [other.path]})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([other.path])
+      expect(Object.keys(committedFiles(commit))).toContain(page.path)
+      expect(Object.keys(committedFiles(commit))).not.toContain(other.path)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('commits only the deletion when the only changed page is also deleted', async () => {
+      setUp({manifestChanged: [other.path], manifestDeleted: [other.path]})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([other.path])
+      expect(Object.keys(committedFiles(commit)).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+      expect(reportedPageCount()).toBe(0)
+    })
+
+    it('writes a page once when the manifest lists its path twice', async () => {
+      setUp({manifestChanged: [page.path, page.path]})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(Object.keys(committedFiles(commit)).filter(path => path === page.path)).toHaveLength(1)
+      expect(reportedPageCount()).toBe(1)
     })
 
     it('rebuilds the index from every page in the working tree', async () => {

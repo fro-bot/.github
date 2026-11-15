@@ -87,7 +87,8 @@ export interface BuildWikiIngestChangesParams {
    * adds the summary entry after them. On, the writer builds a single entry: the trusted heading, the
    * summary, the agent's log text with its headings and `Sources:` lines removed (at most 4,000
    * characters), then the trusted `Sources:`. With no changed and no deleted page the summary says the
-   * target was verified and no page changed.
+   * target was verified and no page changed. That sentence is used exactly when `pages` is empty and
+   * `handoffDeletedPaths` is empty or omitted; any page or deleted path keeps the caller's `summary`.
    */
   singleLogEntry?: boolean
 }
@@ -1706,7 +1707,10 @@ interface LoadedHandoff {
   readonly agentLogEntries: string | undefined
   /** The handed-off pages: everything the manifest lists as changed or deleted. */
   readonly pagePaths: string[]
-  /** The manifest's changed wiki pages, shared files and paths outside the four page directories excluded. */
+  /**
+   * The manifest's changed wiki pages, each once. Shared files, paths outside the four page directories
+   * and paths the manifest also lists as deleted are excluded.
+   */
   readonly changedPagePaths: string[]
   /** The manifest's deleted pages, shared files excluded. */
   readonly deletedPagePaths: string[]
@@ -1814,7 +1818,10 @@ async function loadHandoff(
   const manifest = await readHandoffManifest(handoffDir)
   const pagePaths = [...manifest.changed, ...manifest.deleted]
   const deletedPagePaths = manifest.deleted.filter(path => !isSharedWikiFile(path))
-  const changedPagePaths = manifest.changed.filter(isWikiPageFilePath)
+  // The apply step copies a changed page and then deletes a listed one, so a path in both lists is gone.
+  const changedPagePaths = [...new Set(manifest.changed)].filter(
+    path => isWikiPageFilePath(path) && !manifest.deleted.includes(path),
+  )
   await assertHandoffPagesCurrent(
     octokit,
     target.owner ?? DEFAULT_OWNER,
