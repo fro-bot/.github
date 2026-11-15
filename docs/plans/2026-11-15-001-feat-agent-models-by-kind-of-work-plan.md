@@ -49,7 +49,9 @@ Requirement IDs are the origin document's.
 - Composite actions to model on: `.github/actions/knowledge-mcp-config/action.yaml` (inputs through `env:`, an output mapped from a step, whitespace stripping) and `.github/actions/knowledge-mcp-summary/action.yaml` (fixed message text). Their tests (`scripts/knowledge-mcp-config-action.test.ts`, `scripts/knowledge-mcp-summary-action.test.ts`) parse `action.yaml` and run the step's shell with `runStepWithStubs` from `@fro-bot/test-kit`.
 - Tests that enumerate every `fro-bot/agent` step and fail on one missing from their table: `scripts/knowledge-mcp-callers.test.ts`, `scripts/repo-skills-callers.test.ts`.
 - The content job already tests "a comment on a pull request" in `DELIVERY_NOTE` with `github.event_name == 'issue_comment'` and `github.event.issue.pull_request != null`, evaluated by `evaluateExpressionValue` from `@fro-bot/test-kit` (`scripts/fro-bot-pr-comment-delivery.test.ts`). The evaluator supports `||`, `&&`, `!`, `==`, `!=`, parentheses, literals, dotted paths, `endsWith`, `contains` and `fromJSON`.
-- `draft-solutions.yaml`: the `draft` job checks out the drafted branch's head when a drafted pull request is open. That branch can predate a new composite. The `harvest` job checks out the default ref and already exposes job outputs.
+- `draft-solutions.yaml`: the `draft` job checks out the drafted branch's head when a drafted pull request is open. That branch can predate a new composite. The `harvest` job checks out the workflow's own ref (the default branch on a scheduled run) and already exposes job outputs, which `scripts/draft-solutions-workflow.test.ts` compares as an exact object.
+- No checkout in these jobs names a `ref` except `draft`. A local action is loaded from the checked-out workspace.
+- `scripts/knowledge-mcp-callers.test.ts` requires the knowledge summary step immediately after every agent step, survey retries included. `scripts/agent-post-step-credential-guard.test.ts` scans steps before and after the agent for credentials.
 - `scripts/draft-solutions-workflow.test.ts` pins `vars.FRO_BOT_MODEL` in the draft step's `model`.
 - The runner echoes each step's `with:` block, so the log already shows `model: <value>`. The agent's own log says only that an override is present.
 
@@ -63,9 +65,11 @@ Requirement IDs are the origin document's.
 
 - **A composite action resolves the model, and the agent reads its output.** The checked value is then the used value. An inline `vars.X || vars.FRO_BOT_MODEL` on each step cannot express the content job safely and would need a second copy for the check.
 - **The tier is chosen before the fallback.** In `cond && vars.REVIEW || vars.LIGHT`, an empty review value falls through to the light value. The workflow passes a tier name (`review`, `act` or `light`) and all four values; the composite picks by tier, then falls back to `FRO_BOT_MODEL` only.
-- **Whitespace counts as empty.** A variable holding only spaces would otherwise pass an expression test and reach the agent.
+- **Leading and trailing whitespace is trimmed, and a value of only whitespace is empty.** A variable holding only spaces would otherwise pass an expression test and reach the agent. A value that still contains a line break after trimming is rejected with a fixed message, before anything is logged or written.
+- **One resolver per job, unconditional, before the first agent step.** A resolver with its own condition could be skipped while an agent step runs. The survey's three attempts share one. In `capture-patterns` the job is already gated, so the resolver needs no condition.
 - **The content job's tier is one expression:** review when the event is `pull_request` or `pull_request_review_comment`, or is `issue_comment` on a pull request; light otherwise. Issues, issue comments and discussion comments are light.
-- **`draft-solutions` resolves in `harvest`.** `harvest` runs at the default ref, so the composite exists there. It exposes the model as a job output and `draft` reads it. An empty configuration then fails the run before the no-work exit, which R3 intends.
+- **`draft-solutions` resolves in `harvest` and checks again in `draft`.** `harvest` runs at the workflow's ref, so the composite exists there on a scheduled run. It resolves after checkout and before the harvest step, exposes the model as a job output, and `draft` reads it. A job output can arrive empty, so `draft` has a step before the agent that fails with a fixed message when the value it received is empty, and the agent reads that same value. An empty configuration fails the run in `harvest` even when there is nothing to draft, and `draft` and `publish` are then skipped. R3 intends that.
+- **A re-run of `draft` alone reuses the model `harvest` resolved.** A full re-run resolves again from the current variables. The tier is light either way.
 - **Variable names:** `FRO_BOT_MODEL_REVIEW`, `FRO_BOT_MODEL_ACT`, `FRO_BOT_MODEL_LIGHT`, with `FRO_BOT_MODEL` as the fallback.
 - **No shape check on the value.** The action already rejects a model that is not `provider/model`.
 - **The resolver prints the model and which variable supplied it.** Variables are not secrets, and the runner already prints the value.
@@ -116,8 +120,9 @@ The light and act values are never used for a review tier, and the reverse.
 **Approach:**
 
 - Inputs: `tier`, `review`, `act`, `light`, `fallback`. Output: `model`.
-- Strip whitespace from each value. Pick the tier's value; when empty, use the fallback; when that is empty too, fail with a fixed message naming the tier's variable and `FRO_BOT_MODEL`.
-- An unknown tier fails with a fixed message.
+- Trim each value. Pick the tier's value; when empty, use the fallback; when that is empty too, fail with a fixed message naming the tier's variable and `FRO_BOT_MODEL`.
+- An unknown tier fails with a fixed message that does not echo the input. A value with a line break inside it fails the same way.
+- The script sets its own strict mode, because the test harness runs it with plain `bash`.
 - On success print one line with the model and the variable it came from, and write the output.
 - Inputs reach the shell through `env:`, never by interpolation into the script.
 
@@ -129,11 +134,13 @@ The light and act values are never used for a review tier, and the reverse.
 
 - Happy path: each tier with its own value set returns that value and names its variable in the log.
 - Happy path: each tier with its own value empty returns the fallback and names `FRO_BOT_MODEL`.
-- Edge case: a value of spaces or a trailing newline counts as empty.
+- Edge case: a value of only spaces or only a line break counts as empty.
+- Edge case: a model padded with spaces or followed by a line break resolves to the model alone, with the right source named.
 - Edge case: tier `review` with the review value empty and the light, act and fallback values set returns the fallback, never the light or act value. The same for the other two tiers.
 - Error path: the tier's value and the fallback both empty exits non-zero, names both variables, and writes no `model` output.
-- Error path: an unknown or empty tier exits non-zero and names the tier.
-- Edge case: a value containing shell metacharacters or a line break is not executed and does not add output lines.
+- Error path: an unknown or empty tier exits non-zero with the fixed message and writes no output.
+- Error path: a value with a line break inside it exits non-zero, writes no `model` output and adds no output line.
+- Edge case: a value containing shell metacharacters is not executed.
 
 **Verification:**
 
@@ -153,12 +160,13 @@ The light and act values are never used for a review tier, and the reverse.
 
 - Modify: `.github/workflows/fro-bot.yaml`, `.github/workflows/survey-repo.yaml`, `.github/workflows/capture-learnings.yaml`, `.github/workflows/capture-patterns.yaml`, `.github/workflows/draft-solutions.yaml`
 - Create: `scripts/agent-model-callers.test.ts`
-- Test: `scripts/draft-solutions-workflow.test.ts`, and any workflow test that counts or orders the steps before an agent step
+- Test: `scripts/draft-solutions-workflow.test.ts` (the exact `harvest` outputs object and the draft step's model assertion), and any other workflow test the search below finds
 
 **Approach:**
 
-- Add one resolver step before the agent step in the content job, Remediate, Observe, the survey job, `capture-learnings` and `capture-patterns`. Tier: the expression for the content job; `act` for Remediate, Observe and surveys; `light` for the two capture jobs.
-- In `draft-solutions`, add the resolver to `harvest` with tier `light`, expose its output as a job output, and have `draft` read it.
+- Add one resolver step after checkout and before the first agent step in the content job, Remediate, Observe, the survey job, `capture-learnings` and `capture-patterns`. It has no `if:` and no `continue-on-error`. Tier: the expression for the content job; `act` for Remediate, Observe and surveys; `light` for the two capture jobs.
+- Keep the knowledge summary step immediately after each agent step, and add nothing between a survey attempt and its summary.
+- In `draft-solutions`, add the resolver to `harvest` with tier `light`, after checkout and before the harvest step, and expose its output as a job output. In `draft`, add the step that fails on an empty received value, before the agent.
 - Each agent step's `model` reads the resolver's output. No `model` reads a variable directly.
 - The resolver step carries no credential and runs before the agent, so the post-agent credential guard does not apply to it.
 - Before editing, search for every reader of the `model:` text and of step positions in these jobs.
@@ -170,7 +178,10 @@ The light and act values are never used for a review tier, and the reverse.
 **Test scenarios:**
 
 - Happy path: the table holds exactly the nine agent steps, each with a tier; a tenth step in any workflow fails the totality check. (Origin AE7.)
-- Happy path: each agent step's `model` is the resolver's output (a step output, or the `harvest` job output for `draft`), and a resolver step precedes it with the table's tier and the four variables in the right inputs.
+- Happy path: each agent step's `model` is the resolver's output (a step output, or the `harvest` job output for `draft`), and a resolver step precedes the job's first agent step with the table's tier and the four variables in the right inputs.
+- Edge case: no resolver step has an `if:` or `continue-on-error`.
+- Happy path: in `draft-solutions`, `harvest` declares the model output, `draft` needs `harvest`, and `draft` has a step before the agent that fails when the received model is empty; running that step's shell with an empty value exits non-zero and with a value exits zero.
+- Happy path: with only the two initial values set, a pull request review resolves to the review value, and a daily pass, a survey and an issue run resolve to the fallback. (Origin AE9, through the resolver's shell and the tier table.)
 - Happy path: the content job's tier evaluates to review for `pull_request`, `pull_request_review_comment` and an issue comment on a pull request, and to light for `issues`, an issue comment on an issue and `discussion_comment`. (Origin AE3.)
 - Happy path: Remediate, Observe and all three survey attempts use `act`; the tracker and branding reach those jobs and add no agent step of their own. (Origin AE4.)
 - Edge case: no agent step's `model` contains `vars.`.
@@ -224,7 +235,7 @@ The light and act values are never used for a review tier, and the reverse.
 **Approach:**
 
 - The operator sets `FRO_BOT_MODEL_REVIEW` to the OpenAI model and `FRO_BOT_MODEL` to the Anthropic model.
-- Read the resolver's line in the next pull request review, the next daily run and the next survey.
+- Read the resolver's line in the next pull request review, the next daily run, the next survey and the next issue run.
 
 **Test expectation:** none -- live verification.
 
@@ -236,7 +247,7 @@ The light and act values are never used for a review tier, and the reverse.
 
 - **Interaction graph:** five workflows and nine agent steps; the tracker and branding reach Observe and Remediate through `fro-bot.yaml`.
 - **Error propagation:** an empty configuration fails the job before the agent step. In `draft-solutions` it fails in `harvest`.
-- **State lifecycle risks:** a re-run reads the variables' current values, not the values at the original run.
+- **State lifecycle risks:** a full re-run reads the variables' current values, not the values at the original run. A re-run of `draft` alone reuses the model `harvest` resolved.
 - **API surface parity:** none. No package or published contract changes.
 - **Unchanged invariants:** prompts, tokens, permissions, triggers, the fork gate, and the agent's other inputs.
 
@@ -246,9 +257,11 @@ The light and act values are never used for a review tier, and the reverse.
 | --- | --- |
 | An empty tier value falls through to another tier's value | The composite picks by tier before any fallback; Unit 1 tests each cross-tier case. |
 | A drafted branch that predates the composite breaks `draft` | `draft` reads a job output from `harvest`, which runs at the default ref. |
-| A capture job dispatched from an old branch lacks the composite | The same exposure exists for `./.github/actions/setup`; those jobs run from `main` on schedule. |
 | A new agent step ships without a tier | The totality check in Unit 2 fails. |
-| The operator clears `FRO_BOT_MODEL` | Every agent job fails before the agent with a message naming the variables. That is intended. |
+| The operator clears `FRO_BOT_MODEL` | Every tier without its own value fails before the agent with a message naming the variables. That is intended. |
+| A job output arrives empty in `draft` | The step before the agent fails on an empty value. |
+| `actionlint` does not check the composite's shell | The shell contract tests in Unit 1 are the check. |
+| A workflow dispatched from a branch that predates the composite fails to load it | Scheduled runs use the default branch. The same exposure exists for the other local actions. |
 | A step-count or step-order test breaks on the added step | Unit 2 searches for those tests before editing. |
 
 ## Documentation / Operational Notes
