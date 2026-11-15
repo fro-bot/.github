@@ -82,6 +82,14 @@ export interface BuildWikiIngestChangesParams {
    * `deletedPaths`, and a call with only deletions needs no page updates.
    */
   handoffDeletedPaths?: readonly string[]
+  /**
+   * Leave one log entry for this ingest. Off by default, which keeps the agent's entries as written and
+   * adds the summary entry after them. On, the writer builds a single entry: the trusted heading, the
+   * summary, the agent's log text with its headings and `Sources:` lines removed (at most 4,000
+   * characters), then the trusted `Sources:`. With no changed and no deleted page the summary says the
+   * target was verified and no page changed.
+   */
+  singleLogEntry?: boolean
 }
 
 export interface BuildWikiIngestChangesResult {
@@ -320,7 +328,10 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
 
   const parsedPages = collectWikiPages(nextFiles)
   const index = buildIndexDocument(nextFiles[INDEX_PATH], parsedPages)
-  const log = appendLogEntry(appendAgentLogEntries(nextFiles[LOG_PATH], params.agentLogEntries), params)
+  const log =
+    params.singleLogEntry === true
+      ? appendSingleLogEntry(nextFiles[LOG_PATH], params)
+      : appendLogEntry(appendAgentLogEntries(nextFiles[LOG_PATH], params.agentLogEntries), params)
 
   files[INDEX_PATH] = index
   files[LOG_PATH] = log
@@ -980,6 +991,50 @@ function appendAgentLogEntries(existingLog: string | undefined, entries: string 
   if (entries === undefined || entries.trim() === '') return existingLog
   const base = existingLog === undefined || existingLog === '' ? LOG_HEADER : normalizeText(existingLog)
   return normalizeText(`${base}${entries.startsWith('\n') ? entries : `\n${entries}`}`)
+}
+
+/**
+ * The agent's log text as the body of one entry. Every line that has the shape of an entry heading
+ * (starts with `## [`) and every line that starts with `Sources:` is dropped, so nothing in the text can
+ * start an entry or name a source. Blank runs collapse, the text is trimmed, and text past 4,000
+ * characters is cut and ends with a fixed line. Lines are split and compared with `startsWith`, not matched
+ * with a pattern, because the text is untrusted.
+ */
+function singleEntryBody(agentLogEntries: string | undefined): string {
+  const limit = 4000
+  const cutLine = `Agent log text cut at ${limit} characters.`
+  const kept: string[] = []
+  for (const line of (agentLogEntries ?? '').replaceAll('\r\n', '\n').split('\n')) {
+    if (line.startsWith('## [') || line.startsWith('Sources:')) continue
+    const blank = line.trim() === ''
+    if (blank && (kept.length === 0 || kept.at(-1) === '')) continue
+    kept.push(blank ? '' : line)
+  }
+
+  const text = kept.join('\n').trim()
+  if (text.length <= limit) return text
+
+  const cut = text.slice(0, limit)
+  const lastCodeUnit = cut.charCodeAt(cut.length - 1)
+  const whole = lastCodeUnit >= 0xd800 && lastCodeUnit <= 0xdbff ? cut.slice(0, -1) : cut
+  return `${whole.trimEnd()}\n\n${cutLine}`
+}
+
+/**
+ * Append the one entry of a single-entry ingest. With no changed and no deleted page the summary is the
+ * fixed no-change sentence; otherwise it is the caller's.
+ */
+function appendSingleLogEntry(
+  existingLog: string | undefined,
+  params: Pick<
+    BuildWikiIngestChangesParams,
+    'operation' | 'target' | 'summary' | 'timestamp' | 'sources' | 'agentLogEntries' | 'pages' | 'handoffDeletedPaths'
+  >,
+): string {
+  const noPageChanged = params.pages.length === 0 && (params.handoffDeletedPaths ?? []).length === 0
+  const summary = noPageChanged ? 'Verified the target; no wiki page changed.' : params.summary
+  const body = singleEntryBody(params.agentLogEntries)
+  return appendLogEntry(existingLog, {...params, summary: body === '' ? summary : `${summary}\n\n${body}`})
 }
 
 /**
@@ -1861,6 +1916,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
         corrections: correctionRead.corrections,
         agentLogEntries: handoff?.agentLogEntries,
         handoffDeletedPaths: handoff?.deletedPagePaths,
+        singleLogEntry: process.env.WIKI_LOG_MODE === 'single',
       })
       owner = payload.owner
       repo = payload.repo
@@ -1908,6 +1964,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
         corrections: correctionRead.corrections,
         agentLogEntries: handoff?.agentLogEntries,
         handoffDeletedPaths: handoff?.deletedPagePaths,
+        singleLogEntry: process.env.WIKI_LOG_MODE === 'single',
       })
       owner = process.env.WIKI_OWNER
       repo = process.env.WIKI_REPO

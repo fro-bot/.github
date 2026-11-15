@@ -143,7 +143,7 @@ Requirement IDs are the origin document's.
 
 ---
 
-- [ ] **Unit 2: One log entry when the caller asks for it**
+- [x] **Unit 2: One log entry when the caller asks for it**
 
 **Goal:** A caller can have the writer leave one log entry per ingest.
 
