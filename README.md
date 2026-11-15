@@ -429,7 +429,7 @@ Each agent step reads its model from the [`agent-model`](.github/actions/agent-m
 | `FRO_BOT_MODEL_LIGHT` | Light | The **Fro Bot** content job on an issue, an `issue_comment` on an issue and a `discussion_comment`; **Capture Learnings**; **Capture Patterns**; **Draft Solutions** |
 | `FRO_BOT_MODEL` | Fallback | Every kind of work whose own variable is empty |
 
-A run with no model fails before the agent starts, and the error names the variable it read and `FRO_BOT_MODEL`. A value is trimmed, and a value of only whitespace counts as empty. A value that spans more than one line fails the run.
+A run with no model fails before the agent starts, and the error names the variable it read and `FRO_BOT_MODEL`. A value is trimmed, and a value of only whitespace counts as empty. A value that still has a line break inside it after trimming fails the run.
 
 The resolver prints one line, `Agent model: <model> (from <variable>)`, which is the record of which model a run used. A re-run keeps its event and uses the same variable, and a full re-run reads the variable's current value. **Draft Solutions** resolves the model in its `harvest` job and passes it to `draft`; a re-run of `draft` alone reuses it.
 
