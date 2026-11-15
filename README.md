@@ -418,6 +418,23 @@ Repository management:
 
 > [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation.
 
+### Agent Models
+
+Each agent step reads its model from the [`agent-model`](.github/actions/agent-model/action.yaml) action. Each job resolves the model once, before its first agent step, from one of three repository variables chosen by the kind of work. When that variable is empty, the action uses `FRO_BOT_MODEL`.
+
+| Variable | Kind of work | Read by |
+| --- | --- | --- |
+| `FRO_BOT_MODEL_REVIEW` | Review | The **Fro Bot** content job on a pull request: a `pull_request` run, a `pull_request_review_comment` and an `issue_comment` on a pull request |
+| `FRO_BOT_MODEL_ACT` | Act | The daily Remediate and Observe passes, every **Survey Repo** attempt, and a dispatched run with a custom prompt, including the rollout tracker's and the branding apply's, which run in Remediate or Observe |
+| `FRO_BOT_MODEL_LIGHT` | Light | The **Fro Bot** content job on an issue, an `issue_comment` on an issue and a `discussion_comment`; **Capture Learnings**; **Capture Patterns**; **Draft Solutions** |
+| `FRO_BOT_MODEL` | Fallback | Every kind of work whose own variable is empty |
+
+A run with no model fails before the agent starts, and the error names the variable it read and `FRO_BOT_MODEL`. A value is trimmed, and a value of only whitespace counts as empty. A value that still has a line break inside it after trimming fails the run.
+
+The resolver prints one line, `Agent model: <model> (from <variable>)`, which is the record of which model a run used. A re-run keeps its event and uses the same variable, and a full re-run reads the variable's current value. **Draft Solutions** resolves the model in its `harvest` job and passes it to `draft`; a re-run of `draft` alone reuses it.
+
+Changing a model is a variable edit under the repository's Actions variables. Values are model IDs in `provider/model` form and are not kept in this repository. `scripts/agent-model-callers.test.ts` lists every agent step with its kind of work and fails on a step it does not list.
+
 ### Repository Settings Management
 
 Fro Bot uses [Probot Settings](https://probot.github.io/apps/settings/) to synchronize repository configurations across managed repositories. The settings enforce consistent:

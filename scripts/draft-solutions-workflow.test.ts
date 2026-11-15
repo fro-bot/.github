@@ -98,11 +98,12 @@ describe('draft-solutions.yaml job order', () => {
     expect(publishJob?.if).toBe(HAS_WORK)
   })
 
-  it('harvest exposes has_work and the two pinned SHAs from its harvest step', () => {
+  it('harvest exposes has_work and the two pinned SHAs from its harvest step, and the resolved agent model', () => {
     expect(harvestJob?.outputs).toStrictEqual({
       has_work: gh('steps.harvest.outputs.has_work'),
       draft_base_sha: gh('steps.harvest.outputs.draft_base_sha'),
       main_sha: gh('steps.harvest.outputs.main_sha'),
+      model: gh('steps.agent-model.outputs.model'),
     })
     expect(harvestJob?.steps.find(step => step.id === 'harvest')).toBeDefined()
   })
@@ -133,7 +134,8 @@ describe('draft-solutions.yaml credential split', () => {
     expect(agentStep).toBeDefined()
     expect(String(agentStep?.with?.['github-token'])).toContain('secrets.GITHUB_TOKEN')
     expect(agentStep?.with?.['output-mode']).toBe('working-dir')
-    expect(String(agentStep?.with?.model)).toContain('vars.FRO_BOT_MODEL')
+    expect(agentStep?.with?.model).toBe(gh('needs.harvest.outputs.model'))
+    expect(String(agentStep?.with?.model)).not.toContain('vars.')
     expect(agentStep?.with?.prompt).toBe(gh('env.TASK_PROMPT'))
   })
 
