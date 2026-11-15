@@ -2,8 +2,11 @@
 type: repo
 title: marcusrbrown/esphome.life
 created: 2026-04-18
-updated: 2026-10-30
+updated: 2026-11-14
 sources:
+  - url: https://github.com/marcusrbrown/esphome.life
+    sha: 32138381e60aff308ebba61b3702068fa72bd753
+    accessed: 2026-11-14
   - url: https://github.com/marcusrbrown/esphome.life
     sha: 32138381e60aff308ebba61b3702068fa72bd753
     accessed: 2026-10-30
@@ -87,6 +90,57 @@ node_id: R_kgDOIZmGgg
 ESPHome device configuration repository for Marcus R. Brown's IoT devices. Forked from the [esphome-project-template](https://github.com/esphome/esphome-project-template), it builds firmware via CI and publishes a GitHub Pages site with [ESP Web Tools](https://esphome.github.io/esp-web-tools/) for browser-based flashing.
 
 ## Overview
+
+### Current source observations (2026-11-14)
+
+**HEAD has not moved since the 2026-10-30 survey.** `main` is still
+`32138381e60aff308ebba61b3702068fa72bd753` (#438, renovate-config preset
+v5.2.16, 2026-10-22), and `pushed_at` is still 2026-10-22T08:50:36Z. The
+recursive tree still holds the same 17 blobs and three workflows, so every claim
+in the 2026-10-30 section stays true without a reread: `bfra-me/.github`
+v4.43.0 in both callers, the settings caller still targeting `renovate.yaml`,
+ESPHome 2025.12.7, the single-device build matrix, and the unforwarded
+`esphome-version` manifest output. **No Fro Bot workflow is present.** The
+workflow registry lists only `CI`, `Renovate`, `Update Repo Settings`, and the
+dynamic `pages-build-deployment`, all `active`. A follow-up draft PR is still a
+candidate and should be proposed separately.
+
+**The 23-day quiet is the upstream going quiet, not a stall here.** Before
+this, Renovate landed a bump every one to four days (#427–#438 between
+2026-10-01 and 2026-10-22). Neither upstream has released since this repo's
+last merge. `bfra-me/.github` **v4.43.0** (2026-10-21T22:59Z) is still the
+latest release, and so is `marcusrbrown/renovate-config` **5.2.16**
+(2026-10-22T08:40Z). The pins are current with their sources. This interval
+does not repeat the 2026-09-04 `tar` outage, where Renovate went inert but
+still reported success.
+
+**The settings caller is still firing a Renovate pass every day.** The run list
+shows a scheduled `Update Repo Settings` run concluding `success` every day from
+2026-11-08 through 2026-11-13. Each run lands near 12:30 UTC, which is the
+`23 12` cron plus queue lag. The two most recent `Renovate` runs were
+`issues`-event triggers (2026-11-11, 2026-11-12) and concluded `skipped`. These
+are run-list conclusions only. Step bodies and logs were not read, so this does
+not refresh the earlier paths-filter measurements.
+
+**Watch item: the 60-day inactivity clock.** GitHub disables scheduled
+workflows after 60 days without repository activity. Counted from the last push
+(2026-10-22), that deadline falls around **2026-12-21**. If upstream stays
+quiet, the daily cron in `update-repo-settings.yaml` will disable itself. That
+is the cron that actually runs Renovate, under the wrong name. The real
+`renovate.yaml` is not cron-triggered, so it would not go dark. This is the same
+`disabled_inactivity` exposure recorded at
+[[marcusrbrown--cortexkit-anthropic-auth]]. It is inferred from the push date
+and GitHub's documented rule, not observed.
+
+Not reread in this pass: device YAML, static-site content, settings and
+Renovate config bodies, the Dependency Dashboard, issues, and PRs. The
+approval-gate, CDN-pin, and branch-protection findings keep their earlier dates.
+`open_issues_count` is still 3 and stars are still 2.
+
+Sources: [tree](https://github.com/marcusrbrown/esphome.life/tree/32138381e60aff308ebba61b3702068fa72bd753),
+[commits](https://github.com/marcusrbrown/esphome.life/commits/main),
+[bfra-me/.github releases](https://github.com/bfra-me/.github/releases),
+[renovate-config releases](https://github.com/marcusrbrown/renovate-config/releases).
 
 ### Current source observations (2026-10-30)
 
@@ -505,3 +559,4 @@ The honest recommendation is therefore narrower than "add `fro-bot.yaml`": **the
 | 2026-08-01 | `08ca7a9` | Dependency-only delta (19 Renovate bumps, #381–#395). **Two CI action bumps that had been static for months finally moved:** `esphome/build-action` v7.3.0 → **v7.4.0** (SHA `82ec6bd`, #385 bundle) and `actions/checkout` v5.0.1 → **v5.1.0** (SHA `fbc6f39`, #387). `bfra-me/.github` v4.16.35 → v4.16.44 (SHA `dd02bc5`; nine weekly releases). Renovate preset `#5.2.4` → `#5.2.9`. Prettier 3.9.4 → 3.9.6 (#381/#392). **Renovate config file is now `.github/renovate.json5`** (JSON5) — prior surveys observed `renovate.json`; the ESPHome-tracking package rule and `versioning: loose`/`separateMajorMinor: false` flags carry over unchanged. ESPHome pin (`2025.12.7`), devcontainer image, and Olimex device configs unchanged — the pin has now held across nine surveys (~4.6 months) despite upstream 2026.x releases. `update-repo-settings.yaml` footgun reconfirmed (now `renovate.yaml@v4.16.44`) — sixth survey flagged, no patch. No Fro Bot workflow (ninth survey); open issues unchanged (#8 Uplift, #26 Dependency Dashboard, #298 BPPLUG note). |
 | 2026-08-30 | `5fffe20` | Dependency-only delta (13 Renovate bumps, #396–#408); **tracked tree byte-identical to `08ca7a9`** (17 blobs). `bfra-me/.github` v4.16.44 → **v4.22.0** (SHA `b830359`) — after ~47 `v4.16.x` patches, **six minor boundaries in eleven days** (#402–#408, 08-17 → 08-27), absorbed as ordinary automerge churn. `JamesIves/github-pages-deploy-action` v4.8.0 → **v4.9.0** (#398, first movement in the series). Renovate preset `#5.2.9` → **`#5.2.12`** (#396/#397). Prettier held at 3.9.6; `esphome/build-action` (v7.4.0), `actions/checkout` (v5.1.0), all other action SHAs, devcontainer image, `settings.yml`, `renovate.json5` package rule, and both Olimex device configs unchanged. ESPHome pin `2025.12.7` held for a **tenth** survey (~5.6 months) while upstream shipped **2026.8.1** (2026-08-23) — the pin is now ~8 months and nine minor series behind. **Three new findings:** (1) the settings-sync footgun has a **confirmed drop-in fix** — `bfra-me/.github` ships `.github/workflows/update-repo-settings.yaml` at v4.22.0 with `workflow_call` and an identical secrets signature (`APPLICATION_ID`/`APPLICATION_PRIVATE_KEY`, zero inputs), so the repair is a one-token path swap; (2) the footgun's cost is now **measured** — Actions history shows `Update Repo Settings` executing a full Renovate pass on the daily `23 12` cron *and* on every push to `main`, so `settings.yml` is never applied by this repo's automation and each merge runs Renovate twice; (3) the file's history is **≥100 commits deep, every one a Renovate bump of the wrong path**, reaching back to v4.0.9 on 2025-07-27 without hitting the introduction — SHA pinning validates the ref, not the path. Also newly recorded: `static/index.md` hand-pins `esp-web-tools@8.0.3` via an unpkg `<script type="module">` with no manifest, no Renovate custom manager, and no SRI — the one dependency shipped to browsers is the one nothing tracks. Seventh footgun confirmation; no Fro Bot workflow (tenth survey); 0 open PRs; open issues unchanged (#8, #26, #298); stars 2. |
 | 2026-09-14 | `fd39895` | **First non-dependency interval in the series, and two standing claims are corrected.** Tree still 17 blobs; exactly **three** differ from `5fffe20` — both workflow files (`bfra-me/.github` v4.22.0 → **v4.29.0**, seven tags in 18 days, v4.28.0 and v4.29.0 the same day) and `renovate.json5` (preset `#5.2.12` → **`#5.2.13`**, #414). `ci.yaml` byte-identical, so ESPHome `2025.12.7`, the build matrix, and every CI action SHA are unchanged by construction. **(1) The `tar` outage.** #411 installed `bfra-me/.github` v4.25.0 at 16:35:43, carrying `bfra-me/renovate-action` 10.34.0 whose bundle left `tar` a devDependency; Renovate then exited before servicing any dependency while concluding `success` (16:39:43 pass: job green, step green, **zero PRs**). Upstream fixed at 18:27:48, tagged v4.25.1 at 20:52:07; `marcusrbrown` hand-merged **#412** (`+1/-1`, `renovate.yaml` only) at 23:01:26 — **inert window 6 h 25 m 43 s**, ~2 h 09 m of it after the fix was deliverable — and Renovate opened the follow-up **#413** for the remaining file **5 m 11 s** later. This is the **first human commit in 113 days** and the second repo observed inside the same fleet incident as [[marcusrbrown--github]] (fixed ~5 minutes earlier, same night, same branch name, same one-line diff — a manual fleet sweep). Three additions: **run duration does not discriminate** (poisoned step 46 s vs a 55–100 s healthy band); **the settings-sync footgun doubled the blast radius** — two callers of the poisoned tag instead of one, so the merge of the fix itself ran the known-poisoned Renovate once more and full remediation took 34 m 53 s longer; and **every human commit here since 2024-11 is a manual pin rescue** (5 of 5). **(2) ESPHome drift root cause corrected.** The 2026-08-30 claim that `versioning: loose` made the bump *invisible* is falsified — Dependency Dashboard #26 detects all three ESPHome deps, resolves them to **2026.8.2**, and parks the branches under `Pending Approval`. Real mechanism composes three repos: `separateMajorMinor: false` here folds every ESPHome bump into `major`, and `bfra-me/renovate-config#5.2.7` applies `:approveMajorUpdates` to all majors. A **governance stall, not a detection failure** — ~5.9 months on an unticked checkbox. **(3) "Zero-backlog queue" corrected**: 0 open PRs is still true and was measuring the wrong surface — **six approval-gated updates** wait on the dashboard (`esphome/esphome` + `ptr727/esphome-nonroot` 2026.8.2, `actions/checkout` v7, `create-github-app-token` v3, `esphome/build-action` v8, Artifact Actions major). Correct cohort is [[marcusrbrown--mothership]]/[[fro-bot--dashboard]], not [[marcusrbrown--dev-like]]. **(4) Settings-sync footgun, eighth confirmation, cost refined**: upstream `renovate.yaml` gates its Renovate step behind `dorny/paths-filter` with `['.github/workflows/renovate.yaml', '.github/renovate.json5', 'internal.json5']`, skipped on `schedule` — so the daily `23 12` duplicate pass is unconditional but the per-push one fires only on a filter match (**13 of 14** recent pushes; the sole skip was the push that touched *only* the mis-pathed file, which the filter does not list). 29 runs in the window, **28 executed a Renovate pass, none applied `settings.yml`**. Also: `esp-web-tools` upstream at **10.4.0** vs the pinned `8.0.3` (two majors, and the only dependency genuinely absent from the dashboard); Pages serves at `https://mrbro.dev/esphome.life/` via the user-level custom domain; branch protection **not re-verified** (403 for this survey's identity). No Fro Bot workflow (eleventh survey); 0 open PRs; open issues unchanged (#8, #26, #298); stars 2. |
+| 2026-11-14 | `3213838` | **No source delta.** HEAD and tree are identical to the 2026-10-30 survey (17 blobs, three workflows, `pushed_at` 2026-10-22). The 23-day pause matches the upstreams: neither `bfra-me/.github` (v4.43.0) nor `marcusrbrown/renovate-config` (5.2.16) has released since, so the pins are current and this is not a repeat of the `tar` outage. The run list shows `Update Repo Settings` still running the Renovate pass daily under the wrong name, with a scheduled run concluding `success` every day 11-08 → 11-13. New watch item: if nothing is pushed, the 60-day inactivity rule would disable that cron around **2026-12-21**, and that cron is the only scheduled Renovate trigger. No Fro Bot workflow; 3 open issues; stars 2. |
