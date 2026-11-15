@@ -17,6 +17,7 @@ const wikiIngestModulePromise: Promise<{
   countWikiPages: typeof import('./wiki-ingest.js').countWikiPages
   deriveAgentLogEntries: typeof import('./wiki-ingest.js').deriveAgentLogEntries
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
+  mergeWikiLogs: typeof import('./wiki-ingest.js').mergeWikiLogs
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   runWikiIngestCli: typeof import('./wiki-ingest.js').runWikiIngestCli
   runWikiIngestEntry: typeof import('./wiki-ingest.js').runWikiIngestEntry
@@ -29,6 +30,7 @@ const {
   countWikiPages,
   deriveAgentLogEntries,
   loadTrackedRepoNodeIds,
+  mergeWikiLogs,
   parsePorcelainPaths,
   runWikiIngestCli,
   runWikiIngestEntry,
@@ -2766,6 +2768,313 @@ describe('buildWikiIngestChanges (agent log entries)', () => {
   })
 })
 
+describe('buildWikiIngestChanges (single log entry)', () => {
+  const page = createWikiPage({path: 'knowledge/wiki/topics/notes.md', type: 'topic', title: 'Notes'})
+  const heading = '## [2026-10-21 09:00] ingest | repo:acme/target'
+  const trustedSources = 'Sources: https://github.com/acme/target'
+  const noPageSummary = 'Verified the target; no wiki page changed.'
+  const cutLine = 'Agent log text cut at 4000 characters.'
+  const existingLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
+  const params = {
+    operation: 'survey' as const,
+    target: 'repo:acme/target',
+    summary: 'Surveyed acme/target.',
+    timestamp: new Date('2026-10-21T09:00:00Z'),
+    sources: [{url: 'https://github.com/acme/target', accessed: '2026-10-21'}],
+    existingFiles: {...createEmptyWikiFiles(), 'knowledge/log.md': existingLog},
+  }
+  const entryText = (body: string): string => `\n${heading}\n\n${body}\n\n${trustedSources}\n`
+  const agentEntry = (n: number, extra = ''): string =>
+    `\n## [2026-10-20 10:0${n}] ingest | repo:acme/app-${n}\n\nDetail ${n}.\n${extra}\nSources: none\n`
+
+  const single = (overrides: {pages?: {path: string; content: string}[]; agentLogEntries?: string}): string => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      pages: overrides.pages ?? [page],
+      ...(overrides.agentLogEntries === undefined ? {} : {agentLogEntries: overrides.agentLogEntries}),
+      singleLogEntry: true,
+    })
+    return result.files['knowledge/log.md'] ?? ''
+  }
+
+  const headingLines = (log: string): string[] => log.split('\n').filter(line => line.startsWith('## ['))
+
+  it('leaves one entry: the trusted heading, the summary, the agent body and the trusted sources', () => {
+    const log = single({agentLogEntries: agentEntry(2)})
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nDetail 2.')}`)
+  })
+
+  it('says no page changed for a log-only handoff, with the agent body kept', () => {
+    const log = single({pages: [], agentLogEntries: agentEntry(2)})
+
+    expect(log).toBe(`${existingLog}${entryText(`${noPageSummary}\n\nDetail 2.`)}`)
+  })
+
+  it('uses the no-change sentence for a direct call with no page and an empty deleted list', () => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      pages: [],
+      handoffDeletedPaths: [],
+      agentLogEntries: agentEntry(2),
+      singleLogEntry: true,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${existingLog}${entryText(`${noPageSummary}\n\nDetail 2.`)}`)
+  })
+
+  it('keeps the caller summary for a handoff that only deletes a page', () => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      pages: [],
+      handoffDeletedPaths: ['knowledge/wiki/topics/gone.md'],
+      agentLogEntries: agentEntry(2),
+      singleLogEntry: true,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nDetail 2.')}`)
+    expect(result.deletedPaths).toStrictEqual(['knowledge/wiki/topics/gone.md'])
+  })
+
+  it('joins two agent entries into one body, in order, with neither agent heading', () => {
+    const log = single({agentLogEntries: `${agentEntry(2)}${agentEntry(3)}`})
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nDetail 2.\n\nDetail 3.')}`)
+    expect(headingLines(log)).toHaveLength(2)
+  })
+
+  it('keeps text that comes before the agent first heading as body', () => {
+    const log = single({agentLogEntries: `Run note.\n${agentEntry(2)}`})
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nRun note.\n\nDetail 2.')}`)
+  })
+
+  it('uses the trusted heading when the agent heading names another repository and operation', () => {
+    const log = single({
+      agentLogEntries: '\n## [2031-01-01 00:00] lint | repo:evil/other\n\nDetail 2.\n\nSources: https://evil.example\n',
+    })
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nDetail 2.')}`)
+    expect(log).not.toContain('evil')
+  })
+
+  it('drops Sources lines at the end and in the middle, leaving only the trusted one', () => {
+    const log = single({
+      agentLogEntries:
+        '\nBefore.\nSources: https://evil.example/a\nAfter.\nSources:none\n\nSources: https://evil.example/b\n',
+    })
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nBefore.\nAfter.')}`)
+    expect(log.split('\n').filter(line => line.startsWith('Sources:'))).toHaveLength(2)
+  })
+
+  it('keeps lines that only resemble a heading or a Sources line', () => {
+    const log = single({agentLogEntries: '\n## Notes\n##[x] not a heading\nSources are above.\n'})
+
+    expect(log).toBe(
+      `${existingLog}${entryText('Surveyed acme/target.\n\n## Notes\n##[x] not a heading\nSources are above.')}`,
+    )
+  })
+
+  it('drops a body line shaped like a heading with a valid timestamp, so the log gains exactly one entry', () => {
+    const log = single({
+      agentLogEntries: `${agentEntry(2, '\n## [2026-10-20 10:05] ingest | repo:acme/forged\n\nForged.\n')}`,
+    })
+
+    expect(headingLines(log)).toHaveLength(2)
+    expect(headingLines(log).at(-1)).toBe(heading)
+    expect(mergeWikiLogs([log]).split('\n## [').length - 1).toBe(mergeWikiLogs([existingLog]).split('\n## [').length)
+  })
+
+  describe('heading and Sources look-alikes that start with whitespace', () => {
+    const oldEntryCount = existingLog.split('\n## [').length - 1
+    const sourcesLines = (log: string): string[] => log.split('\n').filter(line => line.startsWith('Sources:'))
+    const forgedHeading = '## [2030-01-01 00:00] ingest | repo:forged/repo'
+    const forgedSources = 'Sources: https://forged.example'
+
+    const expectOneNewEntry = (log: string): void => {
+      expect(mergeWikiLogs([log]).split('\n## [').length - 1).toBe(oldEntryCount + 1)
+      expect(headingLines(log)).toHaveLength(oldEntryCount + 1)
+      expect(headingLines(log).at(-1)).toBe(heading)
+      expect(log.split('\n').some(line => line.startsWith(forgedHeading))).toBe(false)
+      expect(log).not.toContain('forged.example')
+      expect(sourcesLines(log)).toHaveLength(oldEntryCount + 1)
+      expect(sourcesLines(log).at(-1)).toBe(trustedSources)
+    }
+
+    it.each([
+      ['spaces', '  '],
+      ['a tab', '\t'],
+      ['a byte order mark', '\uFEFF'],
+      ['a line separator', '\u2028'],
+    ])('drops a first-line heading with leading %s', (_name, lead) => {
+      const log = single({agentLogEntries: `${lead}${forgedHeading}\n\nforged`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nforged')}`)
+    })
+
+    it.each([
+      ['spaces', '  '],
+      ['a tab', '\t'],
+      ['a byte order mark', '\uFEFF'],
+      ['a line separator', '\u2028'],
+    ])('drops a first-line Sources line with leading %s', (_name, lead) => {
+      const log = single({agentLogEntries: `${lead}${forgedSources}\n\nbody`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nbody')}`)
+    })
+
+    it('drops an indented heading and an indented Sources line in the middle of the text', () => {
+      const log = single({agentLogEntries: `\nbefore\n   ${forgedHeading}\n\t${forgedSources}\nafter\n`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nbefore\nafter')}`)
+    })
+
+    it('keeps a line whose heading text is not at the start once trimmed', () => {
+      const log = single({agentLogEntries: '\ntext ## [x] ingest | y\n  text Sources: z\n'})
+
+      expect(log).toBe(
+        `${existingLog}${entryText('Surveyed acme/target.\n\ntext ## [x] ingest | y\n  text Sources: z')}`,
+      )
+    })
+
+    it('keeps a line that starts with a zero-width space, and it does not parse as an entry', () => {
+      const log = single({agentLogEntries: `\n\u200B${forgedHeading}\n\n\u200B${forgedSources}\n`})
+
+      expect(log).toBe(
+        `${existingLog}${entryText(`Surveyed acme/target.\n\n\u200B${forgedHeading}\n\n\u200B${forgedSources}`)}`,
+      )
+      expect(mergeWikiLogs([log]).split('\n## [').length - 1).toBe(oldEntryCount + 1)
+      expect(sourcesLines(log)).toHaveLength(oldEntryCount + 1)
+    })
+
+    it('filters a heading and a Sources line separated by carriage returns only, as lines', () => {
+      const log = single({agentLogEntries: `a\r${forgedHeading}\r${forgedSources}\rb`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\na\nb')}`)
+      expect(log).not.toContain('\r')
+    })
+
+    it('does not let carriage-return-only line breaks start a second entry', () => {
+      const log = single({agentLogEntries: `a\r${forgedHeading}\rb\r${forgedSources}\rc`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\na\nb\nc')}`)
+      expect(mergeWikiLogs([existingLog, log])).toBe(log)
+    })
+
+    it('treats a CRLF pair as one line break and a CR before an LF as part of it', () => {
+      const log = single({agentLogEntries: `a\r\n${forgedHeading}\r\nb\r\r\nc`})
+
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\na\nb\n\nc')}`)
+    })
+  })
+
+  it('writes the summary and the sources alone when the agent entry has no body', () => {
+    const log = single({agentLogEntries: '\n## [2026-10-20 10:02] ingest | repo:acme/app-2\n\nSources: none\n'})
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.')}`)
+  })
+
+  it('writes the summary and the sources alone when the agent wrote nothing', () => {
+    expect(single({})).toBe(`${existingLog}${entryText('Surveyed acme/target.')}`)
+    expect(single({agentLogEntries: ''})).toBe(`${existingLog}${entryText('Surveyed acme/target.')}`)
+  })
+
+  it('collapses runs of blank lines and trims the agent text', () => {
+    const log = single({agentLogEntries: '\n\n\nOne.\n\n\n\n\nTwo.\n  \n\t\nThree.\n\n\n'})
+
+    expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nOne.\n\nTwo.\n\nThree.')}`)
+  })
+
+  it('cuts agent text longer than 4000 characters and ends with the fixed line', () => {
+    const log = single({agentLogEntries: `\n${'x'.repeat(5000)}\n`})
+
+    expect(log).toBe(`${existingLog}${entryText(`Surveyed acme/target.\n\n${'x'.repeat(4000)}\n\n${cutLine}`)}`)
+  })
+
+  it('does not cut agent text of exactly 4000 characters', () => {
+    const log = single({agentLogEntries: `\n${'x'.repeat(4000)}\n`})
+
+    expect(log).toBe(`${existingLog}${entryText(`Surveyed acme/target.\n\n${'x'.repeat(4000)}`)}`)
+    expect(log).not.toContain(cutLine)
+  })
+
+  it('does not leave half a surrogate pair at the cut', () => {
+    const log = single({agentLogEntries: `\n${'x'.repeat(3999)}😀${'y'.repeat(100)}\n`})
+
+    expect(Buffer.from(log, 'utf8').toString('utf8')).toBe(log)
+    expect(log).toContain(`${'x'.repeat(3999)}\n\n${cutLine}`)
+  })
+
+  it('counts the 4000 characters after dropped lines are removed', () => {
+    const log = single({agentLogEntries: `${agentEntry(2)}\n${'x'.repeat(3970)}\n${agentEntry(3)}`})
+
+    expect(log).not.toContain(cutLine)
+  })
+
+  it('round-trips through the log merge as one new entry', () => {
+    const log = single({agentLogEntries: `${agentEntry(2)}${agentEntry(3)}`})
+
+    const merged = mergeWikiLogs([existingLog, log])
+
+    expect(merged).toBe(log)
+    expect(merged.split('\n## [').length - 1).toBe(existingLog.split('\n## [').length)
+    expect(mergeWikiLogs([log, existingLog])).toBe(log)
+  })
+
+  it('starts from the log header when no log exists yet', () => {
+    const result = buildWikiIngestChanges({
+      ...params,
+      existingFiles: {'knowledge/index.md': '# Wiki Index\n'},
+      pages: [page],
+      agentLogEntries: agentEntry(2),
+      singleLogEntry: true,
+    })
+
+    expect(result.files['knowledge/log.md']).toBe(
+      `${LOG_HEADER_TEXT}${entryText('Surveyed acme/target.\n\nDetail 2.')}`,
+    )
+  })
+
+  describe('default mode is byte for byte what it was', () => {
+    const cases: [string, string | undefined][] = [
+      ['no agent entries', undefined],
+      ['empty agent entries', ''],
+      ['one agent entry', logEntryText(2)],
+      ['two agent entries', `${logEntryText(2)}${logEntryText(3)}`],
+      [
+        'a forged heading and sources in the agent text',
+        `${logEntryText(2)}\n## [2031-01-01 00:00] lint | repo:evil/other\n\nX.\n\nSources: https://evil.example\n`,
+      ],
+    ]
+
+    it.each(cases)('keeps the agent text and the summary entry for %s', (_name, agentLogEntries) => {
+      const base = {
+        operation: 'survey' as const,
+        target: 'repo:acme/target',
+        summary: 'Surveyed acme/target.',
+        timestamp: new Date('2026-10-21T09:00:00Z'),
+        sources: [],
+        pages: [page],
+        existingFiles: {...createEmptyWikiFiles(), 'knowledge/log.md': existingLog},
+        agentLogEntries,
+      }
+
+      const omitted = buildWikiIngestChanges(base).files['knowledge/log.md']
+      const off = buildWikiIngestChanges({...base, singleLogEntry: false}).files['knowledge/log.md']
+      const expected = `${existingLog}${agentLogEntries === undefined ? '' : agentLogEntries}${SUMMARY_ENTRY_TEXT}`
+
+      expect(omitted).toBe(expected)
+      expect(off).toBe(expected)
+    })
+  })
+})
+
 describe('runWikiIngestCli (agent log entries from a handoff)', () => {
   const originalCwd = process.cwd()
   const envKeys = [
@@ -2778,12 +3087,14 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     'WIKI_TIMESTAMP',
     'WIKI_OWNER',
     'WIKI_REPO',
+    'WIKI_LOG_MODE',
   ]
   const originalEnv = new Map(envKeys.map(key => [key, process.env[key]]))
   const page = createWikiPage({path: 'knowledge/wiki/topics/notes.md', type: 'topic', title: 'Notes'})
   const agentSha = 'a'.repeat(40)
   const syncedLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
   let dir: string
+  let stdout: string[]
   let stderr: string[]
 
   /** A trusted-job workspace: `log.md` as synced from `data`, the applied page, and the downloaded handoff. */
@@ -2860,8 +3171,12 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     (commit.mock.calls[0]?.[0].files as Record<string, string>)['knowledge/log.md'] ?? ''
 
   beforeEach(() => {
+    stdout = []
     stderr = []
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stdout.push(String(chunk))
+      return true
+    })
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stderr.push(String(chunk))
       return true
@@ -3228,6 +3543,283 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     const commit = await run(octokitReading(syncedLog), [])
 
     expect(commit).not.toHaveBeenCalled()
+  })
+
+  describe('page input (a handoff supplies the pages, git status does not)', () => {
+    const other = createWikiPage({path: 'knowledge/wiki/topics/other.md', type: 'topic', title: 'Other'})
+    const noncanonical = {
+      path: other.path,
+      content: other.content.replace('type: topic', 'type: topic\ndatabase_id: 99'),
+    }
+
+    const committedFiles = (commit: Awaited<ReturnType<typeof run>>): Record<string, string> =>
+      commit.mock.calls[0]?.[0].files as Record<string, string>
+
+    const reportedPageCount = (): number => {
+      const line = stdout.findLast(entry => entry.includes('pagesChanged'))
+      return (JSON.parse(line ?? '{}') as {pagesChanged: number}).pagesChanged
+    }
+
+    it('writes the page the handoff carries and not the page only git status lists', async () => {
+      setUp({})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      const files = committedFiles(commit)
+      expect(Object.keys(files)).toContain(page.path)
+      expect(Object.keys(files)).not.toContain(other.path)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('writes neither page for a log-only handoff while git status lists both', async () => {
+      setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(Object.keys(committedFiles(commit)).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+      expect(reportedPageCount()).toBe(0)
+    })
+
+    it('leaves a non-canonical page the handoff does not carry as it is on data', async () => {
+      setUp({})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(committedFiles(commit)[other.path]).toBeUndefined()
+    })
+
+    it('succeeds when a page the handoff does not carry has invalid frontmatter', async () => {
+      setUp({})
+      writeFileSync(join(dir, other.path), other.content.replace('updated: 2026-04-16', 'updated: October 1'))
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(commit).toHaveBeenCalledTimes(1)
+      expect(Object.keys(committedFiles(commit))).not.toContain(other.path)
+    })
+
+    it('still refuses a page with no frontmatter that the handoff does not carry, since the index covers every page', async () => {
+      setUp({})
+      writeFileSync(join(dir, other.path), 'no frontmatter here\n')
+
+      const {commit, outcome} = failingRun(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(await outcome).toMatchObject({code: 'INVALID_FRONTMATTER'})
+      expect(commit).not.toHaveBeenCalled()
+    })
+
+    it('still fails on a handed-off page with invalid frontmatter', async () => {
+      setUp({})
+      writeFileSync(join(dir, page.path), 'no frontmatter here\n')
+
+      const {commit, outcome} = failingRun(octokitReading(syncedLog), [page.path])
+
+      expect(await outcome).toMatchObject({code: 'INVALID_FRONTMATTER'})
+      expect(commit).not.toHaveBeenCalled()
+    })
+
+    it('writes a handed-off page that git status does not list', async () => {
+      setUp({})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(Object.keys(committedFiles(commit))).toContain(page.path)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('commits a deletion and ignores the pages only git status lists', async () => {
+      setUp({manifestChanged: [], manifestDeleted: ['knowledge/wiki/topics/gone.md']})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [other.path])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/gone.md'])
+      expect(Object.keys(committedFiles(commit))).not.toContain(other.path)
+    })
+
+    it('commits the deletion and the addition of a rename', async () => {
+      setUp({manifestDeleted: ['knowledge/wiki/topics/old-name.md']})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/old-name.md'])
+      expect(Object.keys(committedFiles(commit))).toContain(page.path)
+    })
+
+    it('commits the deletion of a page the manifest lists as both changed and deleted, with no copy on disk', async () => {
+      setUp({manifestChanged: [page.path, other.path], manifestDeleted: [other.path]})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([other.path])
+      expect(Object.keys(committedFiles(commit))).toContain(page.path)
+      expect(Object.keys(committedFiles(commit))).not.toContain(other.path)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('commits only the deletion when the only changed page is also deleted', async () => {
+      setUp({manifestChanged: [other.path], manifestDeleted: [other.path]})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual([other.path])
+      expect(Object.keys(committedFiles(commit)).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+      expect(reportedPageCount()).toBe(0)
+    })
+
+    it('writes a page once when the manifest lists its path twice', async () => {
+      setUp({manifestChanged: [page.path, page.path]})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(Object.keys(committedFiles(commit)).filter(path => path === page.path)).toHaveLength(1)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('rebuilds the index from every page in the working tree', async () => {
+      setUp({})
+      writeFileSync(join(dir, other.path), other.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path])
+
+      expect(committedFiles(commit)['knowledge/index.md']).toContain('[[other]]')
+      expect(committedFiles(commit)['knowledge/index.md']).toContain('[[notes]]')
+    })
+
+    it('does not consult git status when a handoff is present', async () => {
+      setUp({})
+      const status = vi.fn(async () => [other.path])
+      const commit = vi.fn(async (_params: Record<string, unknown>) => ({committed: true, commitSha: 'c', attempts: 1}))
+
+      await runWikiIngestCli({
+        readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+        getChangedWikiPaths: status,
+        commitWikiChanges: commit as never,
+        octokit: octokitReading(syncedLog),
+      })
+
+      expect(status).not.toHaveBeenCalled()
+    })
+
+    it('ignores a handed-off path outside the four page directories, as git status does', async () => {
+      setUp({manifestChanged: [page.path, 'knowledge/wiki/stray.md']})
+      writeFileSync(join(dir, 'knowledge/wiki/stray.md'), 'not a page\n')
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(Object.keys(committedFiles(commit))).not.toContain('knowledge/wiki/stray.md')
+    })
+
+    it('writes every status-listed page when there is no handoff, as before', async () => {
+      setUp({})
+      delete process.env.WIKI_HANDOFF_DIR
+      delete process.env.WIKI_HANDOFF_BASE_SHA
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(Object.keys(committedFiles(commit))).toStrictEqual(
+        expect.arrayContaining([page.path, other.path, 'knowledge/index.md', 'knowledge/log.md']),
+      )
+      expect(committedFiles(commit)[other.path]).not.toContain('database_id')
+      expect(reportedPageCount()).toBe(2)
+    })
+  })
+  describe('single log entry (WIKI_LOG_MODE=single)', () => {
+    const trusted = '\n## [2026-10-21 09:00] ingest | repo:acme/target\n\n'
+    const noPageSummary = 'Verified the target; no wiki page changed.'
+
+    beforeEach(() => {
+      process.env.WIKI_LOG_MODE = 'single'
+    })
+
+    afterEach(() => {
+      delete process.env.WIKI_LOG_MODE
+    })
+
+    it('leaves one entry for a hand-off with a page and the agent entry', async () => {
+      setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+
+      const commit = await run(octokitReading(syncedLog))
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${trusted}Surveyed acme/target.\n\nDetail 2.\n\nSources: none\n`)
+    })
+
+    it('says no page changed for a log-only hand-off, while git status lists pages the hand-off does not carry', async () => {
+      setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+
+      const commit = await run(octokitReading(syncedLog), [page.path])
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${trusted}${noPageSummary}\n\nDetail 2.\n\nSources: none\n`)
+      expect(Object.keys(commit.mock.calls[0]?.[0].files as Record<string, string>).sort()).toStrictEqual([
+        'knowledge/index.md',
+        'knowledge/log.md',
+      ])
+    })
+
+    it('drops a log the agent did not append to, with the warning, and writes the summary-only entry', async () => {
+      setUp({handoffLog: `${syncedLog.replace('Detail 1.', 'Detail 1, rewritten.')}${logEntryText(2)}`})
+
+      const commit = await run(octokitReading(syncedLog))
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${trusted}Surveyed acme/target.\n\nSources: none\n`)
+      expect(stderr.join('')).toContain('"code":"agent-log-entries-dropped"')
+    })
+
+    it('commits nothing for a log-only hand-off whose log was not appended to', async () => {
+      setUp({
+        handoffLog: `${syncedLog.replace('Detail 1.', 'Detail 1, rewritten.')}${logEntryText(2)}`,
+        manifestChanged: ['knowledge/log.md'],
+      })
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit).not.toHaveBeenCalled()
+    })
+
+    it('uses the caller summary for a hand-off that only deletes a page', async () => {
+      setUp({manifestChanged: [], manifestDeleted: ['knowledge/wiki/topics/gone.md']})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${trusted}Surveyed acme/target.\n\nSources: none\n`)
+    })
+
+    it('keeps two entries for any other value of the variable', async () => {
+      setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+      process.env.WIKI_LOG_MODE = 'double'
+
+      const commit = await run(octokitReading(syncedLog))
+
+      expect(committedLog(commit)).toBe(`${syncedLog}${logEntryText(2)}${SUMMARY_ENTRY_TEXT}`)
+    })
+
+    it('applies on the payload path too', async () => {
+      setUp({handoffLog: `${syncedLog}${logEntryText(2)}`})
+      const payloadPath = join(dir, 'payload.json')
+      writeFileSync(
+        payloadPath,
+        JSON.stringify({
+          operation: 'survey',
+          target: 'repo:acme/target',
+          summary: 'Surveyed acme/target.',
+          timestamp: '2026-10-21T09:00:00Z',
+          sources: [],
+          pages: [{path: page.path, content: page.content}],
+        }),
+      )
+      process.env.WIKI_INGEST_INPUT = payloadPath
+      try {
+        const commit = await run(octokitReading(syncedLog))
+
+        expect(committedLog(commit)).toBe(`${syncedLog}${trusted}Surveyed acme/target.\n\nDetail 2.\n\nSources: none\n`)
+      } finally {
+        delete process.env.WIKI_INGEST_INPUT
+      }
+    })
   })
 })
 
