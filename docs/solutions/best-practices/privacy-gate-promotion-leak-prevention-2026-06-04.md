@@ -142,12 +142,16 @@ any non-success resolution (including `access-lost`) and any missing `node_id` b
 for (const nodeId of privateNodeIds) {
   const result = await resolver(nodeId)
   if ('nameWithOwner' in result) {
-    resolvedNames.push(result.nameWithOwner)
+    // Only the exact string PUBLIC skips a row; any other visibility keeps its tokens.
+    if (result.visibility === 'PUBLIC') publicSkipped += 1
+    else resolvedNames.push(result.nameWithOwner)
   } else {
     // access-lost is indistinguishable from "no access" — block, never skip.
     failedNodeIds.push(nodeId)
   }
 }
+// A row whose node GitHub reports as public (for example an archived public repository, which
+// reconcile stores as private) contributes no private name; a skip never hides a failure.
 // A private:true entry with no usable node_id is seeded as a <missing-node-id> sentinel.
 if (failedNodeIds.length > 0) {
   return {ok: false, resolutionFailed: true, failedNodeIds}

@@ -21,15 +21,18 @@ export type {GuardResult} from '@fro.bot/wiki-write-core/private-leak'
 /**
  * Result of a promotion scan.
  *
- * - `{ok: true}` — scan passed (no private tokens found in diff).
- * - `{ok: false, matchedFiles}` — private token found; matchedFiles lists affected file paths only
- *   (any path segment containing a private token is redacted to `[REDACTED]`).
+ * - `{ok: true, publicSkipped}` — scan passed (no private tokens found in diff).
+ * - `{ok: false, matchedFiles, publicSkipped}` — private token found; matchedFiles lists affected
+ *   file paths only (any path segment containing a private token is redacted to `[REDACTED]`).
+ *
+ * `publicSkipped` counts the `private: true` rows whose node GitHub reports as `PUBLIC`: they
+ * contributed no token. An integer only, never a name.
  * - `{ok: false, resolutionFailed: true, failedNodeIds}` — one or more node_ids could not be
  *   resolved (including access-lost); promotion is blocked fail-closed.
  */
 export type PromotionScanResult =
-  | {readonly ok: true}
-  | {readonly ok: false; readonly matchedFiles: readonly string[]}
+  | {readonly ok: true; readonly publicSkipped: number}
+  | {readonly ok: false; readonly matchedFiles: readonly string[]; readonly publicSkipped: number}
   | {readonly ok: false; readonly resolutionFailed: true; readonly failedNodeIds: readonly string[]}
 
 export interface PromotionScanInputs {
@@ -782,7 +785,13 @@ function redactPathTokens(filePath: string, privateTokens: readonly string[]): s
  *   Cannot guarantee a complete scan; block promotion.
  * - `private:true` entry with missing/empty node_id → BLOCK: included as the sentinel
  *   string `"<missing-node-id>"` in failedNodeIds (never any owner/name).
- * - success → include `owner/name` + `owner--slug` in the token set
+ * - success, node reported exactly `PUBLIC` → NO token, counted in `publicSkipped`. Reconcile stores
+ *   `private: true` for every repository it cannot vouch for, an archived public repository
+ *   included; GitHub's live answer decides, and a published page about a public repository
+ *   must not fail the promotion. A public skip never hides a failure: the failure checks above
+ *   run over every row first.
+ * - success, any other visibility (`PRIVATE`, `INTERNAL`, missing, `null`, wrong type, unexpected
+ *   value) → include `owner/name` + `owner--slug` in the token set
  *
  * Zero private entries → `{ok:true}` immediately (nothing to scan).
  *
@@ -827,6 +836,7 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   // `privateTokens` regardless of whether it's seeded here.
   const resolvedNames: string[] = []
   const failedNodeIds: string[] = []
+  let publicSkipped = 0
 
   // Seed with missing-node-id sentinels (Fix B). No induction variable: an off-by-one or
   // wrong-direction mutant on a hand-rolled counting loop here is a deterministic hang (not a
@@ -840,7 +850,12 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   for (const nodeId of privateNodeIds) {
     const result = await resolver(nodeId)
     if ('nameWithOwner' in result) {
-      resolvedNames.push(result.nameWithOwner)
+      // Fail-closed: only the exact string PUBLIC skips a row (see the matrix above).
+      if (result.visibility === 'PUBLIC') {
+        publicSkipped += 1
+      } else {
+        resolvedNames.push(result.nameWithOwner)
+      }
     } else {
       // Fix A: access-lost → BLOCK (same as any other failure).
       // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
@@ -879,10 +894,10 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   // scanResult` conjunct needed (and no LogicalOperator mutant exists on this line to directive).
   if (!scanResult.ok) {
     const redactedFiles = scanResult.matchedFiles.map(f => redactPathTokens(f, privateTokens))
-    return {ok: false, matchedFiles: redactedFiles}
+    return {ok: false, matchedFiles: redactedFiles, publicSkipped}
   }
 
-  return scanResult
+  return {ok: true, publicSkipped}
 }
 
 // ---------------------------------------------------------------------------
@@ -906,6 +921,18 @@ async function defaultReposYamlReader(path: string): Promise<string> {
 
 function defaultResolverFactory(pat: string): NodeIdResolver {
   return makeGhNodeIdResolver(pat)
+}
+
+/**
+ * The fixed-format count of rows skipped because GitHub reports them public: an integer, never a
+ * name or a node ID. Silent when nothing was skipped.
+ */
+function writePublicSkipLine(publicSkipped: number): void {
+  if (publicSkipped > 0) {
+    process.stdout.write(
+      `check-private-leak [promotion]: ${publicSkipped} private row(s) resolve to public repositories and are not scanned\n`,
+    )
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1012,7 +1039,10 @@ export async function runPromotionCli(
   const result = await runPromotionScan({reposYaml, resolver: loggingResolver, diff})
 
   if (result.ok) {
-    process.stdout.write(`check-private-leak [promotion]: ok (scanned ${privateNodeIdCount} private node_id(s))\n`)
+    writePublicSkipLine(result.publicSkipped)
+    process.stdout.write(
+      `check-private-leak [promotion]: ok (scanned ${privateNodeIdCount - result.publicSkipped} private node_id(s))\n`,
+    )
     return 0
   }
 
@@ -1036,6 +1066,7 @@ export async function runPromotionCli(
 
   // Diff match: print redacted file paths only, never the matched name.
   // Fix D: paths are already redacted by runPromotionScan before being returned here.
+  writePublicSkipLine(result.publicSkipped)
   process.stderr.write(
     'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
   )
