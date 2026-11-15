@@ -76,7 +76,7 @@ Two rules produce this. The survey's instructions say to update pages additively
 
 ## Scope Boundaries
 
-- Skipping a survey when the repository has not changed. It is parked with its open decisions in a design issue.
+- Skipping a survey when the repository has not changed. It is parked with its open decisions in [#4242](https://github.com/fro-bot/.github/issues/4242).
 - Shrinking pages that have already grown, including their repeated source entries. One topic page is about 433 KB.
 - Giving the agent a diff or a commit list to read, and changing what a survey may read.
 - Changing how often repositories are surveyed.
