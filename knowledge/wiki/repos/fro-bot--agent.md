@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-14
+updated: 2026-11-15
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: eaf1e3e284d58add1695b2e131e6104030689dc1
+    accessed: 2026-11-15
   - url: https://github.com/fro-bot/agent
     sha: 00c4608d56d5739e5d90fe0955b73d34dcbc3b32
     accessed: 2026-11-14
@@ -171,6 +174,42 @@ The workspace-agent README's `/clone` example still omits the bearer now
 required by `deploy/README.md` for the :9100 control API; following that example
 against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
+
+## `isolate-agent` gets a read-only filesystem view and the runner's toolchains (2026-11-15 oversight note)
+
+Observed from the daily oversight pass, not a full survey. Three changes after
+`v0.141.0` reshape what an isolated agent can reach. These are PR and release-note
+facts, not an observed run with the flag on.
+
+- **Read-only view (#2209, in `v0.143.0`, tag commit `1c4555b4`).** Before, the
+  agent ran as its own user but shared the runner's filesystem, and hosted-runner
+  paths such as `/usr/local/bin`, `/opt/hostedtoolcache` and `/usr/share` are
+  world-writable, so the agent could plant a program for a later step to run as
+  the runner. The server now starts in a private mount namespace: `/` is bound
+  read-only, only the places the agent needs (the checkout, the response
+  directory and its own directories) are bound back writable, `/tmp`, `/var/tmp`
+  and `/dev/shm` get private `tmpfs`, and startup refuses unless every other
+  mount is read-only.
+- **Runner `PATH` (#2213, in `v0.143.0`).** The agent's `PATH` was only
+  `/usr/local/bin:/usr/bin:/bin`, so tools that setup actions installed were
+  not found. It now inherits the runner's `PATH` as the Action saw it at the
+  start of the run: existing absolute directories, deduplicated in order, plus
+  the three system directories. Entries under the runner home still resolved
+  nothing at that release.
+- **`bun` and `pnpm` (#2217, in `v0.144.0`, tag commit `eaf1e3e2`).** The Action
+  grants read and execute access (never write) to the `~/.bun` and
+  `~/setup-pnpm` install roots, only when a root is a plain runner-owned
+  directory with no symlink on the path, holds a `PATH` directory, and does not
+  overlap the runner home, `RUNNER_TEMP`, the actions directory, the checkout
+  or any writable directory. The runner home itself gets traverse access only,
+  and the grants are removed at take-back. Everything inside a granted root is
+  readable by the agent.
+
+Consumer note: `fro-bot/.github` pinned `v0.144.1` (`95b0fbf4`) on 2026-11-15,
+so the upstream toolchain gaps it recorded as blocking a trial are closed in the
+pinned release. Its own blockers, two checkouts in `fro-bot.yaml` that keep
+credentials and a call log under `RUNNER_TEMP`, are local to that repository
+and unchanged.
 
 ## `isolate-agent` keeps the provider key out of the sandbox (2026-11-14 oversight note)
 

@@ -10667,3 +10667,23 @@ HEAD commit, and the tree listing. Corrections context was empty.
 Run: https://github.com/fro-bot/.github/actions/runs/43681628468
 
 Sources: https://github.com/fro-bot/fro-bot.github.io
+
+## [2026-11-15 06:10] manual-edit | repo:fro-bot/agent
+
+Daily oversight pass (Observe). Added a dated section to
+`wiki/repos/fro-bot--agent.md` on the `isolate-agent` changes since `v0.141.0`:
+the read-only mount view (#2209) and the runner `PATH` (#2213), both in
+`v0.143.0`, and read-only `bun`/`pnpm` install-root grants (#2217) in
+`v0.144.0`. It also notes that fro-bot/.github now pins `v0.144.1`. Earlier
+isolate-agent notes are kept unchanged. Facts come from merged PR bodies,
+release notes and tag commits, not from a run with the flag on. Remediation
+handoff learnings: none reported.
+
+Sources: https://github.com/fro-bot/agent/pull/2209, https://github.com/fro-bot/agent/pull/2213, https://github.com/fro-bot/agent/pull/2217, https://github.com/fro-bot/agent/releases/tag/v0.144.0
+Run: https://github.com/fro-bot/.github/actions/runs/43682281142
+
+## [2026-11-15 06:03] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9be739e376a0cde145b1b6d6b195e97a00b99d13
