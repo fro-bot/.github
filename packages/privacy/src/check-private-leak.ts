@@ -91,7 +91,7 @@ export interface PrApiResolver {
 }
 
 /**
- * Injectable data-branch existence checker for fetchPrivateNodeIds.
+ * Injectable data-branch existence checker for fetchPrivateRows.
  *
  * Returns `true` if the `data` branch ref exists in the remote, `false` if it
  * is absent (HTTP 404 from the branches API), or throws for any other error
@@ -100,7 +100,7 @@ export interface PrApiResolver {
 export type DataBranchChecker = (fullName: string) => boolean
 
 /**
- * Injectable main-branch repos.yaml reader for fetchPrivateNodeIds fallback.
+ * Injectable main-branch repos.yaml reader for fetchPrivateRows fallback.
  *
  * Reads `metadata/repos.yaml` from the local working tree (the workflow checks
  * out `ref: main`, so the file is present at `metadata/repos.yaml` in CWD).
@@ -523,19 +523,17 @@ function hasNonEmptyNodeId<T extends Pick<RepoEntry, 'node_id'>>(r: T): r is T &
 }
 
 /**
- * Parse a repos.yaml YAML string and extract private node_ids.
+ * Parse a repos.yaml YAML string and extract its `private: true` rows. A row without a node_id is
+ * kept: `resolvePrivateRows` counts it as a failure, in PR mode as in promotion mode.
  */
-function extractPrivateNodeIds(yamlText: string): string[] {
+function extractPrivateRows(yamlText: string): RepoEntry[] {
   const parsed: unknown = parseYaml(yamlText)
   assertReposFile(parsed)
-  return parsed.repos
-    .filter(r => r.private === true)
-    .filter(hasNonEmptyNodeId)
-    .map(r => r.node_id)
+  return parsed.repos.filter(r => r.private === true)
 }
 
 /**
- * Fetch metadata/repos.yaml from the `data` branch and return node_ids for private entries.
+ * Fetch metadata/repos.yaml from the `data` branch and return its private entries.
  *
  * Algorithm (PR mode):
  * 1. Try fetching `metadata/repos.yaml` content from `data` via the GitHub API.
@@ -551,11 +549,11 @@ function extractPrivateNodeIds(yamlText: string): string[] {
  *
  * Injectable seams (dataBranchChecker, mainReposYamlReader) allow tests to drive each branch.
  */
-function fetchPrivateNodeIds(
+function fetchPrivateRows(
   fullName: string,
   dataBranchChecker: DataBranchChecker = defaultDataBranchChecker,
   mainReposYamlReader: MainReposYamlReader = defaultMainReposYamlReader,
-): string[] {
+): RepoEntry[] {
   // Step 1: attempt to fetch content from the data branch.
   let encoded: string
   try {
@@ -589,7 +587,7 @@ function fetchPrivateNodeIds(
       // The workflow checks out ref: main, so metadata/repos.yaml is present in CWD.
       process.stderr.write('check-private-leak: data branch absent — falling back to main metadata/repos.yaml\n')
       const mainYaml = mainReposYamlReader('metadata/repos.yaml')
-      return extractPrivateNodeIds(mainYaml)
+      return extractPrivateRows(mainYaml)
     }
 
     // Step 3c: data branch EXISTS but content is 404 (create/race) → retry once.
@@ -615,14 +613,14 @@ function fetchPrivateNodeIds(
     // `Buffer.from('SGVsbG8=', 'base64')`. Stripping cannot change the decoded result for any
     // input (same equivalence class as the deleted `.trim()` calls above).
     const retryYaml = Buffer.from(retryEncoded, 'base64').toString('utf8')
-    return extractPrivateNodeIds(retryYaml)
+    return extractPrivateRows(retryYaml)
   }
 
-  // Step 2: SUCCESS — parse and return private node_ids.
+  // Step 2: SUCCESS — parse and return private rows.
   // GitHub API returns base64 with potential embedded newlines; no `.replaceAll('\n', '')` needed
   // (see the equivalence note above the retry-path decode).
   const yamlText = Buffer.from(encoded, 'base64').toString('utf8')
-  return extractPrivateNodeIds(yamlText)
+  return extractPrivateRows(yamlText)
 }
 
 /**
@@ -775,12 +773,28 @@ function redactPathTokens(filePath: string, privateTokens: readonly string[]): s
  * - `publicSkipped`: how many nodes GitHub reported as exactly `PUBLIC`: they contribute none.
  * - `failures`: every node that did not resolve, with its class. Callers decide what a failure
  *   costs (both block); a public skip never removes or hides one.
+ * - `missingNodeIdCount`: how many rows have no node_id to resolve. We cannot scan what we cannot
+ *   identify, so each is a failure too (`unresolvedNodeIds`); a count, never a name.
  */
 interface PrivateRowResolution {
   readonly privateTokens: readonly string[]
   readonly scanned: number
   readonly publicSkipped: number
   readonly failures: readonly {readonly nodeId: string; readonly error: 'access-lost' | 'error'}[]
+  readonly missingNodeIdCount: number
+}
+
+/**
+ * Every identifier that blocks a scan, in the order both modes report them: one fixed sentinel per
+ * row without a node_id (never any owner/name), then each node that did not resolve. One place
+ * derives it so the PR scan and the promotion scan cannot disagree.
+ */
+function unresolvedNodeIds(resolution: PrivateRowResolution): string[] {
+  return [
+    // No induction variable: `Array.from({length})` leaves no loop guard to mutate into a hang.
+    ...Array.from({length: resolution.missingNodeIdCount}, () => '<missing-node-id>'),
+    ...resolution.failures.map(failure => failure.nodeId),
+  ]
 }
 
 /**
@@ -791,7 +805,14 @@ interface PrivateRowResolution {
  * live `visibility` decides: only the exact string `PUBLIC` skips a row. `PRIVATE`, `INTERNAL`, a
  * missing field, `null`, a wrong type and any unexpected value keep their tokens (fail-closed).
  */
-async function resolvePrivateRows(nodeIds: readonly string[], resolver: NodeIdResolver): Promise<PrivateRowResolution> {
+async function resolvePrivateRows(
+  privateRows: readonly Pick<RepoEntry, 'node_id'>[],
+  resolver: NodeIdResolver,
+): Promise<PrivateRowResolution> {
+  const nodeIds = privateRows.filter(hasNonEmptyNodeId).map(r => r.node_id)
+  // Computed by subtraction against the same `hasNonEmptyNodeId` filter, not a second predicate
+  // that would have to re-derive the identical partition.
+  const missingNodeIdCount = privateRows.length - nodeIds.length
   const privateTokens: string[] = []
   const failures: {nodeId: string; error: 'access-lost' | 'error'}[] = []
   let scanned = 0
@@ -813,7 +834,7 @@ async function resolvePrivateRows(nodeIds: readonly string[], resolver: NodeIdRe
     }
   }
 
-  return {privateTokens, scanned, publicSkipped, failures}
+  return {privateTokens, scanned, publicSkipped, failures, missingNodeIdCount}
 }
 
 /**
@@ -866,31 +887,11 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   // here.
 
   // Fix B: any private entry with missing/empty node_id is a blocking condition.
-  // We cannot scan what we cannot identify — fail closed.
-  const privateNodeIds = privateEntries.filter(hasNonEmptyNodeId).map(r => r.node_id)
-  // Computed by subtraction against the same `hasNonEmptyNodeId` filter, rather than a second,
-  // differently-worded predicate (`typeof r.node_id !== 'string' || r.node_id.length === 0`) that
-  // would have to independently re-derive the identical partition -- removes both the duplicate
-  // logic and the ConditionalExpression/EqualityOperator mutant surface a hand-written negation
-  // would otherwise carry (a wrong-operator or forced-branch mutant on a second predicate can
-  // silently disagree with the first one; subtraction against the same source cannot disagree with
-  // itself).
-  const missingNodeIdCount = privateEntries.length - privateNodeIds.length
-
-  // Resolve each node_id — exhaustive matrix (see resolvePrivateRows).
-  const resolution = await resolvePrivateRows(privateNodeIds, resolver)
-
-  // Seed with missing-node-id sentinels (Fix B). No induction variable: an off-by-one or
-  // wrong-direction mutant on a hand-rolled counting loop here is a deterministic hang (not a
-  // "kill"-able mutant at all), which is why this used to need two Stryker directives
-  // (UpdateOperator, EqualityOperator). `Array.from({length: missingNodeIdCount}, ...)` has no
-  // loop guard or counter to mutate into a hang; its own `ArithmeticOperator`/`ObjectLiteral`
-  // mutants on `{length: missingNodeIdCount}` are ordinary, per-test-killable mutants, caught by
-  // the existing exact-sentinel-count assertions.
-  const failedNodeIds = [
-    ...Array.from({length: missingNodeIdCount}, () => '<missing-node-id>'),
-    ...resolution.failures.map(failure => failure.nodeId),
-  ]
+  // We cannot scan what we cannot identify — fail closed. `resolvePrivateRows` counts those rows
+  // and resolves the rest — exhaustive matrix (see resolvePrivateRows); `unresolvedNodeIds` seeds
+  // one sentinel per missing row, then lists each node that did not resolve.
+  const resolution = await resolvePrivateRows(privateEntries, resolver)
+  const failedNodeIds = unresolvedNodeIds(resolution)
   const {privateTokens, publicSkipped} = resolution
 
   // Any failure (access-lost, transient, auth, missing node_id) → block (fail-closed).
@@ -1161,10 +1162,10 @@ export async function main(
     encoding: 'utf8',
   }).trim()
 
-  // Resolve private node_ids from data branch (with 404 fallback to main).
-  let privateNodeIds: string[]
+  // Resolve private rows from data branch (with 404 fallback to main).
+  let privateRows: RepoEntry[]
   try {
-    privateNodeIds = fetchPrivateNodeIds(fullName, dataBranchChecker, mainReposYamlReader)
+    privateRows = fetchPrivateRows(fullName, dataBranchChecker, mainReposYamlReader)
   } catch (error) {
     writeScanResult('error')
     process.stderr.write(
@@ -1172,7 +1173,7 @@ export async function main(
     )
     process.exit(1)
   }
-  if (privateNodeIds.length === 0) {
+  if (privateRows.length === 0) {
     writeScanResult('success')
     process.stdout.write('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
     return
@@ -1192,11 +1193,19 @@ export async function main(
   // Wire FRO_BOT_POLL_PAT ONLY to the resolver — never the diff or any other call.
   // Mirror the --promotion gitEnv isolation: the PAT must reach ONLY makeGhNodeIdResolver.
   const resolver = makeGhNodeIdResolver(pat)
-  const resolution = await resolvePrivateRows(privateNodeIds, resolver)
-  const failedNodeIds: string[] = []
+  const resolution = await resolvePrivateRows(privateRows, resolver)
+  // A private row without a node_id is a resolution failure, as in promotion mode (same sentinel,
+  // same order): it blocks, and the operator override covers it like any unresolvable node.
+  const failedNodeIds = unresolvedNodeIds(resolution)
+
+  if (resolution.missingNodeIdCount > 0) {
+    // Count and sentinel only: a row without a node_id may carry its owner/name in the clear.
+    process.stderr.write(
+      `check-private-leak: ${resolution.missingNodeIdCount} private entry/entries have no node_id (<missing-node-id>) — BLOCKING\n`,
+    )
+  }
 
   for (const failure of resolution.failures) {
-    failedNodeIds.push(failure.nodeId)
     if (failure.error === 'access-lost') {
       // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
       // Treating it as skip would make a mis-scoped PAT silently pass everything — fail closed.
