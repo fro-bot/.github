@@ -10576,3 +10576,114 @@ Run: https://github.com/fro-bot/.github/actions/runs/43431596429
 Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
 
 Sources: https://github.com/bfra-me/ha-addon-repository
+
+## [2026-11-14 06:30] manual-edit | repo:fro-bot/agent, repo:marcusrbrown/systematic
+
+Daily oversight pass (categories 5–8). Added a dated section to the fro-bot/agent
+page: at v0.141.0 (#2190) `isolate-agent` keeps provider keys in a runner-owned
+proxy outside the sandbox, revising the 2026-11-13 note that the key stayed
+readable; the earlier note is kept. Added a dated section to the
+marcusrbrown/systematic page: the connect workflow bounds its agent step below
+the job timeout with `continue-on-error` so a hung run still reads its record
+and posts (#1393), matches its own reports by the REST author login, and shares
+one composite agent step between its two workflows (#1396). Additive only.
+
+Sources: https://github.com/fro-bot/agent/pull/2190, https://github.com/fro-bot/agent/releases/tag/v0.141.0, https://github.com/marcusrbrown/systematic/tree/b4010b3b9edc0af0831c9a19b2a26e56e4891d88
+Run: https://github.com/fro-bot/.github/actions/runs/43562899904
+
+## [2026-11-14 06:01] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@4fedcbbc99e3a8d1c2442b927299554542808a16
+
+## [2026-11-14 12:00] ingest | repo:marcusrbrown/sparkle
+
+Limited re-survey of marcusrbrown/sparkle at `1a6b44e`, 42 commits after `b611620`
+(2026-10-29). 41 of the 42 are Renovate, including 25 `fro-bot/agent` bump PRs
+taking the pin from v0.129.0 to v0.141.0. Other changes: pnpm 11.28.11, Node
+24.22.3, vite 8.3.8, playwright 1.65.0, and a new root `.systematic.jsonc`
+(#2219, body not read). The Fro Bot workflow is present, so no onboarding draft
+is needed. The prompt, fork-guard, README-floor and regeneration discrepancies
+from earlier surveys are unchanged in source. New finding: astro 7.4.7
+`[SECURITY]` (#2242) changed only the lockfile, and docs still declares
+`^7.0.0`. Added a dated section and a Survey History row to the repo page, and
+a dated section to the security-remediation-integration topic separating
+lockfile-only fixes from range or override floors. Additive only. Reads were
+limited to directory listings, the compare file list, and manifest and
+workflow diffs. Corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/sparkle/compare/b6116202d97cef5c6a535ffa9555f745729772e8...1a6b44ef092a5c0fac52497250bf1e65edfa55d2
+Run: https://github.com/fro-bot/.github/actions/runs/43593828571
+
+## [2026-11-14 12:17] ingest | repo:marcusrbrown/sparkle
+
+Surveyed marcusrbrown/sparkle and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/sparkle
+
+## [2026-11-14 12:45] ingest | repo:marcusrbrown/esphome.life
+
+Re-surveyed marcusrbrown/esphome.life. HEAD is still `3213838` (#438,
+2026-10-22) and matches the 2026-10-30 snapshot, so the tree and workflows are
+unchanged: 17 blobs, three workflows. Still no Fro Bot workflow, so a draft PR
+is still a candidate as a separate follow-up. The 23-day silence follows the
+upstreams: neither `bfra-me/.github` v4.43.0 nor renovate-config 5.2.16 has a
+newer release, so this is not an inert-Renovate repeat. Per the run list, the
+mis-pathed `Update Repo Settings` cron still runs daily with a `success`
+conclusion. Recorded a watch item: the 60-day inactivity rule would disable that
+cron around 2026-12-21, and it is the only scheduled Renovate trigger. Added a
+dated Overview section, a sources entry, and a Survey History row to the repo
+page; earlier content untouched. No topic/entity/comparison change is justified
+by an unchanged tree. Reads were limited to the tree listing, commit list,
+workflow registry/run list, and upstream release lists. Corrections context was
+empty.
+
+Sources: https://github.com/marcusrbrown/esphome.life/tree/32138381e60aff308ebba61b3702068fa72bd753
+Run: https://github.com/fro-bot/.github/actions/runs/43593962671
+
+## [2026-11-14 12:18] ingest | repo:marcusrbrown/esphome.life
+
+Surveyed marcusrbrown/esphome.life and updated the control-plane wiki.
+
+Sources: https://github.com/marcusrbrown/esphome.life
+
+## [2026-11-15 05:36] ingest | repo:fro-bot/fro-bot.github.io
+
+Verified the target; no wiki page changed.
+
+Re-surveyed fro-bot/fro-bot.github.io: verified, not changed. `main` is still
+`3e44653`, last pushed 2026-02-09. The full root tree (not truncated) is still
+the one eight-byte `CNAME` blob (`208ca8c`). Visibility is public, default
+branch `main`, not archived, no language, no license, and `node_id` is
+unchanged. No README, manifest, or workflow exists. The repo page already says
+there is no Fro Bot workflow, so no new note was added. Under the repeat-survey
+rules, `wiki/repos/fro-bot--fro-bot-github-io.md` was left untouched,
+including its frontmatter and `updated` date. An unchanged tree justifies no
+topic, entity, or comparison change. This survey did not revalidate the dated
+TLS, DNS, and redirect findings. Reads were limited to repository metadata, the
+HEAD commit, and the tree listing. Corrections context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43681628468
+
+Sources: https://github.com/fro-bot/fro-bot.github.io
+
+## [2026-11-15 06:10] manual-edit | repo:fro-bot/agent
+
+Daily oversight pass (Observe). Added a dated section to
+`wiki/repos/fro-bot--agent.md` on the `isolate-agent` changes since `v0.141.0`:
+the read-only mount view (#2209) and the runner `PATH` (#2213), both in
+`v0.143.0`, and read-only `bun`/`pnpm` install-root grants (#2217) in
+`v0.144.0`. It also notes that fro-bot/.github now pins `v0.144.1`. Earlier
+isolate-agent notes are kept unchanged. Facts come from merged PR bodies,
+release notes and tag commits, not from a run with the flag on. Remediation
+handoff learnings: none reported.
+
+Sources: https://github.com/fro-bot/agent/pull/2209, https://github.com/fro-bot/agent/pull/2213, https://github.com/fro-bot/agent/pull/2217, https://github.com/fro-bot/agent/releases/tag/v0.144.0
+Run: https://github.com/fro-bot/.github/actions/runs/43682281142
+
+## [2026-11-15 06:03] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9be739e376a0cde145b1b6d6b195e97a00b99d13
