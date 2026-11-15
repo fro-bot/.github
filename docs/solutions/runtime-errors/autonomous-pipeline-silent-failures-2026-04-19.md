@@ -7,7 +7,7 @@ root_cause: wrong_contract
 resolution_type: code_fix
 severity: high
 date: 2026-04-19
-last_updated: 2026-10-22
+last_updated: 2026-11-15
 module: scripts/wiki-ingest.ts
 tags: [workflow, github-actions, wiki-ingest, porcelain, silent-failure, status-classification, additive-pipeline, autonomous, reconcile]
 verified: 2026-04-19
@@ -45,7 +45,7 @@ Two fixes, both in PR #3144.
 
 ### Fix A — filter deletions out of porcelain parse
 
-`scripts/wiki-ingest.ts` is additive-only by contract (renames already out of scope; never commits file removals). `git status --porcelain` reported deletions when the workflow's `Sync wiki from data branch` step ran `git restore --source FETCH_HEAD --worktree -- knowledge` and files that exist on `main` but not on `data` disappeared from the working tree. `parsePorcelainPaths` passed those deletions through to `loadWorkingTreeWikiFiles`, which crashed reading the absent paths.
+`scripts/wiki-ingest.ts` was additive-only by contract at the time (renames already out of scope; never committed file removals). A hand-off's listed deletions are now committed from its manifest, and since #4244 the manifest supplies the pages when there is a hand-off ([a trusted writer takes its work list from the validated hand-off](../integration-issues/a-trusted-writer-takes-its-work-list-from-the-validated-hand-off-2026-11-15.md)). `git status --porcelain` reported deletions when the workflow's `Sync wiki from data branch` step ran `git restore --source FETCH_HEAD --worktree -- knowledge` and files that exist on `main` but not on `data` disappeared from the working tree. `parsePorcelainPaths` passed those deletions through to `loadWorkingTreeWikiFiles`, which crashed reading the absent paths.
 
 ```ts
 // BEFORE (broken) — fed deletions to readFile
@@ -102,7 +102,7 @@ After the fix lands, entries already contaminated with `last_survey_status: succ
 
 ## Prevention
 
-1. **Validate pipeline contracts at the parse boundary.** If a script declares an "additive-only" or "no-op-safe" contract, the input parser must enforce that contract — not delegate it to downstream callers. `parsePorcelainPaths` now rejects deletions at the source rather than passing them to `readFile` and relying on `readFile` to notice.
+1. **Validate pipeline contracts at the parse boundary.** If a script declares an "additive-only" or "no-op-safe" contract, the input parser must enforce that contract — not delegate it to downstream callers. `parsePorcelainPaths` rejected deletions at the source at the time, rather than passing them to `readFile` and relying on `readFile` to notice. Since then a hand-off's listed deletions are committed from its manifest, and since #4244 the manifest supplies the pages ([see the hand-off doc](../integration-issues/a-trusted-writer-takes-its-work-list-from-the-validated-hand-off-2026-11-15.md)).
 
 2. **Status expressions must cover every required step, not just the intuitive one.** Any workflow that records an aggregate outcome (success/failure, last-run-status, etc.) must evaluate *every* required intermediate step's conclusion in the expression. A general pattern:
 
