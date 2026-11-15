@@ -51,6 +51,74 @@ describe('makeGhNodeIdResolver', () => {
     expect(result).toEqual({nameWithOwner: 'org/repo'})
   })
 
+  it('asks for the repository visibility in the same query as the name', async () => {
+    // #given gh returns a valid node response
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}}))
+
+    await makeGhNodeIdResolver('ghp_test')('R_1')
+
+    // #then one gh call whose query selects both fields on Repository
+    expect(mockExecFileSync).toHaveBeenCalledTimes(1)
+    const args = mockExecFileSync.mock.calls[0]?.[1] as string[]
+    const query = args.find(arg => arg.startsWith('query='))
+    expect(query).toContain('... on Repository { nameWithOwner visibility }')
+  })
+
+  it.each(['PUBLIC', 'PRIVATE', 'INTERNAL'])('carries a %s visibility through with the name', async visibility => {
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'org/repo', visibility}}}))
+
+    const result = await makeGhNodeIdResolver('ghp_test')('R_vis')
+
+    expect(result).toEqual({nameWithOwner: 'org/repo', visibility})
+  })
+
+  it.each([
+    ['null', null],
+    ['a number', 1],
+    ['a lowercase string', 'public'],
+  ])(
+    'passes %s visibility through unjudged: the scan decides, and only exact PUBLIC counts',
+    async (_label, visibility) => {
+      mockExecFileSync.mockReset()
+      mockExecFileSync.mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'org/repo', visibility}}}))
+
+      const result = await makeGhNodeIdResolver('ghp_test')('R_odd')
+
+      expect(result).toEqual({nameWithOwner: 'org/repo', visibility})
+    },
+  )
+
+  it('leaves visibility undefined when the response omits it', async () => {
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce(JSON.stringify({data: {node: {nameWithOwner: 'org/repo'}}}))
+
+    const result = await makeGhNodeIdResolver('ghp_test')('R_none')
+
+    expect(result).toEqual({nameWithOwner: 'org/repo'})
+    expect(result).not.toHaveProperty('visibility', 'PUBLIC')
+  })
+
+  it('returns access-lost for a PUBLIC node that has no nameWithOwner: visibility never rescues a missing name', async () => {
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce(JSON.stringify({data: {node: {visibility: 'PUBLIC'}}}))
+
+    const result = await makeGhNodeIdResolver('ghp_test')('R_nameless')
+
+    expect(result).toEqual({error: 'access-lost'})
+  })
+
+  it('returns error for malformed JSON (no visibility is ever invented)', async () => {
+    mockExecFileSync.mockReset()
+    mockExecFileSync.mockReturnValueOnce('{"data": {"node": {"nameWithOwner": "org/repo", "visibility": "PUB')
+
+    const result = await makeGhNodeIdResolver('ghp_test', {maxRetries: 0, baseDelayMs: 0})('R_bad')
+
+    expect(result).toMatchObject({error: 'error'})
+    expect(result).not.toHaveProperty('visibility')
+  })
+
   it('returns access-lost when node is null (repo deleted or no access)', async () => {
     // #given gh returns null for the node (404 / no access)
     const payload = JSON.stringify({data: {node: null}})
