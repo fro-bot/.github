@@ -36,7 +36,7 @@ env:
   SEMANTIC_RELEASE_VERSION: 25.0.9 # renovate: datasource=npm depName=semantic-release
   SEMANTIC_RELEASE_EXEC_VERSION: 7.1.0 # renovate: datasource=npm depName=@semantic-release/exec
   SEMANTIC_RELEASE_NPM_VERSION: 13.2.0 # renovate: datasource=npm depName=@semantic-release/npm
-  SEMANTIC_RELEASE_GITHUB_VERSION: 12.0.10 # renovate: datasource=npm depName=@semantic-release/github
+  SEMANTIC_RELEASE_GITHUB_VERSION: 12.0.11 # renovate: datasource=npm depName=@semantic-release/github
   SEMANTIC_RELEASE_COMMIT_ANALYZER_VERSION: 13.0.1 # renovate: datasource=npm depName=@semantic-release/commit-analyzer
   SEMANTIC_RELEASE_NOTES_GENERATOR_VERSION: 14.1.1 # renovate: datasource=npm depName=@semantic-release/release-notes-generator
   CONVENTIONAL_CHANGELOG_CONVENTIONALCOMMITS_VERSION: 10.4.1 # renovate: datasource=npm depName=conventional-changelog-conventionalcommits
