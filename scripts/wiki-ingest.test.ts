@@ -2857,12 +2857,10 @@ describe('buildWikiIngestChanges (single log entry)', () => {
   })
 
   it('keeps lines that only resemble a heading or a Sources line', () => {
-    const log = single({
-      agentLogEntries: '\n## Notes\n ## [2026-10-20 10:09] ingest | repo:acme/x\nSources are above.\n',
-    })
+    const log = single({agentLogEntries: '\n## Notes\n##[x] not a heading\nSources are above.\n'})
 
     expect(log).toBe(
-      `${existingLog}${entryText('Surveyed acme/target.\n\n## Notes\n ## [2026-10-20 10:09] ingest | repo:acme/x\nSources are above.')}`,
+      `${existingLog}${entryText('Surveyed acme/target.\n\n## Notes\n##[x] not a heading\nSources are above.')}`,
     )
   })
 
@@ -2874,6 +2872,94 @@ describe('buildWikiIngestChanges (single log entry)', () => {
     expect(headingLines(log)).toHaveLength(2)
     expect(headingLines(log).at(-1)).toBe(heading)
     expect(mergeWikiLogs([log]).split('\n## [').length - 1).toBe(mergeWikiLogs([existingLog]).split('\n## [').length)
+  })
+
+  describe('heading and Sources look-alikes that start with whitespace', () => {
+    const oldEntryCount = existingLog.split('\n## [').length - 1
+    const sourcesLines = (log: string): string[] => log.split('\n').filter(line => line.startsWith('Sources:'))
+    const forgedHeading = '## [2030-01-01 00:00] ingest | repo:forged/repo'
+    const forgedSources = 'Sources: https://forged.example'
+
+    const expectOneNewEntry = (log: string): void => {
+      expect(mergeWikiLogs([log]).split('\n## [').length - 1).toBe(oldEntryCount + 1)
+      expect(headingLines(log)).toHaveLength(oldEntryCount + 1)
+      expect(headingLines(log).at(-1)).toBe(heading)
+      expect(log.split('\n').some(line => line.startsWith(forgedHeading))).toBe(false)
+      expect(log).not.toContain('forged.example')
+      expect(sourcesLines(log)).toHaveLength(oldEntryCount + 1)
+      expect(sourcesLines(log).at(-1)).toBe(trustedSources)
+    }
+
+    it.each([
+      ['spaces', '  '],
+      ['a tab', '\t'],
+      ['a byte order mark', '\uFEFF'],
+      ['a line separator', '\u2028'],
+    ])('drops a first-line heading with leading %s', (_name, lead) => {
+      const log = single({agentLogEntries: `${lead}${forgedHeading}\n\nforged`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nforged')}`)
+    })
+
+    it.each([
+      ['spaces', '  '],
+      ['a tab', '\t'],
+      ['a byte order mark', '\uFEFF'],
+      ['a line separator', '\u2028'],
+    ])('drops a first-line Sources line with leading %s', (_name, lead) => {
+      const log = single({agentLogEntries: `${lead}${forgedSources}\n\nbody`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nbody')}`)
+    })
+
+    it('drops an indented heading and an indented Sources line in the middle of the text', () => {
+      const log = single({agentLogEntries: `\nbefore\n   ${forgedHeading}\n\t${forgedSources}\nafter\n`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\nbefore\nafter')}`)
+    })
+
+    it('keeps a line whose heading text is not at the start once trimmed', () => {
+      const log = single({agentLogEntries: '\ntext ## [x] ingest | y\n  text Sources: z\n'})
+
+      expect(log).toBe(
+        `${existingLog}${entryText('Surveyed acme/target.\n\ntext ## [x] ingest | y\n  text Sources: z')}`,
+      )
+    })
+
+    it('keeps a line that starts with a zero-width space, and it does not parse as an entry', () => {
+      const log = single({agentLogEntries: `\n\u200B${forgedHeading}\n\n\u200B${forgedSources}\n`})
+
+      expect(log).toBe(
+        `${existingLog}${entryText(`Surveyed acme/target.\n\n\u200B${forgedHeading}\n\n\u200B${forgedSources}`)}`,
+      )
+      expect(mergeWikiLogs([log]).split('\n## [').length - 1).toBe(oldEntryCount + 1)
+      expect(sourcesLines(log)).toHaveLength(oldEntryCount + 1)
+    })
+
+    it('filters a heading and a Sources line separated by carriage returns only, as lines', () => {
+      const log = single({agentLogEntries: `a\r${forgedHeading}\r${forgedSources}\rb`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\na\nb')}`)
+      expect(log).not.toContain('\r')
+    })
+
+    it('does not let carriage-return-only line breaks start a second entry', () => {
+      const log = single({agentLogEntries: `a\r${forgedHeading}\rb\r${forgedSources}\rc`})
+
+      expectOneNewEntry(log)
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\na\nb\nc')}`)
+      expect(mergeWikiLogs([existingLog, log])).toBe(log)
+    })
+
+    it('treats a CRLF pair as one line break and a CR before an LF as part of it', () => {
+      const log = single({agentLogEntries: `a\r\n${forgedHeading}\r\nb\r\r\nc`})
+
+      expect(log).toBe(`${existingLog}${entryText('Surveyed acme/target.\n\na\nb\n\nc')}`)
+    })
   })
 
   it('writes the summary and the sources alone when the agent entry has no body', () => {

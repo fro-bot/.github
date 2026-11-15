@@ -72,7 +72,7 @@ When the ingest writes the page of the `repo:` target and that page lists no sou
 By default an ingest leaves two log entries: the entries the agent appended, as written, then the summary entry. `buildWikiIngestChanges` takes an optional `singleLogEntry` parameter, off by default, and the CLI sets it when `WIKI_LOG_MODE` is exactly `single` (any other value, or none, keeps two entries). With it on, the writer leaves one entry in the log's format:
 
 - The heading is the trusted one: the ingest's timestamp, `ingest` and the target. The agent's headings, timestamps and targets are never used.
-- The body is the summary, then the agent's log text. The agent's text loses every line that starts with `## [` and every line that starts with `Sources:`, then is trimmed, has runs of blank lines collapsed to one and is cut at 4,000 characters. A cut ends with the line `Agent log text cut at 4000 characters.` Several agent entries become one body, in order.
+- The body is the summary, then the agent's log text. The agent's text is split into lines at LF, CRLF and bare CR, loses every line that starts with `## [` or `Sources:` once its leading whitespace (a space, a tab, a byte order mark) is removed, then is trimmed, has runs of blank lines collapsed to one and is cut at 4,000 characters. A cut ends with the line `Agent log text cut at 4000 characters.` Several agent entries become one body, in order.
 - `Sources:` comes from the ingest's own sources.
 - When the hand-off carries no changed and no deleted page, the summary is `Verified the target; no wiki page changed.` Otherwise it is the caller's summary.
 

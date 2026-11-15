@@ -994,18 +994,20 @@ function appendAgentLogEntries(existingLog: string | undefined, entries: string 
 }
 
 /**
- * The agent's log text as the body of one entry. Every line that has the shape of an entry heading
- * (starts with `## [`) and every line that starts with `Sources:` is dropped, so nothing in the text can
- * start an entry or name a source. Blank runs collapse, the text is trimmed, and text past 4,000
- * characters is cut and ends with a fixed line. Lines are split and compared with `startsWith`, not matched
- * with a pattern, because the text is untrusted.
+ * The agent's log text as the body of one entry. CRLF and bare CR become LF first, since a bare CR ends a
+ * Markdown line. Every line that has the shape of an entry heading (starts with `## [`) and every line that
+ * starts with `Sources:`, once its leading whitespace is removed, is dropped, so nothing in the text can
+ * start an entry or name a source, indented or not. Blank runs collapse, the text is trimmed, and text past
+ * 4,000 characters is cut and ends with a fixed line. Lines are split and compared with `trimStart` and
+ * `startsWith`, not matched with a pattern, because the text is untrusted.
  */
 function singleEntryBody(agentLogEntries: string | undefined): string {
   const limit = 4000
   const cutLine = `Agent log text cut at ${limit} characters.`
   const kept: string[] = []
-  for (const line of (agentLogEntries ?? '').replaceAll('\r\n', '\n').split('\n')) {
-    if (line.startsWith('## [') || line.startsWith('Sources:')) continue
+  for (const line of (agentLogEntries ?? '').replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n')) {
+    const start = line.trimStart()
+    if (start.startsWith('## [') || start.startsWith('Sources:')) continue
     const blank = line.trim() === ''
     if (blank && (kept.length === 0 || kept.at(-1) === '')) continue
     kept.push(blank ? '' : line)
