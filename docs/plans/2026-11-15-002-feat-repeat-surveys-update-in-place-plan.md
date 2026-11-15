@@ -101,7 +101,7 @@ Requirement IDs are the origin document's.
 
 ### Pull request 1: the writer
 
-- [ ] **Unit 1: Write only the pages a hand-off carries**
+- [x] **Unit 1: Write only the pages a hand-off carries**
 
 **Goal:** With a hand-off present, the writer processes the hand-off's pages and no others.
 

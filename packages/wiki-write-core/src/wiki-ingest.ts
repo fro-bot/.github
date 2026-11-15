@@ -1649,9 +1649,17 @@ interface LoadedHandoff {
   readonly agentLogEntries: string | undefined
   /** The handed-off pages: everything the manifest lists as changed or deleted. */
   readonly pagePaths: string[]
+  /** The manifest's changed wiki pages, shared files and paths outside the four page directories excluded. */
+  readonly changedPagePaths: string[]
   /** The manifest's deleted pages, shared files excluded. */
   readonly deletedPagePaths: string[]
   readonly warnings: WikiIngestWarning[]
+}
+
+/** A wiki page file under one of the four page directories, the same scope `git status` is asked about. */
+function isWikiPageFilePath(path: string): boolean {
+  const directories = ['repos', 'topics', 'entities', 'comparisons']
+  return path.endsWith('.md') && directories.some(directory => path.startsWith(`${WIKI_ROOT}/${directory}/`))
 }
 
 function envValue(name: string): string | undefined {
@@ -1749,6 +1757,7 @@ async function loadHandoff(
   const manifest = await readHandoffManifest(handoffDir)
   const pagePaths = [...manifest.changed, ...manifest.deleted]
   const deletedPagePaths = manifest.deleted.filter(path => !isSharedWikiFile(path))
+  const changedPagePaths = manifest.changed.filter(isWikiPageFilePath)
   await assertHandoffPagesCurrent(
     octokit,
     target.owner ?? DEFAULT_OWNER,
@@ -1757,7 +1766,15 @@ async function loadHandoff(
     {agentCommitSha, paths: pagePaths},
   )
   if (!manifest.changed.includes(LOG_PATH)) {
-    return {octokit, agentCommitSha, agentLogEntries: undefined, pagePaths, deletedPagePaths, warnings: []}
+    return {
+      octokit,
+      agentCommitSha,
+      agentLogEntries: undefined,
+      pagePaths,
+      changedPagePaths,
+      deletedPagePaths,
+      warnings: [],
+    }
   }
 
   const handoffLog = await readFile(join(handoffDir, 'files', LOG_PATH), 'utf8')
@@ -1780,7 +1797,7 @@ async function loadHandoff(
   const agentLogEntries = deriveAgentLogEntries(baseLog, handoffLog)
   const warnings: WikiIngestWarning[] =
     agentLogEntries === undefined ? [{code: 'agent-log-entries-dropped', reason: 'not-append-only'}] : []
-  return {octokit, agentCommitSha, agentLogEntries, pagePaths, deletedPagePaths, warnings}
+  return {octokit, agentCommitSha, agentLogEntries, pagePaths, changedPagePaths, deletedPagePaths, warnings}
 }
 
 function writeWarnings(warnings: readonly WikiIngestWarning[]): void {
@@ -1851,15 +1868,17 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
       message = payload.message ?? defaultCommitMessage(payload)
       committedPagePaths = payload.pages.map(p => p.path)
     } else {
-      const changedPaths = await getChangedWikiPathsImpl()
       handoff = await loadHandoff(dependencies, {
         owner: process.env.WIKI_OWNER,
         repo: process.env.WIKI_REPO,
         branch: process.env.WIKI_BRANCH,
       })
       writeWarnings(handoff?.warnings ?? [])
-      // `git status` drops deletions, so an agent's deleted pages come from the manifest. A handoff
+      // With a handoff the pages are the ones its manifest carries: `git status` lists every page where `data`
+      // differs from `main`, which the agent did not write. Without one, `git status` is the page input.
+      // It also drops deletions, so an agent's deleted pages come from the manifest. A handoff
       // whose only change is appended log entries still commits the log and the rebuilt index.
+      const changedPaths = handoff === undefined ? await getChangedWikiPathsImpl() : handoff.changedPagePaths
       if (
         changedPaths.length === 0 &&
         (handoff?.deletedPagePaths ?? []).length === 0 &&

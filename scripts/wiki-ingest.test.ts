@@ -2784,6 +2784,7 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
   const agentSha = 'a'.repeat(40)
   const syncedLog = `${LOG_HEADER_TEXT}${logEntryText(1)}`
   let dir: string
+  let stdout: string[]
   let stderr: string[]
 
   /** A trusted-job workspace: `log.md` as synced from `data`, the applied page, and the downloaded handoff. */
@@ -2860,8 +2861,12 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     (commit.mock.calls[0]?.[0].files as Record<string, string>)['knowledge/log.md'] ?? ''
 
   beforeEach(() => {
+    stdout = []
     stderr = []
-    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk: string | Uint8Array) => {
+      stdout.push(String(chunk))
+      return true
+    })
     vi.spyOn(process.stderr, 'write').mockImplementation((chunk: string | Uint8Array) => {
       stderr.push(String(chunk))
       return true
@@ -3228,6 +3233,160 @@ describe('runWikiIngestCli (agent log entries from a handoff)', () => {
     const commit = await run(octokitReading(syncedLog), [])
 
     expect(commit).not.toHaveBeenCalled()
+  })
+
+  describe('page input (a handoff supplies the pages, git status does not)', () => {
+    const other = createWikiPage({path: 'knowledge/wiki/topics/other.md', type: 'topic', title: 'Other'})
+    const noncanonical = {
+      path: other.path,
+      content: other.content.replace('type: topic', 'type: topic\ndatabase_id: 99'),
+    }
+
+    const committedFiles = (commit: Awaited<ReturnType<typeof run>>): Record<string, string> =>
+      commit.mock.calls[0]?.[0].files as Record<string, string>
+
+    const reportedPageCount = (): number => {
+      const line = stdout.findLast(entry => entry.includes('pagesChanged'))
+      return (JSON.parse(line ?? '{}') as {pagesChanged: number}).pagesChanged
+    }
+
+    it('writes the page the handoff carries and not the page only git status lists', async () => {
+      setUp({})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      const files = committedFiles(commit)
+      expect(Object.keys(files)).toContain(page.path)
+      expect(Object.keys(files)).not.toContain(other.path)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('writes neither page for a log-only handoff while git status lists both', async () => {
+      setUp({handoffLog: `${syncedLog}${logEntryText(2)}`, manifestChanged: ['knowledge/log.md']})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(Object.keys(committedFiles(commit)).sort()).toStrictEqual(['knowledge/index.md', 'knowledge/log.md'])
+      expect(reportedPageCount()).toBe(0)
+    })
+
+    it('leaves a non-canonical page the handoff does not carry as it is on data', async () => {
+      setUp({})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(committedFiles(commit)[other.path]).toBeUndefined()
+    })
+
+    it('succeeds when a page the handoff does not carry has invalid frontmatter', async () => {
+      setUp({})
+      writeFileSync(join(dir, other.path), other.content.replace('updated: 2026-04-16', 'updated: October 1'))
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(commit).toHaveBeenCalledTimes(1)
+      expect(Object.keys(committedFiles(commit))).not.toContain(other.path)
+    })
+
+    it('still refuses a page with no frontmatter that the handoff does not carry, since the index covers every page', async () => {
+      setUp({})
+      writeFileSync(join(dir, other.path), 'no frontmatter here\n')
+
+      const {commit, outcome} = failingRun(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(await outcome).toMatchObject({code: 'INVALID_FRONTMATTER'})
+      expect(commit).not.toHaveBeenCalled()
+    })
+
+    it('still fails on a handed-off page with invalid frontmatter', async () => {
+      setUp({})
+      writeFileSync(join(dir, page.path), 'no frontmatter here\n')
+
+      const {commit, outcome} = failingRun(octokitReading(syncedLog), [page.path])
+
+      expect(await outcome).toMatchObject({code: 'INVALID_FRONTMATTER'})
+      expect(commit).not.toHaveBeenCalled()
+    })
+
+    it('writes a handed-off page that git status does not list', async () => {
+      setUp({})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(Object.keys(committedFiles(commit))).toContain(page.path)
+      expect(reportedPageCount()).toBe(1)
+    })
+
+    it('commits a deletion and ignores the pages only git status lists', async () => {
+      setUp({manifestChanged: [], manifestDeleted: ['knowledge/wiki/topics/gone.md']})
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [other.path])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/gone.md'])
+      expect(Object.keys(committedFiles(commit))).not.toContain(other.path)
+    })
+
+    it('commits the deletion and the addition of a rename', async () => {
+      setUp({manifestDeleted: ['knowledge/wiki/topics/old-name.md']})
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(commit.mock.calls[0]?.[0].deletedPaths).toStrictEqual(['knowledge/wiki/topics/old-name.md'])
+      expect(Object.keys(committedFiles(commit))).toContain(page.path)
+    })
+
+    it('rebuilds the index from every page in the working tree', async () => {
+      setUp({})
+      writeFileSync(join(dir, other.path), other.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path])
+
+      expect(committedFiles(commit)['knowledge/index.md']).toContain('[[other]]')
+      expect(committedFiles(commit)['knowledge/index.md']).toContain('[[notes]]')
+    })
+
+    it('does not consult git status when a handoff is present', async () => {
+      setUp({})
+      const status = vi.fn(async () => [other.path])
+      const commit = vi.fn(async (_params: Record<string, unknown>) => ({committed: true, commitSha: 'c', attempts: 1}))
+
+      await runWikiIngestCli({
+        readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+        getChangedWikiPaths: status,
+        commitWikiChanges: commit as never,
+        octokit: octokitReading(syncedLog),
+      })
+
+      expect(status).not.toHaveBeenCalled()
+    })
+
+    it('ignores a handed-off path outside the four page directories, as git status does', async () => {
+      setUp({manifestChanged: [page.path, 'knowledge/wiki/stray.md']})
+      writeFileSync(join(dir, 'knowledge/wiki/stray.md'), 'not a page\n')
+
+      const commit = await run(octokitReading(syncedLog), [])
+
+      expect(Object.keys(committedFiles(commit))).not.toContain('knowledge/wiki/stray.md')
+    })
+
+    it('writes every status-listed page when there is no handoff, as before', async () => {
+      setUp({})
+      delete process.env.WIKI_HANDOFF_DIR
+      delete process.env.WIKI_HANDOFF_BASE_SHA
+      writeFileSync(join(dir, noncanonical.path), noncanonical.content)
+
+      const commit = await run(octokitReading(syncedLog), [page.path, other.path])
+
+      expect(Object.keys(committedFiles(commit))).toStrictEqual(
+        expect.arrayContaining([page.path, other.path, 'knowledge/index.md', 'knowledge/log.md']),
+      )
+      expect(committedFiles(commit)[other.path]).not.toContain('database_id')
+      expect(reportedPageCount()).toBe(2)
+    })
   })
 })
 
