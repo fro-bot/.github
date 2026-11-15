@@ -192,7 +192,7 @@ Requirement IDs are the origin document's.
 
 ### Pull request 2: the survey
 
-- [ ] **Unit 3: The survey's instructions, retry text and schema**
+- [x] **Unit 3: The survey's instructions, retry text and schema**
 
 **Goal:** A repeat survey follows the in-place rules, a quiet one succeeds with one log entry, and the schema agrees.
 
@@ -245,7 +245,7 @@ Requirement IDs are the origin document's.
 
 ---
 
-- [ ] **Unit 4: Documentation**
+- [x] **Unit 4: Documentation**
 
 **Goal:** The documentation describes the repeat rule and the single entry.
 
