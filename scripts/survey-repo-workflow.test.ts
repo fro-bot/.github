@@ -2563,6 +2563,202 @@ describe('survey-repo.yaml rewrite input: a survey that replaces the repo page b
     expect(result.status).not.toBe(0)
     expect(result.trace).toStrictEqual([])
   })
+
+  describe('repeat survey rules for the target repository page', () => {
+    const flat = (text: string): string => text.replaceAll(/\s+/gu, ' ').trim()
+    const base = flat(renderPrompt('false'))
+    const section = (): string => {
+      const start = base.indexOf('Repeat survey rules')
+      const end = base.indexOf('Required outcomes:')
+      expect(start, 'prompt has a repeat rules section').toBeGreaterThanOrEqual(0)
+      expect(end, 'prompt has a required outcomes section').toBeGreaterThan(start)
+      return base.slice(start, end)
+    }
+
+    it('scopes the repeat rules to the target repository page, which exists in the checkout', () => {
+      const text = section()
+
+      expect(text).toContain('for `knowledge/wiki/repos/owner-repo.md` only')
+      expect(text).toContain('when that page already exists in the checkout')
+    })
+
+    it("says the repeat rules override the schema's additive and contradiction rules for that page", () => {
+      expect(section()).toContain("override the schema's additive and contradiction rules for that page")
+    })
+
+    it.each([
+      [
+        'change only on contrary evidence, where it stands',
+        'Change a current-state statement only when the survey has evidence against it, and change it where it stands.',
+      ],
+      ['leave unchecked statements', 'Leave statements the survey did not check.'],
+      ['keep dated history as written', 'Keep dated findings, corrections and attribution as written.'],
+      [
+        'dated-only case: leave it and add one current-state statement near the top',
+        'When the only statement of a changed fact is inside a dated section, leave it and add one short current-state statement near the top.',
+      ],
+      ['dated-only case: do not restructure', 'Do not restructure the page.'],
+      ['no rewording, reordering or restating', 'Do not reword, reorder or restate what is still true.'],
+      ['dated note only for a material change', 'Add a dated note only for a material change.'],
+      ['no second sources entry', 'Add no `sources` entry for the repository when the page already lists one for it'],
+      ['sources URL match with or without a path', "(the repository's URL, with or without a path under it)"],
+      ['existing sources entries and dates stay', 'Leave existing entries and their dates alone.'],
+      ['a quiet survey leaves the page untouched', 'When nothing changes, leave the page untouched.'],
+      [
+        'a quiet survey still writes the log entry, naming the repository',
+        'Still write the log entry, naming the repository and saying it was verified and not changed.',
+      ],
+    ] as const)('carries the rule: %s', (_label, phrase) => {
+      expect(section()).toContain(phrase)
+    })
+
+    it('lists both halves of what is a material change', () => {
+      const [material = '', notMaterial = ''] = section().split('Not material:')
+
+      expect(material).toContain('Material:')
+      for (const item of [
+        'a change to the default branch, visibility or archived state',
+        'the language, runtime or package manager',
+        'how it builds, tests or releases',
+        'whether Fro Bot or Renovate is set up',
+        'the license',
+        'what the project is for',
+      ]) {
+        expect(material, item).toContain(item)
+      }
+      for (const item of [
+        'dependency and version bumps',
+        'counts',
+        'CI status',
+        'anything that only confirms what the page says',
+      ]) {
+        expect(notMaterial, item).toContain(item)
+        expect(material, item).not.toContain(item)
+      }
+    })
+
+    it('says a first survey, with no page yet, writes a full page', () => {
+      expect(section()).toContain('If that page does not exist, this is a first survey: write a full page.')
+    })
+
+    it('keeps the additive rule, scoped to topic, entity and comparison pages', () => {
+      expect(base).toContain(additiveRule)
+      expect(base).toContain('topic, entity and comparison pages')
+      expect(base.indexOf('topic, entity and comparison pages')).toBeLessThan(base.indexOf('Repeat survey rules'))
+    })
+
+    it('names the repeat rules in the rewrite so none of them still binds a rewrite', () => {
+      const rewritten = flat(renderPrompt('true'))
+      const clause = rewritten.slice(rewritten.indexOf('Rewrite mode'))
+
+      expect(clause).toContain('Every repeat rule above is replaced for that page, so none binds this rewrite')
+      for (const named of [
+        'change only on contrary evidence',
+        'leave unchecked statements',
+        'keep dated history',
+        'do not reword or reorder',
+        'a dated note only for a material change',
+        'no new `sources` entry',
+        'a quiet page left untouched',
+      ]) {
+        expect(clause, named).toContain(named)
+      }
+      expect(rewritten.startsWith(base)).toBe(true)
+    })
+  })
+})
+
+describe('survey-repo.yaml retry text, single log entry and unchanged gates', () => {
+  const expressionStart = '$' + '{{'
+  const flat = (text: string): string => text.replaceAll(/\s+/gu, ' ').trim()
+  const surveySteps = workflowParsed.jobs['survey-repo']?.steps ?? []
+  const persistSteps = workflowParsed.jobs['survey-persist']?.steps ?? []
+  const retrySteps = [
+    ['retry 1', surveySteps.find(step => step.id === 'survey-agent-retry-1')],
+    ['retry 2', surveySteps.find(step => step.id === 'survey-agent-retry-2')],
+  ] as const
+
+  /** The static text a retry adds in front of the shared ingest prompt. */
+  function retryPrefix(step: WorkflowStep | undefined): string {
+    const prompt = String(step?.with?.prompt ?? '')
+    const afterPersona = prompt.slice(prompt.indexOf('</persona>') + '</persona>'.length)
+    return flat(afterPersona.slice(0, afterPersona.indexOf(`${expressionStart} steps.ingest-prompt.outputs.prompt }}`)))
+  }
+
+  describe.each(retrySteps)('%s prefix', (_label, step) => {
+    it('requires the log entry', () => {
+      expect(retryPrefix(step)).toContain('The log entry is mandatory.')
+    })
+
+    it('asks for a page edit only when one is warranted, never as mandatory', () => {
+      const prefix = retryPrefix(step)
+
+      expect(prefix).toContain('Edit the repo page only when the survey warrants one.')
+      expect(prefix).not.toContain('the repo page and the log entry')
+    })
+
+    it('still says to make no wiki changes when the survey cannot be completed', () => {
+      expect(retryPrefix(step)).toContain(
+        'If the survey truly cannot be completed, state exactly why in your final response and make no wiki changes.',
+      )
+    })
+
+    it('does not ask for a log entry to be appended (that would itself be a wiki change)', () => {
+      expect(retryPrefix(step).toLowerCase()).not.toContain('append a log entry')
+    })
+  })
+
+  it('gives both retries the same prefix', () => {
+    expect(retryPrefix(retrySteps[0][1])).toBe(retryPrefix(retrySteps[1][1]))
+    expect(retryPrefix(retrySteps[0][1])).not.toBe('')
+  })
+
+  it('turns on the single log entry in the survey persist ingest step, and nowhere else in the workflow', () => {
+    const ingestStep = persistSteps.find(step => step.name === 'Commit wiki ingest to data branch')
+
+    expect(ingestStep?.env?.WIKI_LOG_MODE).toBe('single')
+    expect(workflowRaw.match(/WIKI_LOG_MODE/gu)).toHaveLength(1)
+  })
+
+  it('leaves the event and Observe ingest steps in fro-bot.yaml on two log entries', () => {
+    const froBotPath = resolve(import.meta.dirname, '../.github/workflows/fro-bot.yaml')
+    const froBotRaw = readFileSync(froBotPath, 'utf8')
+    const froBotParsed: unknown = parse(froBotRaw)
+    assertWorkflowShape(froBotParsed)
+    const ingestSteps = Object.values(froBotParsed.jobs)
+      .flatMap(job => job.steps)
+      .filter(step => (step.run ?? '').includes('bun scripts/wiki-ingest.ts'))
+
+    expect(ingestSteps).toHaveLength(2)
+    for (const step of ingestSteps) {
+      expect(step.env).not.toHaveProperty('WIKI_LOG_MODE')
+    }
+    expect(froBotRaw).not.toContain('WIKI_LOG_MODE')
+  })
+
+  it('keeps the retry conditions as they were', () => {
+    expect(String(retrySteps[0][1]?.if)).toBe(
+      `${expressionStart} success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}`,
+    )
+    expect(String(retrySteps[1][1]?.if)).toBe(
+      `${expressionStart} success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}`,
+    )
+  })
+
+  it('keeps the success expression, so a run that hands off nothing still fails', () => {
+    const recordStep = persistSteps.find(step => step.name === 'Record survey result')
+
+    expect(flat(String(recordStep?.env?.SURVEY_STATUS))).toBe(
+      `${expressionStart} (needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' && needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' && needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success') && 'success' || 'failure' }}`,
+    )
+  })
+
+  it('keeps the write scope sentence and exactly one line about the index', () => {
+    const prompt = (workflowParsed as {env?: Record<string, string>}).env?.INGEST_PROMPT ?? ''
+
+    expect(prompt).toContain('Modify only `knowledge/wiki/**` and `knowledge/log.md` in this repository.')
+    expect(prompt.split('\n').filter(line => line.includes('knowledge/index.md'))).toHaveLength(1)
+  })
 })
 
 describe('survey-repo.yaml knowledge tools in the three survey attempts', () => {
