@@ -6197,3 +6197,281 @@ describe('runPromotionCli — the skipped-as-public count line', () => {
     expect(stdout).not.toContain('are not scanned')
   })
 })
+
+// ---------------------------------------------------------------------------
+// Live visibility in PR mode — the same rule as the promotion scan
+// ---------------------------------------------------------------------------
+
+type PrRowAnswer = Awaited<ReturnType<NodeIdResolver>>
+
+interface PrModeRun {
+  readonly exitCode: number | undefined
+  readonly stdout: string
+  readonly stderr: string
+  readonly scanResult: string | undefined
+  readonly overrideCommentPosted: boolean
+}
+
+/**
+ * Run `main()` with one private row per `rows` key, each answered as given: a success result
+ * becomes the node JSON `gh api graphql` returns, `access-lost` a null node, `error` a thrown gh
+ * failure. `diff` is the raw unified diff the compare call returns.
+ */
+async function runPrMode(opts: {
+  readonly rows: Readonly<Record<string, PrRowAnswer>>
+  readonly diff: string
+  readonly title?: string
+  readonly author?: string
+}): Promise<PrModeRun> {
+  const headSha = 'sha-pr-visibility'
+  const stdout: string[] = []
+  const stderr: string[] = []
+  let overrideCommentPosted = false
+  mockExecFileSync.mockReset()
+  mockAppendFileSync.mockReset()
+  mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
+    const joined = args.join(' ')
+    if (joined.startsWith('repo view')) return 'fro-bot/.github'
+    if (joined.includes('contents/metadata/repos.yaml')) return makeYamlBase64(Object.keys(opts.rows))
+    if (args.includes('graphql')) {
+      const nodeId = args.find(arg => arg.startsWith('id='))?.slice(3) ?? ''
+      const answer: PrRowAnswer = opts.rows[nodeId] ?? {error: 'error'}
+      if ('nameWithOwner' in answer) return JSON.stringify({data: {node: answer}})
+      if (answer.error === 'access-lost') return JSON.stringify({data: {node: null}})
+      throw new Error('server error')
+    }
+    if (joined.includes('/comments')) {
+      overrideCommentPosted = true
+      return ''
+    }
+    if (joined.includes('/compare/') && args.includes('-H')) return opts.diff
+    if (joined.includes('/compare/')) return makeCompareJson()
+    throw new Error(`unexpected gh call: ${joined}`)
+  })
+  vi.spyOn(process.stdout, 'write').mockImplementation((msg: unknown) => {
+    stdout.push(String(msg))
+    return true
+  })
+  vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+    stderr.push(String(msg))
+    return true
+  })
+  const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+    throw new Error('process.exit called')
+  })
+  process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+  process.env.FRO_BOT_POLL_PAT = 'test-pat'
+  process.env.GITHUB_OUTPUT = '/fake/output.txt'
+  try {
+    await main(
+      makeWorkflowRunReader(makeWorkflowRunEvent({headSha})),
+      makePrApiResolver({
+        prByNumber: makePrApiResponse({number: 42, headSha, title: opts.title, author: opts.author}),
+      }),
+    )
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || error.message !== 'process.exit called') throw error
+  } finally {
+    vi.restoreAllMocks()
+    delete process.env.GITHUB_EVENT_PATH
+    delete process.env.FRO_BOT_POLL_PAT
+    delete process.env.GITHUB_OUTPUT
+  }
+  const scanResultWrite = mockAppendFileSync.mock.calls
+    .map(call => String(call[1]))
+    .find(text => text.startsWith('scan_result='))
+  mockExecFileSync.mockReset()
+  mockAppendFileSync.mockReset()
+  return {
+    exitCode: exitSpy.mock.calls[0]?.[0] === undefined ? undefined : Number(exitSpy.mock.calls[0][0]),
+    stdout: stdout.join(''),
+    stderr: stderr.join(''),
+    scanResult: scanResultWrite?.trim().slice('scan_result='.length),
+    overrideCommentPosted,
+  }
+}
+
+const nonPublicVisibilities: readonly (readonly [string, Readonly<Record<string, unknown>>])[] = [
+  ['INTERNAL', {visibility: 'INTERNAL'}],
+  ['a missing visibility', {}],
+  ['an undefined visibility', {visibility: undefined}],
+  ['a null visibility', {visibility: null}],
+  ['a lowercase public', {visibility: 'public'}],
+  ['a padded PUBLIC', {visibility: 'PUBLIC '}],
+  ['a number', {visibility: 1}],
+  ['a boolean true', {visibility: true}],
+  ['an object', {visibility: {value: 'PUBLIC'}}],
+  ['an array', {visibility: ['PUBLIC']}],
+  ['an unexpected string', {visibility: 'ARCHIVED'}],
+  ['an empty string', {visibility: ''}],
+]
+
+const prSkippedLine = 'check-private-leak: 1 private row(s) resolve to public repositories and are not scanned\n'
+
+describe('main() — live visibility: a node reported PUBLIC is not scanned (PR mode)', () => {
+  it('succeeds when the only private row resolves PUBLIC and the diff names it, and prints the count', async () => {
+    const run = await runPrMode({
+      rows: {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}},
+      diff: diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 0 private name(s))\n`)
+    expect(run.stderr).not.toContain('archived-widget')
+  })
+
+  it('still detects when the same row resolves PRIVATE, with the path redacted and no count line', async () => {
+    const run = await runPrMode({
+      rows: {R_priv: {nameWithOwner: archivedPublicName, visibility: 'PRIVATE'}},
+      diff: diffNaming([archivedPublicName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toContain('FAILED — private repository name(s) detected in PR diff')
+    expect(run.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+    expect(run.stderr).not.toContain('archived-widget')
+  })
+
+  it.each(nonPublicVisibilities)('treats %s as private: detection, no skip', async (_label, extra) => {
+    const run = await runPrMode({
+      rows: {R_odd: {nameWithOwner: hiddenPrivateName, ...extra}},
+      diff: diffNaming([hiddenPrivateName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).not.toContain('hidden-gadget')
+  })
+
+  it('detects a private name beside a public row, prints the count and leaves public names unredacted in paths', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([hiddenPrivateName], 'knowledge/wiki/repos/acme-labs--archived-widget.md'),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stdout).toBe(prSkippedLine)
+    expect(run.stderr).toContain('  - knowledge/wiki/repos/acme-labs--archived-widget.md\n')
+    expect(run.stderr).not.toContain('hidden-gadget')
+  })
+
+  it('passes a two-row file when the diff names only the public row, and counts the scanned row', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 1 private name(s))\n`)
+  })
+
+  it.each([
+    ['an error', {error: 'error'}, 'could not resolve private node_id(s): R_bad'],
+    ['an access-lost', {error: 'access-lost'}, 'could not resolve private node_id(s): R_bad'],
+  ] as const)('keeps the error outcome when a public row sits beside %s row', async (_label, answer, message) => {
+    const run = await runPrMode({
+      rows: {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}, R_bad: answer},
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toContain(message)
+    expect(run.stderr).not.toContain('R_pub')
+  })
+
+  it('prints exactly the existing success line, and nothing else on stdout, when no row is public', async () => {
+    const run = await runPrMode({
+      rows: {R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'}},
+      diff: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.stdout).toBe('check-private-leak: ok (scanned 1 private name(s))\n')
+  })
+
+  it('honors the operator override unchanged when a public row is present, and the count line still prints', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([hiddenPrivateName]),
+      title: '[allow-private-leak] promote',
+      author: 'marcusrbrown',
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.overrideCommentPosted).toBe(true)
+    expect(run.stderr).toContain('override honored for operator marcusrbrown')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 1 private name(s))\n`)
+  })
+
+  it('does not let a public row turn a title prefix from a non-operator into an override', async () => {
+    const run = await runPrMode({
+      rows: {
+        R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      },
+      diff: diffNaming([hiddenPrivateName]),
+      title: '[allow-private-leak] promote',
+      author: 'someone-else',
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.overrideCommentPosted).toBe(false)
+  })
+
+  it('does not post the override comment when a public row passes without an override', async () => {
+    const run = await runPrMode({
+      rows: {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}},
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.overrideCommentPosted).toBe(false)
+    expect(run.stderr).not.toContain('override')
+  })
+})
+
+describe('PR mode and promotion mode agree on which visibility values skip a row', () => {
+  it.each(nonPublicVisibilities)('%s is scanned by both entry points', async (_label, extra) => {
+    const answer = {nameWithOwner: hiddenPrivateName, ...extra}
+    const promotion = await runPromotionScan({
+      reposYaml: makeReposYaml(['R_odd']),
+      resolver: tableResolver({R_odd: answer}),
+      diff: diffNaming([hiddenPrivateName]),
+    })
+    const pr = await runPrMode({rows: {R_odd: answer}, diff: diffNaming([hiddenPrivateName])})
+
+    expect(promotion.ok).toBe(false)
+    expect(pr.scanResult).toBe('detection')
+  })
+
+  it('PUBLIC is skipped by both entry points', async () => {
+    const answer = {nameWithOwner: hiddenPrivateName, visibility: 'PUBLIC'}
+    const promotion = await runPromotionScan({
+      reposYaml: makeReposYaml(['R_pub']),
+      resolver: tableResolver({R_pub: answer}),
+      diff: diffNaming([hiddenPrivateName]),
+    })
+    const pr = await runPrMode({rows: {R_pub: answer}, diff: diffNaming([hiddenPrivateName])})
+
+    expect(promotion).toEqual({ok: true, publicSkipped: 1})
+    expect(pr.scanResult).toBe('success')
+  })
+})

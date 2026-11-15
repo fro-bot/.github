@@ -151,7 +151,8 @@ for (const nodeId of privateNodeIds) {
   }
 }
 // A row whose node GitHub reports as public (for example an archived public repository, which
-// reconcile stores as private) contributes no private name; a skip never hides a failure.
+// reconcile stores as private) contributes no private name, in the per-PR scan and the promotion
+// scan alike (one shared resolver); a skip never hides a failure.
 // A private:true entry with no usable node_id is seeded as a <missing-node-id> sentinel.
 if (failedNodeIds.length > 0) {
   return {ok: false, resolutionFailed: true, failedNodeIds}

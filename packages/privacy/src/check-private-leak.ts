@@ -767,6 +767,56 @@ function redactPathTokens(filePath: string, privateTokens: readonly string[]): s
 }
 
 /**
+ * What resolving the private rows of one repos.yaml yields, shared by the PR scan and the
+ * promotion scan so both apply the same visibility rule.
+ *
+ * - `privateTokens`: tokens for every node that resolved and is not exactly `PUBLIC`.
+ * - `scanned`: how many nodes contributed tokens.
+ * - `publicSkipped`: how many nodes GitHub reported as exactly `PUBLIC`: they contribute none.
+ * - `failures`: every node that did not resolve, with its class. Callers decide what a failure
+ *   costs (both block); a public skip never removes or hides one.
+ */
+interface PrivateRowResolution {
+  readonly privateTokens: readonly string[]
+  readonly scanned: number
+  readonly publicSkipped: number
+  readonly failures: readonly {readonly nodeId: string; readonly error: 'access-lost' | 'error'}[]
+}
+
+/**
+ * Resolve each private node_id, one at a time, and sort the answers.
+ *
+ * Reconcile stores `private: true` for every repository it cannot vouch for, an archived public
+ * repository included, so a stored `private: true` is not proof the repository is private. GitHub's
+ * live `visibility` decides: only the exact string `PUBLIC` skips a row. `PRIVATE`, `INTERNAL`, a
+ * missing field, `null`, a wrong type and any unexpected value keep their tokens (fail-closed).
+ */
+async function resolvePrivateRows(nodeIds: readonly string[], resolver: NodeIdResolver): Promise<PrivateRowResolution> {
+  const privateTokens: string[] = []
+  const failures: {nodeId: string; error: 'access-lost' | 'error'}[] = []
+  let scanned = 0
+  let publicSkipped = 0
+
+  for (const nodeId of nodeIds) {
+    const result = await resolver(nodeId)
+    if ('nameWithOwner' in result) {
+      if (result.visibility === 'PUBLIC') {
+        publicSkipped += 1
+      } else {
+        scanned += 1
+        privateTokens.push(...buildTokensForName(result.nameWithOwner))
+      }
+    } else {
+      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+      // Treating it as skip would make a mis-scoped PAT silently pass everything: it is a failure.
+      failures.push({nodeId, error: result.error})
+    }
+  }
+
+  return {privateTokens, scanned, publicSkipped, failures}
+}
+
+/**
  * Promotion-mode scan: pure, injectable, testable.
  *
  * Resolves private node_ids from repos.yaml content, builds the token set, and
@@ -808,7 +858,7 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   const privateEntries = parsed.repos.filter(r => r.private === true)
 
   // No early return for privateEntries.length === 0: zero private entries yields
-  // missingNodeIdCount === 0, an empty privateNodeIds/resolvedNames/privateTokens, and
+  // missingNodeIdCount === 0, an empty privateNodeIds/privateTokens, and
   // checkPrivateLeak([], diff, ...) converges to {ok: true} through the main path anyway (mirrors
   // the identical dead-code removal already documented in
   // packages/wiki-write-core/src/private-leak.ts's own checkPrivateLeak) -- a pure optimization,
@@ -827,16 +877,8 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   // itself).
   const missingNodeIdCount = privateEntries.length - privateNodeIds.length
 
-  // Resolve each node_id — exhaustive matrix.
-  // Stryker disable next-line ArrayDeclaration: seeding this with Stryker's placeholder string
-  // (`['Stryker was here']`) is unobservable -- `resolvedNames` is consumed only by
-  // `buildTokensForName(nameWithOwner)` below, and `buildPrivateNameTokens` (which it delegates
-  // to) requires a `/` at index >= 1 to produce any token at all (`slashIndex < 1` -> `return []`,
-  // wiki-slug.ts:35-36) -- "Stryker was here" has no `/`, so it contributes zero tokens to
-  // `privateTokens` regardless of whether it's seeded here.
-  const resolvedNames: string[] = []
-  const failedNodeIds: string[] = []
-  let publicSkipped = 0
+  // Resolve each node_id — exhaustive matrix (see resolvePrivateRows).
+  const resolution = await resolvePrivateRows(privateNodeIds, resolver)
 
   // Seed with missing-node-id sentinels (Fix B). No induction variable: an off-by-one or
   // wrong-direction mutant on a hand-rolled counting loop here is a deterministic hang (not a
@@ -845,34 +887,15 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   // loop guard or counter to mutate into a hang; its own `ArithmeticOperator`/`ObjectLiteral`
   // mutants on `{length: missingNodeIdCount}` are ordinary, per-test-killable mutants, caught by
   // the existing exact-sentinel-count assertions.
-  failedNodeIds.push(...Array.from({length: missingNodeIdCount}, () => '<missing-node-id>'))
-
-  for (const nodeId of privateNodeIds) {
-    const result = await resolver(nodeId)
-    if ('nameWithOwner' in result) {
-      // Fail-closed: only the exact string PUBLIC skips a row (see the matrix above).
-      if (result.visibility === 'PUBLIC') {
-        publicSkipped += 1
-      } else {
-        resolvedNames.push(result.nameWithOwner)
-      }
-    } else {
-      // Fix A: access-lost → BLOCK (same as any other failure).
-      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
-      // Treating it as skip would make a mis-scoped PAT silently pass everything.
-      failedNodeIds.push(nodeId)
-    }
-  }
+  const failedNodeIds = [
+    ...Array.from({length: missingNodeIdCount}, () => '<missing-node-id>'),
+    ...resolution.failures.map(failure => failure.nodeId),
+  ]
+  const {privateTokens, publicSkipped} = resolution
 
   // Any failure (access-lost, transient, auth, missing node_id) → block (fail-closed).
   if (failedNodeIds.length > 0) {
     return {ok: false, resolutionFailed: true, failedNodeIds}
-  }
-
-  // Build token set from resolved names.
-  const privateTokens: string[] = []
-  for (const nameWithOwner of resolvedNames) {
-    privateTokens.push(...buildTokensForName(nameWithOwner))
   }
 
   // Run the pure scan. No override in promotion mode (operator-supervised scheduled job).
@@ -927,10 +950,10 @@ function defaultResolverFactory(pat: string): NodeIdResolver {
  * The fixed-format count of rows skipped because GitHub reports them public: an integer, never a
  * name or a node ID. Silent when nothing was skipped.
  */
-function writePublicSkipLine(publicSkipped: number): void {
+function writePublicSkipLine(label: string, publicSkipped: number): void {
   if (publicSkipped > 0) {
     process.stdout.write(
-      `check-private-leak [promotion]: ${publicSkipped} private row(s) resolve to public repositories and are not scanned\n`,
+      `${label}: ${publicSkipped} private row(s) resolve to public repositories and are not scanned\n`,
     )
   }
 }
@@ -1039,7 +1062,7 @@ export async function runPromotionCli(
   const result = await runPromotionScan({reposYaml, resolver: loggingResolver, diff})
 
   if (result.ok) {
-    writePublicSkipLine(result.publicSkipped)
+    writePublicSkipLine('check-private-leak [promotion]', result.publicSkipped)
     process.stdout.write(
       `check-private-leak [promotion]: ok (scanned ${privateNodeIdCount - result.publicSkipped} private node_id(s))\n`,
     )
@@ -1066,7 +1089,7 @@ export async function runPromotionCli(
 
   // Diff match: print redacted file paths only, never the matched name.
   // Fix D: paths are already redacted by runPromotionScan before being returned here.
-  writePublicSkipLine(result.publicSkipped)
+  writePublicSkipLine('check-private-leak [promotion]', result.publicSkipped)
   process.stderr.write(
     'check-private-leak [promotion]: FAILED — private repository name(s) detected in promotion diff\n',
   )
@@ -1169,26 +1192,22 @@ export async function main(
   // Wire FRO_BOT_POLL_PAT ONLY to the resolver — never the diff or any other call.
   // Mirror the --promotion gitEnv isolation: the PAT must reach ONLY makeGhNodeIdResolver.
   const resolver = makeGhNodeIdResolver(pat)
-  const resolvedNames: string[] = []
+  const resolution = await resolvePrivateRows(privateNodeIds, resolver)
   const failedNodeIds: string[] = []
 
-  for (const nodeId of privateNodeIds) {
-    const result = await resolver(nodeId)
-    if ('nameWithOwner' in result) {
-      resolvedNames.push(result.nameWithOwner)
-    } else if (result.error === 'access-lost') {
+  for (const failure of resolution.failures) {
+    failedNodeIds.push(failure.nodeId)
+    if (failure.error === 'access-lost') {
       // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
       // Treating it as skip would make a mis-scoped PAT silently pass everything — fail closed.
-      // Mirror runPromotionScan's Fix A: push to failedNodeIds so the fail-closed block catches it.
-      failedNodeIds.push(nodeId)
+      // Mirror runPromotionScan's Fix A: it is a failure, so the fail-closed block below catches it.
       process.stderr.write(
-        `check-private-leak: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
+        `check-private-leak: node_id=${failure.nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,
       )
     } else {
       // 'error' class: transient/auth/rate-limit/unknown — fail closed.
       // Log only node_id + coarse error class; never echo raw gh stderr (may contain owner/name).
-      failedNodeIds.push(nodeId)
-      process.stderr.write(`check-private-leak: could not resolve node_id=${nodeId} (error)\n`)
+      process.stderr.write(`check-private-leak: could not resolve node_id=${failure.nodeId} (error)\n`)
     }
   }
 
@@ -1197,7 +1216,7 @@ export async function main(
     if (titlePrefixed && isOperator) {
       // Operator override allows proceeding even during a GitHub outage.
       process.stderr.write(
-        `check-private-leak: ⚠️  resolution failed for node_id(s): ${failedNodeIds.join(', ')} — operator override active, proceeding with ${resolvedNames.length} resolved name(s)\n`,
+        `check-private-leak: ⚠️  resolution failed for node_id(s): ${failedNodeIds.join(', ')} — operator override active, proceeding with ${resolution.scanned} resolved name(s)\n`,
       )
     } else {
       // Fail closed: cannot guarantee a complete scan.
@@ -1212,12 +1231,9 @@ export async function main(
     }
   }
 
-  // Build the full set of tokens to scan for.
-  // P3: use buildTokensForName to share token semantics with the promotion path.
-  const privateTokens: string[] = []
-  for (const nameWithOwner of resolvedNames) {
-    privateTokens.push(...buildTokensForName(nameWithOwner))
-  }
+  // The token set comes from the shared resolution, which already skipped every node GitHub
+  // reports as PUBLIC and shares its token semantics with the promotion path.
+  const privateTokens = resolution.privateTokens
 
   // Fetch the diff pinned to the immutable scannedHeadSha via the GitHub compare API.
   // This closes the force-push TOCTOU (Finding B): the diff is for exactly the SHA the
@@ -1234,6 +1250,7 @@ export async function main(
     process.exit(1)
   }
   const result = checkPrivateLeak(privateTokens, diff, override)
+  writePublicSkipLine('check-private-leak', resolution.publicSkipped)
 
   if (result.ok) {
     writeScanResult('success')
@@ -1247,7 +1264,7 @@ export async function main(
         process.stderr.write('check-private-leak: could not post override transparency comment\n')
       }
     }
-    process.stdout.write(`check-private-leak: ok (scanned ${resolvedNames.length} private name(s))\n`)
+    process.stdout.write(`check-private-leak: ok (scanned ${resolution.scanned} private name(s))\n`)
     return
   }
 
