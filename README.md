@@ -382,7 +382,7 @@ Fro Bot control plane:
 
 | Workflow | Purpose | Trigger |
 | --- | --- | --- |
-| **Fro Bot** | Core agent: PR review, issue triage, scheduled oversight, manual tasks | Trusted-author issues (opened/edited; OWNER/MEMBER/COLLABORATOR), PR events, schedule, dispatch, workflow_call |
+| **Fro Bot** | Core agent: PR review (including PRs by the `fro-bot` user, reviewed on the review model), issue triage, scheduled oversight, manual tasks | Trusted-author issues (opened/edited; OWNER/MEMBER/COLLABORATOR), PR events, schedule, dispatch, workflow_call |
 | **Capture Learnings** | Capture and commit knowledge-wiki learnings to the `data` branch | Schedule, dispatch |
 | **Draft Solutions** | Draft `docs/solutions/` entries from open `learning-proposal` issues into one `docs/drafted-solutions` PR; reviewed and merged manually | Monday 06:00 UTC, dispatch |
 | **Capture Patterns** | Detect recurring correction patterns across accepted learnings and solution docs, then draft human-reviewed pattern proposals | Manual dispatch |
@@ -416,7 +416,7 @@ Repository management:
 | **Manage Issues** | Issue-hygiene automation | Daily 01:30 UTC, reusable, dispatch |
 | **Renovate** | Automated dependency updates | PR/issue events, `Main` completion, dispatch |
 
-> [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation.
+> [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation. A PR by the `fro-bot` user (Remediate's `branch-pr` output) is reviewed on `opened` and on each push instead, because GitHub cannot request a review from a PR's own author; PRs by `[bot]` accounts (Renovate, the Fro Bot App) are not. The agent refuses to approve a PR by its own account, so a review of a `fro-bot`-user PR that would pass fails delivery as `review-guard-blocked` (a `request-changes` review posts normally).
 
 ### Agent Models
 

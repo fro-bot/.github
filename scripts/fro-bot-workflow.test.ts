@@ -1071,14 +1071,21 @@ interface PullRequestFixture {
   ref: string
   fork?: boolean
   fullName?: string
+  action?: string
 }
 
-function pullRequestEvent({login, ref, fork = false, fullName = 'fro-bot/.github'}: PullRequestFixture): unknown {
+function pullRequestEvent({
+  login,
+  ref,
+  fork = false,
+  fullName = 'fro-bot/.github',
+  action = 'synchronize',
+}: PullRequestFixture): unknown {
   return {
     github: {
       event_name: 'pull_request',
       repository: 'fro-bot/.github',
-      event: {pull_request: {user: {login}, head: {ref, repo: {fork, full_name: fullName}}}},
+      event: {action, pull_request: {user: {login}, head: {ref, repo: {fork, full_name: fullName}}}},
     },
   }
 }
@@ -1165,7 +1172,16 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
         (
           github.event_name == 'pull_request' &&
           !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-          (github.event.pull_request.user.login || '') != 'fro-bot'
+          (
+            (
+              (github.event.pull_request.user.login || '') == 'fro-bot' &&
+              contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action)
+            ) ||
+            (
+              (github.event.pull_request.user.login || '') != 'fro-bot' &&
+              github.event.action != 'opened'
+            )
+          )
         ) ||
         (
           (github.event_name == 'issue_comment' ||
@@ -1187,7 +1203,18 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     // Drafted-solutions PRs get manual review (fro-bot/agent#1520): no head-ref exemption from the bot exclusion.
     ['fro-bot[bot] on docs/drafted-solutions', pullRequestEvent({login: 'fro-bot[bot]', ref: draftedBranch}), false],
     ['dependabot[bot]', pullRequestEvent({login: 'dependabot[bot]', ref: draftedBranch}), false],
-    ['the fro-bot user', pullRequestEvent({login: 'fro-bot', ref: 'feat/x'}), false],
+    ['renovate[bot]', pullRequestEvent({login: 'renovate[bot]', ref: 'renovate/foo'}), false],
+    [
+      'renovate[bot] on opened',
+      pullRequestEvent({login: 'renovate[bot]', ref: 'renovate/foo', action: 'opened'}),
+      false,
+    ],
+    ['the fro-bot user on a same-repo head', pullRequestEvent({login: 'fro-bot', ref: 'feat/x'}), true],
+    [
+      'the fro-bot user on a fork head',
+      pullRequestEvent({login: 'fro-bot', ref: 'feat/x', fork: true, fullName: 'someone/.github'}),
+      false,
+    ],
     [
       'a human PR from a fork',
       pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x', fork: true, fullName: 'someone/.github'}),
@@ -1196,6 +1223,53 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
     ['a human PR', pullRequestEvent({login: 'marcusrbrown', ref: 'feat/x'}), true],
   ])('evaluates the content-trigger predicate against a fixture: %s', (_name, event, expected) => {
     expect(evaluateExpression(contentIf, event)).toBe(expected)
+  })
+
+  // GitHub cannot request a review from a pull request's own author, so a fro-bot-user PR has no
+  // review_requested for fro-bot (CODEOWNERS requests marcusrbrown there, and the agent skips a
+  // review request that is not for the bot). It is reviewed on opened and on each push. `opened` is
+  // admitted for that author only: an ordinary PR already starts on review_requested at open.
+  it.each([
+    ['an ordinary PR', 'marcusrbrown', 'opened', false],
+    ['an ordinary PR', 'marcusrbrown', 'synchronize', true],
+    ['an ordinary PR', 'marcusrbrown', 'reopened', true],
+    ['an ordinary PR', 'marcusrbrown', 'ready_for_review', true],
+    ['an ordinary PR', 'marcusrbrown', 'review_requested', true],
+    ['a fro-bot-user PR', 'fro-bot', 'opened', true],
+    ['a fro-bot-user PR', 'fro-bot', 'synchronize', true],
+    ['a fro-bot-user PR', 'fro-bot', 'reopened', true],
+    ['a fro-bot-user PR', 'fro-bot', 'ready_for_review', false],
+    ['a fro-bot-user PR', 'fro-bot', 'review_requested', false],
+    ['a fro-bot[bot] PR', 'fro-bot[bot]', 'opened', false],
+    ['a fro-bot[bot] PR', 'fro-bot[bot]', 'synchronize', false],
+    ['a fro-bot[bot] PR', 'fro-bot[bot]', 'review_requested', false],
+    ['a renovate[bot] PR', 'renovate[bot]', 'opened', false],
+    ['a renovate[bot] PR', 'renovate[bot]', 'synchronize', false],
+  ] as const)('starts a review for %s (%s) on %s: %s', (_kind, login, action, expected) => {
+    expect(evaluateExpression(contentIf, pullRequestEvent({login, ref: 'feat/x', action}))).toBe(expected)
+  })
+
+  it('starts one review run when an ordinary PR opens and one when a fro-bot-user PR opens', () => {
+    // CODEOWNERS fires review_requested at open for both authors. Admitting `opened` for an ordinary
+    // PR as well would start a second run for the same open.
+    const startsAtOpen = (login: string) =>
+      ['opened', 'review_requested'].filter(action =>
+        evaluateExpression(contentIf, pullRequestEvent({login, ref: 'feat/x', action})),
+      )
+
+    expect(startsAtOpen('marcusrbrown')).toEqual(['review_requested'])
+    expect(startsAtOpen('fro-bot')).toEqual(['opened'])
+  })
+
+  it('listens for opened alongside the existing pull_request types', () => {
+    const types = (froBotParsed.on as {pull_request?: {types?: string[]}}).pull_request?.types
+    expect(types).toEqual(['opened', 'synchronize', 'ready_for_review', 'reopened', 'review_requested'])
+  })
+
+  it('reviews a fro-bot-user PR on the review model tier', () => {
+    const step = contentJob?.steps?.find(candidate => candidate.id === 'agent-model')
+    expect(String(step?.with?.tier)).toContain("github.event_name == 'pull_request'")
+    expect(String(step?.with?.tier)).toContain("&& 'review' || 'light'")
   })
 
   it.each([
@@ -1231,6 +1305,14 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
       false,
     ],
     ['an untrusted author mentioning on #3512', {issueNumber: 3512, login: 'octocat', association: 'NONE'}, false],
+    // The loop guard stays: the agent never answers its own account, even on a PR it now reviews.
+    ['the fro-bot account mentioning itself on an issue', {issueNumber: 3511, login: 'fro-bot'}, false],
+    ['the fro-bot account mentioning itself on a PR', {issueNumber: 3511, pullRequest: true, login: 'fro-bot'}, false],
+    [
+      'the fro-bot account commenting on a review thread of its own PR',
+      {eventName: 'pull_request_review_comment', issueNumber: 3511, login: 'fro-bot'},
+      false,
+    ],
     [
       'the operator reviewing a comment on pull request 3512',
       {eventName: 'pull_request_review_comment', issueNumber: 3512, login: 'marcusrbrown', userId: OPERATOR_ID},
