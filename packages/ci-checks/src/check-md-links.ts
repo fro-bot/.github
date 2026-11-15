@@ -10,7 +10,10 @@ export interface MarkdownLinkFinding {
   readonly target: string
 }
 
-/** Check root-level markdown files and markdown files below docs/ for broken relative links. */
+/**
+ * Check root-level markdown files, markdown files below docs/ and the root llms.txt (which links repository files
+ * with markdown links) for broken relative links.
+ */
 export async function checkMarkdownLinks(rootDir: string = process.cwd()): Promise<MarkdownLinkFinding[]> {
   const paths = await collectMarkdownPaths(rootDir)
   const findings: MarkdownLinkFinding[] = []
@@ -32,7 +35,7 @@ async function collectMarkdownPaths(rootDir: string): Promise<string[]> {
   const rootEntries = await readdir(rootDir, {withFileTypes: true})
 
   for (const entry of rootEntries) {
-    if (entry.isFile() && entry.name.endsWith('.md')) {
+    if (entry.isFile() && (entry.name.endsWith('.md') || entry.name === 'llms.txt')) {
       paths.push(entry.name)
     }
   }

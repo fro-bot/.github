@@ -70,6 +70,12 @@ describe('a run', () => {
     expect(result.stderr).toBe('docs/guide.md:1 -> missing-one.md\ndocs/guide.md:3 -> missing-two.md\n')
   })
 
+  it('prints a broken llms.txt link in the same format as a markdown file', async () => {
+    const result = await run(checkout('llms', {'llms.txt': '# T\n\n- [Gone](packages/gone.ts): x\n'}))
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toBe('llms.txt:3 -> packages/gone.ts\n')
+  })
+
   it('checks the working directory the process has, not the repository the module lives in', async () => {
     const result = await run(checkout('elsewhere', {'README.md': '[x](nowhere.md)\n'}))
     expect(result.stderr).toBe('README.md:1 -> nowhere.md\n')
