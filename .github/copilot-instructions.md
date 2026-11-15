@@ -76,9 +76,11 @@ If guidance conflicts, follow the order above.
 3. Run verification commands locally.
 4. Update docs when behavior or usage changes.
 
-## Verification Commands (required)
+## Verification Commands (required when you change files)
 
-Run these commands in repository root before finalizing:
+This section applies only to a run that changes files. A pull request review or a triage run changes nothing and does not run these: CI runs them on the pull request.
+
+Run these commands in repository root before finalizing a change:
 
 ```bash
 bun run bootstrap
