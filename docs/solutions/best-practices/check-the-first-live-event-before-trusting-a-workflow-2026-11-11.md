@@ -85,7 +85,7 @@ gh run view <run-id> --json jobs --jq '.jobs[] | "\(.name) \(.conclusion)"'
 gh run view <run-id> --log --job <job-id> | grep 'Process completed with exit code 3'
 ```
 
-The recovery job had run after one page conflict. The `CONFLICT_EXHAUSTED` trigger remained unobserved.
+The recovery job had run after one page conflict. No run had yet reached the recovery job from `CONFLICT_EXHAUSTED`.
 
 ### Smaller rules from the same work
 
