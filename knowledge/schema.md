@@ -75,7 +75,7 @@ Wikilinks MUST point to existing pages. Broken links are flagged by weekly lint.
 
 - **Additive by default**: new knowledge augments existing pages; it does not replace prior content unless explicitly contradicted by a newer source.
 - **Contradictions**: when new information contradicts existing content, note both versions with dates and sources. Do not silently overwrite.
-- **Exception, repo pages written by surveys**: a repeat survey updates the page in place and the two rules above do not apply to it. A current-state statement changes only on contrary evidence, and where it stands. Dated findings, corrections and attribution stay as written. A survey that finds nothing changed leaves the page unchanged and writes only its log entry.
+- **Exception, repo pages written by surveys**: a repeat survey updates the page in place and the two rules above do not apply to it. A current-state statement changes only on contrary evidence, and where it stands. Dated findings, corrections and attribution stay as written. A survey that finds nothing changed leaves the page unchanged, its `updated` date included, and writes only its log entry.
 - **Staleness**: pages not updated in 90+ days are candidates for lint review.
 - **Page size**: aim for 500-2000 words per page. Split larger pages into sub-topics.
 

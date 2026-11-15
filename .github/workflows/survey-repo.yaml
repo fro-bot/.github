@@ -49,7 +49,7 @@ env:
     - Modify only `knowledge/wiki/**` and `knowledge/log.md` in this repository.
     - Do not edit `knowledge/index.md`: the trusted writer maintains it from the wiki pages.
     - Keep wikilinks valid and frontmatter complete.
-    - If the target repo appears to lack a Fro Bot workflow, note that in the repo page so a follow-up draft PR can be proposed separately.
+    - On a first survey, if the target repo appears to lack a Fro Bot workflow, note that in the repo page so a follow-up draft PR can be proposed separately. On a repeat survey, do so only when the page does not already say it.
     - Record the ingest summary only in `knowledge/log.md`. Do not open, comment on, or update a GitHub issue as a run notice; the log entry is the canonical per-survey summary.
 
     Repeat survey rules, for `knowledge/wiki/repos/$TARGET_SLUG.md` only, when that page already exists in the checkout. They override the schema's additive and contradiction rules for that page. If that page does not exist, this is a first survey: write a full page.
@@ -57,9 +57,9 @@ env:
     - Leave statements the survey did not check.
     - Keep dated findings, corrections and attribution as written. When the only statement of a changed fact is inside a dated section, leave it and add one short current-state statement near the top. Do not restructure the page.
     - Do not reword, reorder or restate what is still true.
-    - Add a dated note only for a material change. Material: a change to the default branch, visibility or archived state; the language, runtime or package manager; how it builds, tests or releases; whether Fro Bot or Renovate is set up; the license; what the project is for. Not material: dependency and version bumps, counts, CI status, anything that only confirms what the page says.
+    - Add a dated note for a material change, and only for one. Material: a change to the default branch, visibility or archived state; the language, runtime or package manager; how it builds, tests or releases; whether Fro Bot or Renovate is set up; the license; what the project is for. Not material: dependency and version bumps, counts, CI status, anything that only confirms what the page says.
     - Add no `sources` entry for the repository when the page already lists one for it (the repository's URL, with or without a path under it). Leave existing entries and their dates alone.
-    - When nothing changes, leave the page untouched. Still write the log entry, naming the repository and saying it was verified and not changed.
+    - When nothing changes, leave the page untouched, frontmatter and its `updated` date included. Still write the log entry, naming the repository and saying it was verified and not changed.
 
     Required outcomes:
     1. Create the repo page at `knowledge/wiki/repos/$TARGET_SLUG.md`, or update it by the repeat survey rules.

@@ -2599,11 +2599,17 @@ describe('survey-repo.yaml rewrite input: a survey that replaces the repo page b
       ],
       ['dated-only case: do not restructure', 'Do not restructure the page.'],
       ['no rewording, reordering or restating', 'Do not reword, reorder or restate what is still true.'],
-      ['dated note only for a material change', 'Add a dated note only for a material change.'],
+      [
+        'a material change gets a dated note, and only a material change',
+        'Add a dated note for a material change, and only for one.',
+      ],
       ['no second sources entry', 'Add no `sources` entry for the repository when the page already lists one for it'],
       ['sources URL match with or without a path', "(the repository's URL, with or without a path under it)"],
       ['existing sources entries and dates stay', 'Leave existing entries and their dates alone.'],
-      ['a quiet survey leaves the page untouched', 'When nothing changes, leave the page untouched.'],
+      [
+        'a quiet survey leaves the page untouched, frontmatter and `updated` date included',
+        'When nothing changes, leave the page untouched, frontmatter and its `updated` date included.',
+      ],
       [
         'a quiet survey still writes the log entry, naming the repository',
         'Still write the log entry, naming the repository and saying it was verified and not changed.',
@@ -2635,6 +2641,15 @@ describe('survey-repo.yaml rewrite input: a survey that replaces the repo page b
         expect(notMaterial, item).toContain(item)
         expect(material, item).not.toContain(item)
       }
+    })
+
+    it('scopes the missing Fro Bot workflow note: a first survey notes it, a repeat survey only when the page lacks it', () => {
+      expect(base).not.toContain(
+        '- If the target repo appears to lack a Fro Bot workflow, note that in the repo page so a follow-up draft PR can be proposed separately.',
+      )
+      expect(base).toContain(
+        '- On a first survey, if the target repo appears to lack a Fro Bot workflow, note that in the repo page so a follow-up draft PR can be proposed separately. On a repeat survey, do so only when the page does not already say it.',
+      )
     })
 
     it('says a first survey, with no page yet, writes a full page', () => {
@@ -2695,6 +2710,15 @@ describe('survey-repo.yaml retry text, single log entry and unchanged gates', ()
 
       expect(prefix).toContain('Edit the repo page only when the survey warrants one.')
       expect(prefix).not.toContain('the repo page and the log entry')
+    })
+
+    it('makes only the log entry mandatory: the word appears once, in the log entry sentence', () => {
+      const prefix = retryPrefix(step)
+      const sentences = prefix.split(/(?<=\.)\s+/u).filter(sentence => /mandatory/iu.test(sentence))
+
+      expect(prefix.match(/mandatory/giu)).toHaveLength(1)
+      expect(sentences).toStrictEqual(['The log entry is mandatory.'])
+      expect(prefix).not.toMatch(/repo page[^.]*mandatory|mandatory[^.]*repo page/iu)
     })
 
     it('still says to make no wiki changes when the survey cannot be completed', () => {
