@@ -195,7 +195,7 @@ The light and act values are never used for a review tier, and the reverse.
 
 ---
 
-- [ ] **Unit 3: Documentation**
+- [x] **Unit 3: Documentation**
 
 **Goal:** The documentation names the settings.
 
