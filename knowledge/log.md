@@ -10687,3 +10687,30 @@ Run: https://github.com/fro-bot/.github/actions/runs/43682281142
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9be739e376a0cde145b1b6d6b195e97a00b99d13
+
+## [2026-11-15 12:49] ingest | repo:marcusrbrown/extend-vscode
+
+Verified the target; no wiki page changed.
+
+Re-surveyed marcusrbrown/extend-vscode: verified, not changed. `main` moved
+`bd093f3b` → `5e644ec7` (pushed 2026-11-15) across five Renovate commits
+(#578–#582). Comparing the two SHAs shows only `package.json` and
+`pnpm-lock.yaml` changed. `@types/vscode` 1.140.0 → 1.146.0, `eslint`
+10.13.0 → 10.14.0, `@playwright/test` 1.64.0 → 1.65.0, `prettier` 3.9.0 →
+3.10.0. The README, `pnpm-workspace.yaml`, and all six workflow files are
+unchanged. The root listing and workflow set match the last survey. Repo is
+still public, default branch `main`, not archived, TypeScript, MIT, and
+`node_id` is unchanged. `engines.vscode`, `packageManager` (pnpm 10.34.5), and
+version `0.1.0` did not move. The types-vs-engine gap widened by six minors,
+which is a version bump and does not need a new note: the page already records
+that contradiction. The page already says there is no Fro Bot workflow, so no
+new note was added. Under the repeat-survey rules,
+`wiki/repos/marcusrbrown--extend-vscode.md` was left untouched, including its
+frontmatter and `updated` date. Dependency-only drift justifies no topic,
+entity, or comparison change. Reads were limited to repository metadata, the
+root and workflow listings, and the compare of the manifest diff. Corrections
+context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43715597103
+
+Sources: https://github.com/marcusrbrown/extend-vscode
