@@ -4811,8 +4811,8 @@ function make404Error(): Error {
   })
 }
 
-describe('extractPrivateNodeIds — filter predicate discrimination (via fetchPrivateNodeIds)', () => {
-  it('includes only entries where private===true AND node_id is a non-empty string', async () => {
+describe('extractPrivateRows — filter predicate discrimination (via fetchPrivateRows)', () => {
+  it('resolves only the private row that has a node_id and counts the private row without one as a failure, ignoring the non-private row', async () => {
     const mixedYaml = [
       'version: 1',
       'repos:',
@@ -4863,7 +4863,11 @@ describe('extractPrivateNodeIds — filter predicate discrimination (via fetchPr
       .mockReturnValueOnce('')
 
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
-    vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const stderrOutput: string[] = []
+    vi.spyOn(process.stderr, 'write').mockImplementation((msg: unknown) => {
+      stderrOutput.push(String(msg))
+      return true
+    })
     const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
       throw new Error('process.exit called')
     })
@@ -4871,17 +4875,18 @@ describe('extractPrivateNodeIds — filter predicate discrimination (via fetchPr
     process.env.GITHUB_EVENT_PATH = '/fake/event.json'
     process.env.FRO_BOT_POLL_PAT = 'test-pat'
     try {
-      // #then: exactly ONE resolver call (for R_included) — the other two entries were filtered
-      // out (private===false, and node_id omitted entirely, respectively — assertReposFile itself
+      // #then: exactly ONE resolver call (for R_included) — the private===false entry is filtered
+      // out and the private entry with its node_id omitted is never resolved (assertReposFile itself
       // rejects an empty-string node_id, so "present but empty" cannot reach this filter; "absent"
-      // is the real excluded shape). If either half of the `&&` were dropped or swapped to `||`, a
-      // different set of entries would be resolved and the resolver graphql call count would diverge
-      // from exactly 1.
-      await main(makeWorkflowRunReader(eventJson), prApiResolver)
-      expect(exitSpy).not.toHaveBeenCalled()
+      // is the real shape). That row is a resolution failure, so the scan blocks before any diff
+      // fetch: exactly ONE row is counted missing, not two (the non-private row is not counted).
+      await expect(main(makeWorkflowRunReader(eventJson), prApiResolver)).rejects.toThrow('process.exit called')
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(stderrOutput.join('')).toContain('1 private entry/entries have no node_id')
       const calls = mockExecFileSync.mock.calls as [string, string[], unknown][]
       const graphqlCalls = calls.filter(c => c[1][1] === 'graphql')
       expect(graphqlCalls).toHaveLength(1)
+      expect(calls).toHaveLength(3)
     } finally {
       exitSpy.mockRestore()
       vi.restoreAllMocks()
@@ -4892,7 +4897,7 @@ describe('extractPrivateNodeIds — filter predicate discrimination (via fetchPr
   })
 })
 
-describe('main() — fetchPrivateNodeIds: data-absent fallback (Oracle-specified tests)', () => {
+describe('main() — fetchPrivateRows: data-absent fallback (Oracle-specified tests)', () => {
   // Test 1: data content 404 + data ref ABSENT + main has a private node_id whose name
   // appears in the PR diff added lines ⇒ gate FAILS (catches the leak via main fallback).
   it('Test 1: data 404 + branch absent + main has private entry matching diff → gate FAILS', async () => {
@@ -6210,6 +6215,8 @@ interface PrModeRun {
   readonly stderr: string
   readonly scanResult: string | undefined
   readonly overrideCommentPosted: boolean
+  /** Every node ID the resolver was asked about, in call order. */
+  readonly resolvedNodeIds: readonly string[]
 }
 
 /**
@@ -6222,19 +6229,27 @@ async function runPrMode(opts: {
   readonly diff: string
   readonly title?: string
   readonly author?: string
+  /** Serve this repos.yaml instead of one generated from the `rows` keys. */
+  readonly reposYaml?: string
 }): Promise<PrModeRun> {
   const headSha = 'sha-pr-visibility'
   const stdout: string[] = []
   const stderr: string[] = []
   let overrideCommentPosted = false
+  const resolvedNodeIds: string[] = []
   mockExecFileSync.mockReset()
   mockAppendFileSync.mockReset()
   mockExecFileSync.mockImplementation((_cmd: string, args: string[]) => {
     const joined = args.join(' ')
     if (joined.startsWith('repo view')) return 'fro-bot/.github'
-    if (joined.includes('contents/metadata/repos.yaml')) return makeYamlBase64(Object.keys(opts.rows))
+    if (joined.includes('contents/metadata/repos.yaml')) {
+      return opts.reposYaml === undefined
+        ? makeYamlBase64(Object.keys(opts.rows))
+        : Buffer.from(opts.reposYaml).toString('base64')
+    }
     if (args.includes('graphql')) {
       const nodeId = args.find(arg => arg.startsWith('id='))?.slice(3) ?? ''
+      resolvedNodeIds.push(nodeId)
       const answer: PrRowAnswer = opts.rows[nodeId] ?? {error: 'error'}
       if ('nameWithOwner' in answer) return JSON.stringify({data: {node: answer}})
       if (answer.error === 'access-lost') return JSON.stringify({data: {node: null}})
@@ -6288,6 +6303,7 @@ async function runPrMode(opts: {
     stderr: stderr.join(''),
     scanResult: scanResultWrite?.trim().slice('scan_result='.length),
     overrideCommentPosted,
+    resolvedNodeIds,
   }
 }
 
@@ -6473,5 +6489,299 @@ describe('PR mode and promotion mode agree on which visibility values skip a row
 
     expect(promotion).toEqual({ok: true, publicSkipped: 1})
     expect(pr.scanResult).toBe('success')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A private row without a node_id blocks PR mode, as it blocks promotion
+// ---------------------------------------------------------------------------
+
+interface RowSpec {
+  readonly owner: string
+  readonly name: string
+  /** Omitted means the row has no `node_id` key at all. */
+  readonly nodeId?: string
+  readonly isPrivate?: boolean
+}
+
+/** A repos.yaml with exactly these rows; `isPrivate` defaults to true. */
+function reposYamlFor(rows: readonly RowSpec[]): string {
+  const entries = rows.map(
+    row =>
+      `  - owner: ${JSON.stringify(row.owner)}\n    name: ${JSON.stringify(row.name)}\n    private: ${row.isPrivate ?? true}${
+        row.nodeId === undefined ? '' : `\n    node_id: ${JSON.stringify(row.nodeId)}`
+      }\n    added: "2024-01-01"\n    onboarding_status: onboarded\n    last_survey_at: null\n    last_survey_status: null\n    has_fro_bot_workflow: false\n    has_renovate: false`,
+  )
+  return entries.length === 0 ? 'version: 1\nrepos: []\n' : `version: 1\nrepos:\n${entries.join('\n')}\n`
+}
+
+const noIdRow: RowSpec = {owner: 'acme-labs', name: 'secret-widget'}
+const noIdName = 'acme-labs/secret-widget'
+const resolvableRow: RowSpec = {owner: '[REDACTED]', name: 'R_priv', nodeId: 'R_priv'}
+const publicRow: RowSpec = {owner: '[REDACTED]', name: 'R_pub', nodeId: 'R_pub'}
+const badRow: RowSpec = {owner: '[REDACTED]', name: 'R_bad', nodeId: 'R_bad'}
+const resolvableAnswers = {R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'}} as const
+const publicAnswers = {R_pub: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}} as const
+
+const missingNodeIdBlockLine =
+  'check-private-leak: 1 private entry/entries have no node_id (<missing-node-id>) — BLOCKING\n'
+const refusalLine =
+  'check-private-leak: cannot guarantee a complete scan — refusing to pass the PR without full resolution\n'
+const overrideTitle = '[allow-private-leak] promote'
+
+describe('main() — a private row without a node_id (PR mode)', () => {
+  it('blocks with the error outcome when the only private row has no node_id, printing the sentinel and no name', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([noIdRow]),
+      diff: diffNaming([noIdName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toBe(
+      `${missingNodeIdBlockLine}check-private-leak: FAILED — could not resolve private node_id(s): <missing-node-id>\n${refusalLine}`,
+    )
+    expect(run.stderr).not.toContain('secret-widget')
+    expect(run.stderr).not.toContain('acme-labs')
+    expect(run.resolvedNodeIds).toEqual([])
+  })
+
+  it('keeps the error outcome, not a detection, when the row sits beside a resolvable private row whose name is in the diff', async () => {
+    const run = await runPrMode({
+      rows: resolvableAnswers,
+      reposYaml: reposYamlFor([noIdRow, resolvableRow]),
+      diff: diffNaming([hiddenPrivateName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toBe(
+      `${missingNodeIdBlockLine}check-private-leak: FAILED — could not resolve private node_id(s): <missing-node-id>\n${refusalLine}`,
+    )
+    expect(run.stderr).not.toContain('hidden-gadget')
+    expect(run.resolvedNodeIds).toEqual(['R_priv'])
+  })
+
+  it('keeps the error outcome when the row sits beside a row that resolves PUBLIC', async () => {
+    const run = await runPrMode({
+      rows: publicAnswers,
+      reposYaml: reposYamlFor([publicRow, noIdRow]),
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stdout).toBe('')
+    expect(run.stderr).toBe(
+      `${missingNodeIdBlockLine}check-private-leak: FAILED — could not resolve private node_id(s): <missing-node-id>\n${refusalLine}`,
+    )
+    expect(run.resolvedNodeIds).toEqual(['R_pub'])
+  })
+
+  it('prints one sentinel per row and the row count when two rows have no node_id', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([noIdRow, {owner: 'acme-labs', name: 'other-widget'}]),
+      diff: diffNaming([noIdName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stderr).toBe(
+      `check-private-leak: 2 private entry/entries have no node_id (<missing-node-id>) — BLOCKING\ncheck-private-leak: FAILED — could not resolve private node_id(s): <missing-node-id>, <missing-node-id>\n${refusalLine}`,
+    )
+    expect(run.stderr).not.toContain('other-widget')
+  })
+
+  it('lists the sentinel before an unresolvable node, as the promotion scan does', async () => {
+    const run = await runPrMode({
+      rows: {R_bad: {error: 'error'}},
+      reposYaml: reposYamlFor([badRow, noIdRow]),
+      diff: diffNaming([noIdName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stderr).toBe(
+      `${missingNodeIdBlockLine}check-private-leak: could not resolve node_id=R_bad (error)\ncheck-private-leak: FAILED — could not resolve private node_id(s): <missing-node-id>, R_bad\n${refusalLine}`,
+    )
+  })
+
+  it('honors the operator override for a missing node_id exactly as for an unresolvable node', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([noIdRow]),
+      diff: diffNaming([noIdName]),
+      title: overrideTitle,
+      author: 'marcusrbrown',
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.overrideCommentPosted).toBe(true)
+    expect(run.stdout).toBe('check-private-leak: ok (scanned 0 private name(s))\n')
+    expect(run.stderr).toBe(
+      `${missingNodeIdBlockLine}check-private-leak: ⚠️  resolution failed for node_id(s): <missing-node-id> — operator override active, proceeding with 0 resolved name(s)\ncheck-private-leak: ⚠️  override honored for operator marcusrbrown — bypassing private-leak guard\n`,
+    )
+    expect(run.stderr).not.toContain('secret-widget')
+  })
+
+  it('under the override still scans the resolved names beside a missing node_id', async () => {
+    const detected = await runPrMode({
+      rows: resolvableAnswers,
+      reposYaml: reposYamlFor([noIdRow, resolvableRow]),
+      diff: diffNaming([hiddenPrivateName]),
+      title: overrideTitle,
+      author: 'marcusrbrown',
+    })
+    const clean = await runPrMode({
+      rows: resolvableAnswers,
+      reposYaml: reposYamlFor([noIdRow, resolvableRow]),
+      diff: diffNaming(['acme-labs/unrelated']),
+      title: overrideTitle,
+      author: 'marcusrbrown',
+    })
+
+    // The override bypasses a detection exactly as it does beside an unresolvable node.
+    expect(detected.exitCode).toBeUndefined()
+    expect(detected.scanResult).toBe('success')
+    expect(detected.stderr).toContain('operator override active, proceeding with 1 resolved name(s)')
+    expect(clean.exitCode).toBeUndefined()
+    expect(clean.scanResult).toBe('success')
+    expect(clean.stdout).toBe('check-private-leak: ok (scanned 1 private name(s))\n')
+  })
+
+  it('does not let a non-operator title prefix bypass a missing node_id', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([noIdRow]),
+      diff: diffNaming([noIdName]),
+      title: overrideTitle,
+      author: 'someone-else',
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.overrideCommentPosted).toBe(false)
+  })
+
+  it('does not let the operator without the title prefix bypass a missing node_id', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([noIdRow]),
+      diff: diffNaming([noIdName]),
+      title: 'promote',
+      author: 'marcusrbrown',
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.overrideCommentPosted).toBe(false)
+  })
+
+  it.each([
+    ['a missing node_id', reposYamlFor([noIdRow]), {}],
+    ['an unresolvable node', reposYamlFor([badRow]), {R_bad: {error: 'error'}}],
+  ] as const)('gives %s the same outcome with and without the override', async (_label, reposYaml, rows) => {
+    const blocked = await runPrMode({rows, reposYaml, diff: diffNaming([noIdName])})
+    const overridden = await runPrMode({
+      rows,
+      reposYaml,
+      diff: diffNaming([noIdName]),
+      title: overrideTitle,
+      author: 'marcusrbrown',
+    })
+
+    expect([blocked.exitCode, blocked.scanResult, blocked.overrideCommentPosted]).toEqual([1, 'error', false])
+    expect([overridden.exitCode, overridden.scanResult, overridden.overrideCommentPosted]).toEqual([
+      undefined,
+      'success',
+      true,
+    ])
+  })
+
+  it('does not flag a PUBLIC row that has no node_id: only private rows need one', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([{owner: 'acme-labs', name: 'open-widget', isPrivate: false}]),
+      diff: diffNaming([noIdName]),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
+    expect(run.stderr).toBe('')
+  })
+
+  it('rejects an empty node_id at parse time, as an error outcome with no name printed', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: reposYamlFor([{owner: 'acme-labs', name: 'secret-widget', nodeId: ''}]),
+      diff: diffNaming([noIdName]),
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stderr).toContain('failed to fetch private node_ids — fail closed')
+    expect(run.stderr).not.toContain('secret-widget')
+  })
+
+  it('prints byte-identical output with zero private rows', async () => {
+    const run = await runPrMode({rows: {}, reposYaml: reposYamlFor([]), diff: diffNaming([noIdName])})
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
+    expect(run.stderr).toBe('')
+    expect(run.resolvedNodeIds).toEqual([])
+  })
+
+  it('prints byte-identical output when every private row has a node_id', async () => {
+    const run = await runPrMode({
+      rows: {...resolvableAnswers, ...publicAnswers},
+      reposYaml: reposYamlFor([resolvableRow, publicRow]),
+      diff: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 1 private name(s))\n`)
+    expect(run.stderr).toBe('')
+    expect(run.resolvedNodeIds).toEqual(['R_priv', 'R_pub'])
+  })
+})
+
+describe('PR mode and promotion mode agree on a private row without a node_id', () => {
+  it.each([
+    ['one missing row', [noIdRow], {}, ['<missing-node-id>']],
+    [
+      'a missing row beside a resolvable private row',
+      [noIdRow, resolvableRow],
+      resolvableAnswers,
+      ['<missing-node-id>'],
+    ],
+    ['a missing row beside a PUBLIC row', [publicRow, noIdRow], publicAnswers, ['<missing-node-id>']],
+    ['two missing rows', [noIdRow, {...noIdRow, name: 'other-widget'}], {}, ['<missing-node-id>', '<missing-node-id>']],
+    [
+      'a missing row beside an unresolvable node',
+      [badRow, noIdRow],
+      {R_bad: {error: 'error'}},
+      ['<missing-node-id>', 'R_bad'],
+    ],
+  ] as const)('%s blocks both with the same ordered failures', async (_label, rows, answers, expected) => {
+    const reposYaml = reposYamlFor(rows)
+    const diff = diffNaming([hiddenPrivateName, noIdName])
+
+    const promotion = await runPromotionScan({reposYaml, resolver: tableResolver(answers), diff})
+    const pr = await runPrMode({rows: answers, reposYaml, diff})
+
+    expect(promotion).toEqual({ok: false, resolutionFailed: true, failedNodeIds: expected})
+    expect(pr.exitCode).toBe(1)
+    expect(pr.scanResult).toBe('error')
+    expect(pr.stderr).toContain(`could not resolve private node_id(s): ${expected.join(', ')}\n`)
+    expect(pr.stderr).not.toContain('secret-widget')
   })
 })
