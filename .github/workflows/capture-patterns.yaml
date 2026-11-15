@@ -173,7 +173,7 @@ jobs:
       - name: 🤖 Draft pattern proposal bodies
         id: agent
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
-        uses: fro-bot/agent@1c4555b49de4a2d55d3ca7cd62a80cf5f2e8edab # v0.143.0
+        uses: fro-bot/agent@eaf1e3e284d58add1695b2e131e6104030689dc1 # v0.144.0
         env:
           TASK_PROMPT: |
             You are authoring recurring-pattern proposal bodies. Each candidate in the
