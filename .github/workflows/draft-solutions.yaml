@@ -152,7 +152,7 @@ jobs:
 
       - name: 🤖 Draft solution docs
         id: agent
-        uses: fro-bot/agent@95b0fbf4e39ff2d1c8431050c51260de7bbd34ed # v0.144.1
+        uses: fro-bot/agent@4e394905b7eafda2d7424816eb7846d3f09c40df # v0.144.2
         timeout-minutes: 45
         env:
           TASK_PROMPT: |
@@ -251,6 +251,7 @@ jobs:
               again until it exits 0.
             - Write rows.json to exactly .drafted-solutions/rows.json. Output nothing else.
         with:
+          isolate-agent: 'true'
           # The action requires a github-token input. This is the workflow's auto-provisioned
           # GITHUB_TOKEN, scoped to read access by this job's permissions — it cannot write.
           # Every write happens in the publish job, after validation and the privacy gate.

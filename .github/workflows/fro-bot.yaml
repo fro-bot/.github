@@ -774,7 +774,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@95b0fbf4e39ff2d1c8431050c51260de7bbd34ed # v0.144.1
+        uses: fro-bot/agent@4e394905b7eafda2d7424816eb7846d3f09c40df # v0.144.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -787,6 +787,7 @@ jobs:
               || ''
             }}
         with:
+          isolate-agent: 'true'
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
@@ -1186,6 +1187,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.FRO_BOT_PAT }}
+          persist-credentials: false
 
       - name: Resolve the agent model
         id: agent-model
@@ -1269,7 +1271,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@95b0fbf4e39ff2d1c8431050c51260de7bbd34ed # v0.144.1
+        uses: fro-bot/agent@4e394905b7eafda2d7424816eb7846d3f09c40df # v0.144.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1285,6 +1287,7 @@ jobs:
               || format('{0}{1}{2}{3}{4}{5}', env.OBSERVE_INTRO, env.SHARED_RULES, env.OBSERVE_CATEGORIES, env.HARD_BOUNDARIES, env.AGENT_NOTES, env.OBSERVE_OUTPUT)
             }}
         with:
+          isolate-agent: 'true'
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
