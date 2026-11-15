@@ -1993,6 +1993,31 @@ describe('fro-bot.yaml knowledge tool duties in the rendered prompts', () => {
   )
 })
 
+describe('fro-bot.yaml PR review prompt leaves the gates to CI', () => {
+  // A review that runs the build, typecheck, lint and test suites spends most of its run on gates that CI already runs.
+  const review = flat(composeContentPrompt('pull_request', 'PR_REVIEW_PROMPT'))
+
+  it('forbids the gate commands, names the repository aliases and allows one named probe', () => {
+    expect(review).toContain('Do NOT run build, lint, or type-check commands at any scope')
+    expect(review).toContain('repository-wide or directory-wide test commands in any form')
+    for (const alias of ['bun run check-types', 'bun run lint', 'bun run test']) {
+      expect(review, alias).toContain(`\`${alias}\``)
+    }
+    expect(review).toContain('even if repository instructions list them')
+    expect(review).toContain(
+      'You may run one named test file or a minimal empirical probe only to validate a concrete finding',
+    )
+    expect(review).toContain('State the command and the claim it tested.')
+  })
+
+  it('keeps the Tests rule, which checks that tests exist and does not ask for a run', () => {
+    expect(review).toContain(
+      'Tests: verify new/changed behavior has tests covering happy path, errors, and boundaries.',
+    )
+    expect(review).toContain('The Tests rule above is a check on the diff, not a run')
+  })
+})
+
 describe('fro-bot.yaml wiki context in the rendered prompts', () => {
   const env = froBotParsed.env as Record<string, string>
   const index = [
