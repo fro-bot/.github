@@ -7,10 +7,9 @@ problem_type: best_practice
 component: tooling
 severity: medium
 applies_when:
-  - a conservative stored flag makes a consumer reject something it should accept
-  - the proposed fix is a new, more precise stored state
-  - the consumer can read the live fact the flag stands in for
-  - a review finds a writer path that leaves the new state stale
+  - a conservative stored flag makes a check reject a result that current evidence would allow
+  - the proposed fix adds a stored value that several code paths write or preserve
+  - the check can read the current fact itself and reject when the lookup fails
 tags:
   - fail-safe-flag
   - privacy-gate
@@ -25,50 +24,36 @@ tags:
 
 ## Context
 
-When a conservative stored flag makes a check reject something it should accept, make the check read the live fact. Do not add a more precise stored state: every writer that touches the row then has to keep it correct.
+When a check rejects a valid result because it relies on a conservative stored flag, have the check (the consumer of the flag) read the current fact directly, if it can do so reliably. Keep the stored flag as it is, and keep rejecting when the lookup fails. The alternative, a more precise stored value, must be kept correct by every code path that writes or preserves the record.
 
-`metadata/repos.yaml` stores a row as `private: true`, redacted, for any repository reconcile cannot vouch for. That includes an archived repository, whatever its visibility: "Fail-safe: write `private: true` because we cannot reach the repo to confirm visibility" (`packages/registry/src/reconcile-plan.ts:1239`, and the same value at `:1299`). The leak scans built a private name from every such row, so a public archived repository's name counted as private. A wiki page that linked to that repository's published page failed the promotion scan ([run 43663083818](https://github.com/fro-bot/.github/actions/runs/43663083818)), and every promotion after it.
+Here `metadata/repos.yaml` stores one record per tracked repository. Reconcile writes `private: true` and redacts the name when it cannot confirm visibility: "Fail-safe: write `private: true` because we cannot reach the repo to confirm visibility" (`packages/registry/src/reconcile-plan.ts:1239`). It does the same for an archived repository, whatever its visibility (`:1299`), and gives the record the status `lost-access`, the status of a repository that was revoked, archived or deleted and whose record is kept for audit. The two leak scans (one in the promotion run, one on every pull request) each built a private name from every such record, so a public archived repository's name counted as private. A wiki page that linked to that repository's published page failed the promotion scan ([run 43663083818](https://github.com/fro-bot/.github/actions/runs/43663083818)).
 
-[#4251](https://github.com/fro-bot/.github/pull/4251) corrected the stored state: reconcile kept an archived public repository as a public, named row. Its review reproduced two sequences that left a private repository named, one through a name reused by another repository and one through a return path the change had not touched. `classifyTracked` writes a `lost-access` row at five sites and returns one unchanged at five more; the change edited three of the ten. The pull request was closed.
+[#4251](https://github.com/fro-bot/.github/pull/4251) made the stored value precise: reconcile kept an archived public repository as a public, named record. Its review reproduced two sequences that left a private repository named, one through a name reused by another repository and one through a return path the change had not edited. The pull request was closed.
 
-[#4256](https://github.com/fro-bot/.github/pull/4256) left reconcile alone. The lookup the scans already made now also reads the repository's `visibility` (`packages/privacy/src/private-repo-resolution.ts:38`), and a row contributes no private name only when GitHub reports exactly `PUBLIC` (`packages/privacy/src/check-private-leak.ts:803`). The next promotion passed ([run 43705065121](https://github.com/fro-bot/.github/actions/runs/43705065121)).
+[#4256](https://github.com/fro-bot/.github/pull/4256) left reconcile alone. The lookup the scans already made now also requests the repository's `visibility` (`packages/privacy/src/private-repo-resolution.ts:42`), and a record contributes no private name only when GitHub reports exactly `PUBLIC` (`packages/privacy/src/check-private-leak.ts:803`). The next promotion run passed ([run 43705065121](https://github.com/fro-bot/.github/actions/runs/43705065121)).
 
 ## Guidance
 
-1. **Look up the live fact before reasoning from the flag.** A fail-safe flag means "not vouched for". It does not mean the stronger claim. Here one query by node ID, `node(id: $id) { ... on Repository { visibility isArchived } }`, shows whether a `private: true` row is private.
-2. **Count the writer paths before adding a stored state.** List every site that writes or preserves the row. Each one must keep the new state correct, including the ones the change does not edit.
-3. **Put the precision in the consumer when it can read the fact.** The stored flag stays conservative, and nothing has to be corrected by a later run.
-4. **Keep the relaxation strict.** One exact value relaxes the check. Every other value, and every lookup failure, behaves as before. A public row never hides a failure beside it.
-5. **Fix every mode of the check.** The promotion step and the per-PR scan each built names from the rows, and the per-PR scan posts the required `Security: Private Leak Scan` status on the promotion pull request too (`.github/workflows/check-private-leak.yaml:134`). Both now call one function, `resolvePrivateRows` (`packages/privacy/src/check-private-leak.ts:881` and `:1195`).
-6. **State the time-of-check limit.** The lookup answers for the moment of the scan. A repository that turns private after the scan and before the merge is not checked again.
-7. **Change layer when a review finds a stale path in the new state.** A second sequence in the same state machine is evidence that the state is in the wrong place, not that one more branch is missing.
+1. **Read the current fact in the consumer, and keep the stored flag conservative.** A fail-safe flag means "not vouched for", not the stronger claim. Look the fact up before reasoning from the flag: a query by node ID that requests `visibility` shows whether a `private: true` record is private.
+2. **Count the code paths that write or preserve the record before adding a stored value.** Each one must keep the new value correct, including the ones the change does not edit. `classifyTracked` has five sites that write a `lost-access` record and five guarded returns that keep one, and other general returns can keep one too.
+3. **Skip a record only for one exact result.** Here that is `visibility === 'PUBLIC'`. Every other value is treated as before, and so is a failed lookup. Test a batch that holds both a public result and a failed lookup: the failure must still fail the scan.
+4. **Find every mode of the check and route each through the same logic.** The per-PR scan also runs on the promotion pull request and posts the required `Security: Private Leak Scan` status there (`.github/workflows/check-private-leak.yaml:134`). Both scans now call `resolvePrivateRows` (`packages/privacy/src/check-private-leak.ts:881` and `:1195`).
+5. **Document that the fact can change after the check.** Visibility is read at scan time. A repository that turns private between the scan and the merge is not checked again.
+6. **When a review finds a missed path, reassess the layer.** Ask whether keeping the new stored value correct on every path is worth the risk, before adding one more branch.
 
 ## Why This Matters
 
-A new stored state moves a privacy rule onto every writer of the row, and a gap in any one of them publishes a private name. The check in the consumer fails closed on everything except one value, so a case it misses costs a blocked promotion.
+A new stored value puts a privacy rule on every code path that touches the record, and a gap in one of them could expose a private name. With the check in the consumer, a repository that the lookup cannot confirm as public stays scanned, so the cost of a missed case is a blocked promotion.
 
 ## When to Apply
 
-- A fail-safe flag and a gate disagree about something that is true now.
-- A fix proposes a new value or combination for a stored field that several code paths write.
-- A gate runs in more than one mode, or posts more than one required result.
+- A conservative stored flag causes a false positive in a check.
+- A proposed fix adds a value or combination to a stored field that several code paths maintain.
+- The check can obtain current evidence itself, and can reject when it cannot.
 
 ## Examples
 
-Before, at the parent of the #4256 merge (`128cf71^`, `packages/privacy/src/check-private-leak.ts:840`): every resolved row became a private name.
-
-```ts
-for (const nodeId of privateNodeIds) {
-  const result = await resolver(nodeId)
-  if ('nameWithOwner' in result) {
-    resolvedNames.push(result.nameWithOwner)
-  } else {
-    failedNodeIds.push(nodeId)
-  }
-}
-```
-
-After (`packages/privacy/src/check-private-leak.ts:800`): one exact value skips the row, and the skip is counted.
+Before #4256, every successful lookup added a private name. After (`packages/privacy/src/check-private-leak.ts:800`):
 
 ```ts
 for (const nodeId of nodeIds) {
@@ -86,13 +71,13 @@ for (const nodeId of nodeIds) {
 }
 ```
 
-| Lookup result | Outcome |
+| Resolver result | Outcome |
 | --- | --- |
-| `PUBLIC` | no private name; counted in `N private row(s) resolve to public repositories and are not scanned` |
+| `visibility` is `PUBLIC` | no private name; the skip is counted, and a scan that reaches its report prints `N private row(s) resolve to public repositories and are not scanned` |
 | `PRIVATE`, `INTERNAL`, a missing field, `null`, `public`, `PUBLIC ` with a space, a number, any other value | scanned as before |
-| a lookup failure, alone or beside a `PUBLIC` row | the scan blocks |
+| a failed lookup, alone or beside a `PUBLIC` result | as before: the promotion scan fails, and the per-PR scan reports an error (which the operator override can pass) |
 
-The table of non-public values is at `packages/privacy/src/check-private-leak.test.ts:5982`, and the same table runs against the per-PR scan.
+The non-public values are a test table at `packages/privacy/src/check-private-leak.test.ts:5982`, and an equivalent table runs against the per-PR scan at `:6294`.
 
 ## Related
 
