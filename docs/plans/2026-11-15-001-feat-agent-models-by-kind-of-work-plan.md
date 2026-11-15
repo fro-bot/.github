@@ -104,7 +104,7 @@ The light and act values are never used for a review tier, and the reverse.
 
 ## Implementation Units
 
-- [ ] **Unit 1: The model resolver**
+- [x] **Unit 1: The model resolver**
 
 **Goal:** A composite action that turns a tier and four values into one model, or fails.
 

@@ -1,0 +1,100 @@
+name: Agent Model
+description: Choose the model for an agent step from the repository variable for its kind of work (review, act or light), fall back to FRO_BOT_MODEL when that variable is empty, and fail before the agent starts when both are empty. It prints one line naming the model and the variable that supplied it.
+
+inputs:
+  tier:
+    description: 'The kind of work: `review`, `act` or `light`. Read through `env:` only. Anything else fails the step with a fixed message.'
+    required: true
+  review:
+    description: The FRO_BOT_MODEL_REVIEW variable, empty when unset. Read through `env:` only. Used only when `tier` is `review`.
+    required: false
+    default: ''
+  act:
+    description: The FRO_BOT_MODEL_ACT variable, empty when unset. Read through `env:` only. Used only when `tier` is `act`.
+    required: false
+    default: ''
+  light:
+    description: The FRO_BOT_MODEL_LIGHT variable, empty when unset. Read through `env:` only. Used only when `tier` is `light`.
+    required: false
+    default: ''
+  fallback:
+    description: The FRO_BOT_MODEL variable, empty when unset. Read through `env:` only. Used when the variable for the tier is empty.
+    required: false
+    default: ''
+
+outputs:
+  model:
+    description: The model for the agent step's `model` input, on one line with no surrounding whitespace. Not written when the step fails.
+    value: ${{ steps.resolve.outputs.model }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve the agent model
+      id: resolve
+      env:
+        AGENT_MODEL_TIER: ${{ inputs.tier }}
+        AGENT_MODEL_REVIEW: ${{ inputs.review }}
+        AGENT_MODEL_ACT: ${{ inputs.act }}
+        AGENT_MODEL_LIGHT: ${{ inputs.light }}
+        AGENT_MODEL_FALLBACK: ${{ inputs.fallback }}
+      run: |
+        set -euo pipefail
+
+        # Every failure message is fixed text. No input reaches one, so a hostile value cannot start a
+        # workflow command or fill the log.
+        fail() {
+          printf '::error::agent-model: %s\n' "$1" >&2
+          exit 1
+        }
+
+        # Strips leading and trailing whitespace, line breaks included.
+        trim() {
+          local value="$1"
+          value="${value#"${value%%[![:space:]]*}"}"
+          value="${value%"${value##*[![:space:]]}"}"
+          printf '%s' "$value"
+        }
+
+        # The tier picks the variable before any fallback applies, so an empty value for one tier never
+        # takes the value of another.
+        case "${AGENT_MODEL_TIER:-}" in
+          review)
+            tier_variable='FRO_BOT_MODEL_REVIEW'
+            tier_value="${AGENT_MODEL_REVIEW:-}"
+            ;;
+          act)
+            tier_variable='FRO_BOT_MODEL_ACT'
+            tier_value="${AGENT_MODEL_ACT:-}"
+            ;;
+          light)
+            tier_variable='FRO_BOT_MODEL_LIGHT'
+            tier_value="${AGENT_MODEL_LIGHT:-}"
+            ;;
+          *) fail 'tier must be review, act or light.' ;;
+        esac
+
+        tier_value=$(trim "$tier_value")
+        fallback=$(trim "${AGENT_MODEL_FALLBACK:-}")
+
+        # A value of only whitespace is empty, so a variable holding spaces falls back instead of
+        # reaching the agent as a model.
+        if [ -n "$tier_value" ]; then
+          model="$tier_value"
+          source_variable="$tier_variable"
+        elif [ -n "$fallback" ]; then
+          model="$fallback"
+          source_variable='FRO_BOT_MODEL'
+        else
+          fail "no model is set. Set ${tier_variable} or FRO_BOT_MODEL in the repository variables."
+        fi
+
+        # Only the value that would be used is checked. A line break inside it would split the output
+        # line and the log line, and it is never passed on.
+        case "$model" in
+          *$'\n'* | *$'\r'*) fail "${source_variable} must be a single line." ;;
+        esac
+
+        printf 'model=%s\n' "$model" >> "$GITHUB_OUTPUT"
+        printf 'Agent model: %s (from %s)\n' "$model" "$source_variable"
+      shell: bash
