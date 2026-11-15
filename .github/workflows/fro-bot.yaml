@@ -695,6 +695,17 @@ jobs:
           # Content-triggered runs never retain checkout credentials.
           persist-credentials: false
 
+      # Review for a pull request run; light for issues, issue comments and discussion comments.
+      - name: Resolve the agent model
+        id: agent-model
+        uses: ./.github/actions/agent-model
+        with:
+          tier: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_review_comment' || (github.event_name == 'issue_comment' && github.event.issue.pull_request != null)) && 'review' || 'light' }}
+          review: ${{ vars.FRO_BOT_MODEL_REVIEW }}
+          act: ${{ vars.FRO_BOT_MODEL_ACT }}
+          light: ${{ vars.FRO_BOT_MODEL_LIGHT }}
+          fallback: ${{ vars.FRO_BOT_MODEL }}
+
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
@@ -778,7 +789,7 @@ jobs:
         with:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
-          model: ${{ vars.FRO_BOT_MODEL }}
+          model: ${{ steps.agent-model.outputs.model }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           repo-skills: 'true'
           prompt: |
@@ -963,6 +974,16 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.FRO_BOT_PAT }}
 
+      - name: Resolve the agent model
+        id: agent-model
+        uses: ./.github/actions/agent-model
+        with:
+          tier: act
+          review: ${{ vars.FRO_BOT_MODEL_REVIEW }}
+          act: ${{ vars.FRO_BOT_MODEL_ACT }}
+          light: ${{ vars.FRO_BOT_MODEL_LIGHT }}
+          fallback: ${{ vars.FRO_BOT_MODEL }}
+
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
@@ -1046,7 +1067,7 @@ jobs:
         with:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
-          model: ${{ vars.FRO_BOT_MODEL }}
+          model: ${{ steps.agent-model.outputs.model }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: branch-pr
           repo-skills: 'true'
@@ -1164,6 +1185,16 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.FRO_BOT_PAT }}
 
+      - name: Resolve the agent model
+        id: agent-model
+        uses: ./.github/actions/agent-model
+        with:
+          tier: act
+          review: ${{ vars.FRO_BOT_MODEL_REVIEW }}
+          act: ${{ vars.FRO_BOT_MODEL_ACT }}
+          light: ${{ vars.FRO_BOT_MODEL_LIGHT }}
+          fallback: ${{ vars.FRO_BOT_MODEL }}
+
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
@@ -1254,7 +1285,7 @@ jobs:
         with:
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
-          model: ${{ vars.FRO_BOT_MODEL }}
+          model: ${{ steps.agent-model.outputs.model }}
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: working-dir
           repo-skills: 'true'

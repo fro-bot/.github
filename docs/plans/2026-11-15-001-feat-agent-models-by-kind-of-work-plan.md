@@ -148,7 +148,7 @@ The light and act values are never used for a review tier, and the reverse.
 
 ---
 
-- [ ] **Unit 2: Wire the workflows and classify every agent step**
+- [x] **Unit 2: Wire the workflows and classify every agent step**
 
 **Goal:** Every agent step reads the resolved model, and a test fails for a step that does not.
 

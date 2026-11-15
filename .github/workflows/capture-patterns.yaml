@@ -141,6 +141,16 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Resolve the agent model
+        id: agent-model
+        uses: ./.github/actions/agent-model
+        with:
+          tier: light
+          review: ${{ vars.FRO_BOT_MODEL_REVIEW }}
+          act: ${{ vars.FRO_BOT_MODEL_ACT }}
+          light: ${{ vars.FRO_BOT_MODEL_LIGHT }}
+          fallback: ${{ vars.FRO_BOT_MODEL }}
+
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
@@ -233,7 +243,7 @@ jobs:
           # minted, repo-scoped App token, minted only for an explicit live dispatch.
           github-token: ${{ github.token }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
-          model: ${{ vars.FRO_BOT_MODEL }}
+          model: ${{ steps.agent-model.outputs.model }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: ${{ env.TASK_PROMPT }}
 

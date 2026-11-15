@@ -123,6 +123,16 @@ jobs:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      - name: Resolve the agent model
+        id: agent-model
+        uses: ./.github/actions/agent-model
+        with:
+          tier: light
+          review: ${{ vars.FRO_BOT_MODEL_REVIEW }}
+          act: ${{ vars.FRO_BOT_MODEL_ACT }}
+          light: ${{ vars.FRO_BOT_MODEL_LIGHT }}
+          fallback: ${{ vars.FRO_BOT_MODEL }}
+
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
@@ -246,7 +256,7 @@ jobs:
           # bypass the privacy gate or open issues directly.
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
-          model: ${{ vars.FRO_BOT_MODEL }}
+          model: ${{ steps.agent-model.outputs.model }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           prompt: ${{ env.TASK_PROMPT }}
 

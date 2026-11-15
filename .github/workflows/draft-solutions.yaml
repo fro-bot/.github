@@ -36,11 +36,24 @@ jobs:
       has_work: ${{ steps.harvest.outputs.has_work }}
       draft_base_sha: ${{ steps.harvest.outputs.draft_base_sha }}
       main_sha: ${{ steps.harvest.outputs.main_sha }}
+      model: ${{ steps.agent-model.outputs.model }}
     steps:
       - name: ⤵ Checkout Branch
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+
+      # Resolved here, at the workflow's own ref, because the draft job checks out a drafted branch that can
+      # predate this action. The draft job reads the value from this job's output.
+      - name: Resolve the agent model
+        id: agent-model
+        uses: ./.github/actions/agent-model
+        with:
+          tier: light
+          review: ${{ vars.FRO_BOT_MODEL_REVIEW }}
+          act: ${{ vars.FRO_BOT_MODEL_ACT }}
+          light: ${{ vars.FRO_BOT_MODEL_LIGHT }}
+          fallback: ${{ vars.FRO_BOT_MODEL }}
 
       - name: 📦 Setup
         uses: ./.github/actions/setup
@@ -102,6 +115,19 @@ jobs:
       pull-requests: read
       actions: read
     steps:
+      # A job output can arrive empty, and an empty model makes the agent use a default nobody chose.
+      - name: 🤖 Require the resolved agent model
+        id: require-agent-model
+        env:
+          AGENT_MODEL: ${{ needs.harvest.outputs.model }}
+        run: |
+          set -euo pipefail
+          if [ -z "${AGENT_MODEL//[[:space:]]/}" ]; then
+            echo '::error::draft-solutions: the harvest job passed no agent model.' >&2
+            exit 1
+          fi
+        shell: bash
+
       # Checked out by SHA, never by branch name, so the agent edits exactly the commit publish
       # later compares against. Full history keeps main_sha readable (`git show <mainSha>:<path>`).
       - name: ⤵ Checkout drafting base
@@ -230,7 +256,7 @@ jobs:
           # Every write happens in the publish job, after validation and the privacy gate.
           github-token: ${{ secrets.GITHUB_TOKEN }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
-          model: ${{ vars.FRO_BOT_MODEL }}
+          model: ${{ needs.harvest.outputs.model }}
           opencode-config: ${{ secrets.OPENCODE_CONFIG }}
           # Edits land in the working tree; the next step turns them into a handoff.
           output-mode: working-dir
