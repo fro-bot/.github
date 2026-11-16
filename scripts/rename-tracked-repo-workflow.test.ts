@@ -17,10 +17,11 @@ interface Step {
 }
 
 interface Workflow {
-  on?: {workflow_dispatch?: {inputs?: Record<string, {required?: boolean; type?: string; default?: unknown}>}} & Record<
-    string,
-    unknown
-  >
+  on?: {
+    workflow_dispatch?: {
+      inputs?: Record<string, {required?: boolean; type?: string; default?: unknown; options?: string[]}>
+    }
+  } & Record<string, unknown>
   permissions?: unknown
   concurrency?: {group?: string; 'cancel-in-progress'?: boolean}
   jobs?: Record<string, {if?: string; steps?: Step[]; permissions?: unknown; 'timeout-minutes'?: number}>
@@ -50,12 +51,14 @@ const stringsIn = (value: unknown): string[] => {
 }
 
 describe('rename-tracked-repo.yaml workflow contract', () => {
-  it('is dispatch-only with a required node_id and an optional old_name', async () => {
+  it('is dispatch-only with an action that defaults to apply, a required node_id and an optional old_name', async () => {
     const workflow = await loadWorkflow()
 
     expect(Object.keys(workflow.on ?? {})).toEqual(['workflow_dispatch'])
     const inputs = workflow.on?.workflow_dispatch?.inputs ?? {}
-    expect(Object.keys(inputs)).toEqual(['node_id', 'old_name'])
+    expect(Object.keys(inputs)).toEqual(['action', 'node_id', 'old_name'])
+    expect(inputs.action).toMatchObject({required: false, type: 'choice', default: 'apply'})
+    expect(inputs.action?.options).toEqual(['apply', 'archive', 'unarchive'])
     expect(inputs.node_id).toMatchObject({required: true, type: 'string'})
     expect(inputs.old_name).toMatchObject({required: false, type: 'string'})
   })
@@ -64,7 +67,12 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
     const workflow = await loadWorkflow()
 
     expect(workflow.permissions).toEqual({})
-    expect(workflow.concurrency).toEqual({group: 'rename-tracked-repo', 'cancel-in-progress': false})
+    // The group is keyed by node ID, so dispatches for different repositories do not replace each other while
+    // pending, and a write is never cancelled by a later dispatch for the same node.
+    expect(workflow.concurrency).toEqual({
+      group: `rename-tracked-repo-${gh('inputs.node_id')}`,
+      'cancel-in-progress': false,
+    })
     // The job re-grants only what checkout needs; the write uses the App token, not GITHUB_TOKEN.
     const job = Object.values(workflow.jobs ?? {})[0]
     expect(job?.permissions).toEqual({contents: 'read'})
@@ -132,6 +140,7 @@ describe('rename-tracked-repo.yaml workflow contract', () => {
     const steps = await loadSteps()
     const rename = steps.find(step => step.run === 'bun scripts/rename-tracked-repo.ts')
 
+    expect(rename?.env?.ACTION).toBe(gh('inputs.action'))
     expect(rename?.env?.NODE_ID).toBe(gh('inputs.node_id'))
     expect(rename?.env?.OLD_NAME).toBe(gh('inputs.old_name'))
     for (const step of steps) expect(step.run ?? '').not.toContain('${{')
