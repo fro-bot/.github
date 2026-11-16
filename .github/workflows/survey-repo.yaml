@@ -612,9 +612,9 @@ jobs:
       # (wiki-ingest.ts exit 3). Gates survey-redispatch.
       conflict: ${{ steps.wiki-commit.outputs.conflict }}
       # `true` when the target's row is archived: the writer found it so in the tree it was about to write onto
-      # (wiki-ingest.ts writes nothing and sets this), or the survey result write-back did. Gates the
-      # announce and survey-redispatch, so an archived target causes neither.
-      archived: ${{ steps.wiki-commit.outputs.archived == 'true' || steps.record-result.outputs.archived == 'true' }}
+      # (wiki-ingest.ts writes nothing and sets this), or either survey result write-back (the primary or the
+      # fallback recorder) did. Gates the announce and survey-redispatch, so an archived target causes neither.
+      archived: ${{ steps.wiki-commit.outputs.archived == 'true' || steps.record-result.outputs.archived == 'true' || steps.record-result-fallback.outputs.archived == 'true' }}
     steps:
       - name: Checkout trusted code (default branch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -765,7 +765,8 @@ jobs:
         id: record-result
         if: >-
           ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion != 'skipped' &&
-          needs.survey-resolve.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' }}
+          needs.survey-resolve.outputs.resolve-outcome == 'success' && steps.recheck.conclusion == 'success' &&
+          steps.wiki-commit.outputs.archived != 'true' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
@@ -819,11 +820,16 @@ jobs:
       # missing REPO_PRIVATE as merely optional, so an unverified visibility would
       # otherwise reach metadata/repos.yaml on the public `data` branch. If the recheck
       # couldn't run, skip the write entirely rather than loosen the recheck's own `if:`.
+      #
+      # The writer's `archived` output ends the survey: nothing was written, so neither recorder runs for it. The
+      # primary recorder is skipped on it, which leaves its outcome `skipped`, and this step would then fire on any
+      # failure() or cancelled() path, so it carries the same guard.
       - name: Record survey result (cancelled/timeout fallback)
+        id: record-result-fallback
         if: >-
           ${{ (needs.survey-repo.result == 'cancelled' || needs.survey-repo.result == 'failure' || cancelled() || failure()) &&
           steps.record-result.outcome != 'success' && needs.survey-resolve.outputs.resolve-outcome == 'success' &&
-          steps.recheck.conclusion == 'success' }}
+          steps.recheck.conclusion == 'success' && steps.wiki-commit.outputs.archived != 'true' }}
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}

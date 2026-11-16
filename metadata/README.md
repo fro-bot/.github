@@ -188,11 +188,11 @@ The gateway endpoint is opt-in: it accepts announcements only when the gateway d
 
 Each event carries a small, fixed context the gateway renders into a Discord message. All three post as the Fro Bot user.
 
-| Event                 | Source                  | Context shape                                                  |
-| --------------------- | ----------------------- | -------------------------------------------------------------- |
-| `survey_completed`    | `survey-repo.yaml`      | `{ owner, repo, slug, wiki_pages_changed }`                    |
-| `invitation_accepted` | `poll-invitations.yaml` | `{ count, repos: [{ owner, name }] }`                          |
-| `daily_digest`        | `fro-bot.yaml`          | `{ repos_tracked: number, surveys_today: number, repos_archived?: number, report_url }` |
+| Event | Source | Context shape |
+| --- | --- | --- |
+| `survey_completed` | `survey-repo.yaml` | `{ owner, repo, slug, wiki_pages_changed }` |
+| `invitation_accepted` | `poll-invitations.yaml` | `{ count, repos: [{ owner, name }] }` |
+| `daily_digest` | `fro-bot.yaml` | `{ repos_tracked: number, surveys_today: number, repos_archived?: number, report_url }` |
 
 `daily_digest` posts on scheduled runs only, and only on days with at least one survey — quiet days are suppressed (the oversight report issue is still created either way). `repos_tracked` counts public tracked repos (an archived row is counted separately, as `repos_archived`, which the gateway ignores until it renders it); `surveys_today` counts repos surveyed that UTC day; `report_url` links that day's oversight report.
 
