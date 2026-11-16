@@ -148,7 +148,29 @@ describe('schemas — rejection cases', () => {
     expect(() => assertReposFile(ok)).not.toThrow()
   })
 
-  it('rejects archived as an onboarding_status (not in the enum)', () => {
+  it('accepts archived onboarding_status on a named public row with its identity', () => {
+    const row = {
+      owner: 'example-owner',
+      name: 'example-archived-repo',
+      added: '2026-04-17',
+      onboarding_status: 'archived',
+      last_survey_at: null,
+      last_survey_status: null,
+      has_fro_bot_workflow: false,
+      has_renovate: false,
+      discovery_channel: 'collab',
+      next_survey_eligible_at: null,
+      private: false,
+      node_id: 'R_kgDOArchived1',
+      database_id: 424242,
+    }
+    const ok = {version: 1, repos: [row]}
+    expect(isReposFile(ok)).toBe(true)
+    expect(() => assertReposFile(ok)).not.toThrow()
+    expect(isReposFile({version: 1, repos: [row, {...row, name: 'other', node_id: 'R_kgDOArchived2'}]})).toBe(true)
+  })
+
+  it('rejects an unknown onboarding_status and lists archived among the accepted values', () => {
     const bad = {
       version: 1,
       repos: [
@@ -156,7 +178,7 @@ describe('schemas — rejection cases', () => {
           owner: 'fro-bot',
           name: 'test',
           added: '2026-04-17',
-          onboarding_status: 'archived',
+          onboarding_status: 'retired',
           last_survey_at: null,
           last_survey_status: null,
           has_fro_bot_workflow: false,
@@ -169,6 +191,9 @@ describe('schemas — rejection cases', () => {
     expect(isReposFile(bad)).toBe(false)
     const error = catchSchemaError(() => assertReposFile(bad))
     expect(error.path).toContain('onboarding_status')
+    expect(error.message).toContain(
+      'expected one of: pending, onboarded, failed, lost-access, pending-review, archived',
+    )
   })
 
   it('accepts owned discovery_channel + populated next_survey_eligible_at', () => {

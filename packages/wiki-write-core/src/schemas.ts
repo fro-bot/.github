@@ -104,7 +104,11 @@ export interface RepoEntry {
   cross_repo_receipts?: string
 }
 
-export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review'
+/**
+ * Registry row state. `archived` marks a repository the operator archived: the row keeps its
+ * owner and name, and it is not `lost-access` (access was not lost; the operator retired the row).
+ */
+export type OnboardingStatus = 'pending' | 'onboarded' | 'failed' | 'lost-access' | 'pending-review' | 'archived'
 export type SurveyStatus = 'success' | 'failure'
 export type DiscoveryChannel = 'collab' | 'owned' | 'contrib'
 
@@ -272,7 +276,7 @@ function assertRepoEntry(value: unknown, path: string): asserts value is RepoEnt
   if (!isOnboardingStatus(value.onboarding_status))
     throw new SchemaValidationError(
       `${path}.onboarding_status`,
-      'expected one of: pending, onboarded, failed, lost-access, pending-review',
+      'expected one of: pending, onboarded, failed, lost-access, pending-review, archived',
     )
   if (value.last_survey_at !== null && typeof value.last_survey_at !== 'string')
     throw new SchemaValidationError(`${path}.last_survey_at`, 'expected string or null')
@@ -319,7 +323,8 @@ function isOnboardingStatus(value: unknown): value is OnboardingStatus {
     value === 'onboarded' ||
     value === 'failed' ||
     value === 'lost-access' ||
-    value === 'pending-review'
+    value === 'pending-review' ||
+    value === 'archived'
   )
 }
 
