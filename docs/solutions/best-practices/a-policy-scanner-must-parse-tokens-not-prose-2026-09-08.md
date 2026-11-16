@@ -1,7 +1,7 @@
 ---
 title: A policy scanner must parse tokens, not prose — and the tool may normalise away what you are checking for
 date: 2026-09-08
-last_updated: 2026-09-08
+last_updated: 2026-11-16
 verified: 2026-09-08
 category: best-practices
 module: packages/ci-checks/src/check-mutation-guards.ts
@@ -55,6 +55,14 @@ A report can only describe files that were instrumented. If a module is in `muta
 
 An exit code compresses everything the tool knows into one bit, and tools are inconsistent about which failures set it. Read the structured report and classify from it. Treat a malformed or unparseable entry as a failure rather than skipping it, so a shape change upstream cannot quietly reduce what the gate checks.
 
+### Build the "not checked" report from what the checker consumed
+
+A check that reports annotations nobody checked must take its list from the checker's own record of what it consumed, not from a second rule that guesses what "attached" means. Two rules drift apart, and an annotation that falls between them passes without a finding.
+
+The solutions-example checker had this gap: a `verify:` HTML-comment marker that did not sit directly above a checked fence was dropped without a word. [#4224](https://github.com/fro-bot/.github/pull/4224) made the fence walk record every marker span it attached, every fence range, and every marker above a fence it does not check. `findDetachedMarkers` then reports every well-formed marker that is outside a fence and was not consumed (`packages/ci-checks/src/check-solutions-examples.ts:246-251`, `:322-326`, `:346-379`). The review probes found a real case the old code missed: a marker above a `~~~ts` fence, which the checker never reads, now gets its own finding.
+
+Key that record on the token itself, not on its line number, whenever more than one token can share a line. The first version keyed `spansByEndLine` and the attached set on line numbers. Two markers on one line above a `ts` fence attached only the second one, and the first counted as attached because it shared the line, so it was never checked and never reported. The fix that merged maps each line to every span that ends on it and tracks markers by span (`Set<CommentSpan>`, `Map<CommentSpan, string>`, `:222-228`, `:249-250`).
+
 ### Prove each rule discriminates
 
 Delete the rule and confirm a test goes red. A policy rule that no test pins is a rule the next refactor can remove without resistance.
@@ -68,6 +76,7 @@ Every failure here is silent and in the reassuring direction. A vacuous check re
 - Writing any check that reads a tool's report to enforce a policy
 - Enforcing rules over comment-embedded directives in any language
 - A gate whose scope is configurable, where "no findings" and "not examined" are different states with the same output
+- A check reports annotations or markers that were never consumed, and several can share one line
 
 ## Examples
 
@@ -90,9 +99,23 @@ const missing = configuredMutateTargets.filter(target => !(target in report.file
 if (missing.length > 0) { failClosed(missing) }
 ```
 
+Consumption keyed on the token, so two markers on one line are two entries:
+
+```ts
+// Keyed on the line: a second marker on the same line overwrites the first, which then reads as attached.
+const attachedLines = new Set(markerSpans.map(span => span.startLine))
+
+// Keyed on the span: every marker is either attached or reported.
+const attachedMarkers = new Set(markerSpans)
+const detached = spans.filter(span => isVerifyMarker(span) && !insideFence(span) && !attachedMarkers.has(span))
+```
+
+Regression probes from #4224 that belong in any such checker's tests: two markers on one line above a checked fence (both attach), a marker above a `~~~ts` fence (reported), a marker separated from its fence by a blank line (reported), and a marker inside an unclosed trailing fence (ignored as example text) (`packages/ci-checks/src/check-solutions-examples.test.ts:509`, `:635`, `:736-767`, `:846-856`).
+
 ## Related
 
 - [`enumerate-mutator-variants-before-a-stryker-directive`](enumerate-mutator-variants-before-a-stryker-directive-2026-09-05.md) — the policy this scanner enforces, from the directive author's side
 - [`a-mutation-score-can-measure-nothing`](a-mutation-score-can-measure-nothing-2026-09-08.md) — the same silence one layer down, in the instrumentation
 - [`status-vocabulary-must-cover-every-report-surface`](status-vocabulary-must-cover-every-report-surface-2026-08-31.md) — closed vocabularies across reporting surfaces
 - Merge commit `796ddf2`
+- Merge commit `4fedcbbc99e3a8d1c2442b927299554542808a16` (#4224): the consumed-marker record and span-keyed attachment
