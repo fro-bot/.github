@@ -191,6 +191,20 @@ describe('merge-data.yaml promotion job', () => {
     expect(steps.find(s => s.run?.includes('check-wiki-private-presence.ts'))).toBeDefined()
   })
 
+  it('gives the wiki gate the read-only job token, and nothing else, to confirm an archived row public', () => {
+    const gate = steps.find(s => s.run?.includes('check-wiki-private-presence.ts'))
+
+    expect(gate?.env).toEqual({
+      GH_TOKEN: `${expressionStart} github.token }}`,
+      GRANDFATHER_WIKI_REPOS_DIR: '../knowledge/wiki/repos',
+    })
+    // The job's permissions are the top-level `contents: read`: the token reads public data only.
+    expect(promotion.permissions).toBeUndefined()
+    expect(parsed.permissions).toEqual({contents: 'read'})
+    expect(JSON.stringify(gate)).not.toContain('secrets.')
+    expect(JSON.stringify(gate)).not.toContain(APP_TOKEN)
+  })
+
   it('contains the merge PR step (merge-data-pr.ts)', () => {
     expect(steps.find(s => s.run?.includes('merge-data-pr.ts'))).toBeDefined()
   })

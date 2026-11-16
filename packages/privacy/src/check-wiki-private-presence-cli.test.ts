@@ -1,3 +1,4 @@
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
@@ -9,6 +10,7 @@ const {mockDetect} = vi.hoisted(() => ({
       (
         argv: string[],
         env: Record<string, string | undefined>,
+        resolver: NodeIdResolver | undefined,
       ) => Promise<{exitCode: number; stdout: string; stderr: string}>
     >(),
 }))
@@ -51,7 +53,7 @@ describe('no argv (merge-data.yaml)', () => {
     const env = {GRANDFATHER_WIKI_REPOS_DIR: '../knowledge/wiki/repos'}
     const result = await runCli(checkWikiPrivatePresenceCli(), {argv: [], env})
     expect(result).toEqual({exitCode: 1, stdout: 'out\n', stderr: 'err\n'})
-    expect(mockDetect).toHaveBeenCalledExactlyOnceWith([], env)
+    expect(mockDetect).toHaveBeenCalledExactlyOnceWith([], env, undefined)
   })
 
   it('returns a clean run as exit 0', async () => {
@@ -75,7 +77,50 @@ describe('no argv (merge-data.yaml)', () => {
 describe('--operator-report', () => {
   it('hands the flag to the detection', async () => {
     await runCli(checkWikiPrivatePresenceCli(), {argv: ['--operator-report'], env: {X: '1'}})
-    expect(mockDetect).toHaveBeenCalledExactlyOnceWith(['--operator-report'], {X: '1'})
+    expect(mockDetect).toHaveBeenCalledExactlyOnceWith(['--operator-report'], {X: '1'}, undefined)
+  })
+})
+
+describe('the lookup the archived-row check needs', () => {
+  const resolver: NodeIdResolver = async () => ({error: 'error'})
+
+  function run(env: Record<string, string | undefined>): {
+    factory: ReturnType<typeof vi.fn<(token: string) => NodeIdResolver>>
+    done: ReturnType<typeof runCli>
+  } {
+    const factory = vi.fn<(token: string) => NodeIdResolver>(() => resolver)
+    return {factory, done: runCli(checkWikiPrivatePresenceCli(factory), {argv: [], env})}
+  }
+
+  it.each([
+    ['GH_TOKEN', {GH_TOKEN: 'read-only'}, 'read-only'],
+    ['GITHUB_TOKEN', {GITHUB_TOKEN: 'ambient'}, 'ambient'],
+    ['GH_TOKEN over GITHUB_TOKEN', {GH_TOKEN: 'read-only', GITHUB_TOKEN: 'ambient'}, 'read-only'],
+    ['GITHUB_TOKEN when GH_TOKEN is empty', {GH_TOKEN: '', GITHUB_TOKEN: 'ambient'}, 'ambient'],
+  ])('builds the resolver from %s and hands it to the detection', async (_label, env, token) => {
+    const {factory, done} = run(env)
+    await done
+
+    expect(factory).toHaveBeenCalledExactlyOnceWith(token)
+    expect(mockDetect).toHaveBeenCalledExactlyOnceWith([], env, resolver)
+  })
+
+  it.each([
+    ['no token', {}],
+    ['empty tokens', {GH_TOKEN: '', GITHUB_TOKEN: ''}],
+    ['undefined tokens', {GH_TOKEN: undefined, GITHUB_TOKEN: undefined}],
+  ])('hands the detection no resolver for %s, so an archived row is unconfirmed', async (_label, env) => {
+    const {factory, done} = run(env)
+    await done
+
+    expect(factory).not.toHaveBeenCalled()
+    expect(mockDetect).toHaveBeenCalledExactlyOnceWith([], env, undefined)
+  })
+
+  it('builds the production resolver by default', async () => {
+    await runCli(checkWikiPrivatePresenceCli(), {argv: [], env: {GH_TOKEN: 'read-only'}})
+
+    expect(typeof mockDetect.mock.calls[0]?.[2]).toBe('function')
   })
 })
 

@@ -1,3 +1,4 @@
+import type {NodeIdResolver} from '@fro-bot/privacy/private-repo-resolution'
 import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import type {CommitWikiChangesParams, OctokitClient} from '@fro.bot/wiki-write-core/wiki-ingest'
@@ -6,7 +7,7 @@ import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
 import process from 'node:process'
-import {buildPublicSlugMap} from '@fro-bot/privacy/check-wiki-private-presence'
+import {buildPublicSlugMap, buildUnconfirmedArchivedSlugs} from '@fro-bot/privacy/check-wiki-private-presence'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {lintWikiSnapshot} from '@fro.bot/wiki-write-core/wiki-lint'
@@ -21,6 +22,7 @@ import {
   recordWikiRepairResult,
   runAndRecordWikiRepair,
   runWikiRepair,
+  runWikiRepairCli,
   verifyWikiRepairs,
   WIKI_REPAIR_COMMIT_MESSAGE,
   WIKI_REPAIR_DATA_BRANCH,
@@ -100,7 +102,11 @@ function buildCleanFiles(): Record<string, string> {
 }
 
 function emptyGateInputs() {
-  return {publicSlugMap: new Map<string, readonly RepoEntry[]>(), grandfatherPages: []}
+  return {
+    publicSlugMap: new Map<string, readonly RepoEntry[]>(),
+    unconfirmedSlugs: new Set<string>(),
+    grandfatherPages: [],
+  }
 }
 
 /**
@@ -120,7 +126,7 @@ function passingGateInputs(files: Record<string, string>) {
         content,
       }
     })
-  return {publicSlugMap: new Map<string, readonly RepoEntry[]>(), grandfatherPages}
+  return {publicSlugMap: new Map<string, readonly RepoEntry[]>(), unconfirmedSlugs: new Set<string>(), grandfatherPages}
 }
 
 describe('planWikiRepairs', () => {
@@ -548,6 +554,7 @@ describe('gateWikiRepairs', () => {
     const result = gateWikiRepairs({
       repairedWikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     })
 
@@ -597,6 +604,7 @@ describe('gateWikiRepairs', () => {
     const result = gateWikiRepairs({
       repairedWikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     })
 
@@ -657,6 +665,7 @@ describe('runWikiRepair with a blocked public repo page', () => {
       tipSha: 'tip-1',
       wikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     }))
 
@@ -1136,6 +1145,7 @@ describe('runWikiRepair', () => {
       tipSha: 'tip-1',
       wikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     }))
     const getCurrentDataTipSha = vi.fn(async () => 'tip-1')
@@ -1271,6 +1281,7 @@ describe('runWikiRepair against a data branch that moves under it (head reload)'
       tipSha: restored.tipSha,
       wikiFiles: restored.restoredFiles,
       publicSlugMap: new Map<string, readonly RepoEntry[]>(),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages,
     }))
     return {
@@ -1623,5 +1634,413 @@ describe('the CLI entry builds its client through the core factory', () => {
     expect(stderr).toContain('::error::wiki-repair aborted: constructor exploded')
     expect(stderr).not.toContain('failed to load @octokit/rest')
     expect(process.exitCode).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An archived row is attributed a page only when GitHub confirms it public now
+// ---------------------------------------------------------------------------
+
+function archivedRegistry(status: string, nodeId: string | undefined = 'R_arch', isPrivate = false): string {
+  return [
+    'version: 1',
+    'repos:',
+    '  - owner: acme',
+    '    name: widget',
+    `    private: ${isPrivate}`,
+    ...(nodeId === undefined ? [] : [`    node_id: ${nodeId}`]),
+    '    added: "2026-01-01"',
+    `    onboarding_status: ${status}`,
+    '    last_survey_at: null',
+    '    last_survey_status: null',
+    '    has_fro_bot_workflow: false',
+    '    has_renovate: false',
+    '',
+  ].join('\n')
+}
+
+const widgetPage = [
+  '---',
+  'type: repo',
+  'title: Widget',
+  'created: 2026-04-16',
+  'updated: 2026-04-16',
+  'sources:',
+  '  - url: https://github.com/acme/widget',
+  '    accessed: 2026-04-16',
+  '---',
+  '',
+  'Body.',
+  '',
+].join('\n')
+
+/** An index that lists the repo page but omits the topic page, so the repair has index drift to fix. */
+function driftedWidgetFiles(): Record<string, string> {
+  return Object.fromEntries([
+    [
+      'knowledge/index.md',
+      buildIndex([
+        '## Repos',
+        '',
+        '- [[acme--widget]] — Widget',
+        '',
+        '## Topics',
+        '',
+        '_No topic pages yet._',
+        '',
+        '## Entities',
+        '',
+        '_No entity pages yet._',
+        '',
+        '## Comparisons',
+        '',
+        '_No comparison pages yet._',
+      ]),
+    ],
+    ['knowledge/wiki/repos/acme--widget.md', widgetPage],
+    buildPage({
+      path: 'knowledge/wiki/topics/github-actions-ci.md',
+      type: 'topic',
+      title: 'GitHub Actions CI',
+      bodyLines: ['Workflow conventions.'],
+    }),
+  ])
+}
+
+const answers = {
+  public: {nameWithOwner: 'acme/widget', visibility: 'PUBLIC'},
+  private: {nameWithOwner: 'acme/widget', visibility: 'PRIVATE'},
+  missing: {nameWithOwner: 'acme/widget'},
+  failed: {error: 'error'},
+  lost: {error: 'access-lost'},
+} as const
+
+function recordingResolver(answer: Awaited<ReturnType<NodeIdResolver>>): {resolver: NodeIdResolver; calls: string[]} {
+  const calls: string[] = []
+  return {
+    calls,
+    resolver: async nodeId => {
+      calls.push(nodeId)
+      return answer
+    },
+  }
+}
+
+async function load(registry: string, resolver: NodeIdResolver | undefined) {
+  const fake = createGitDataFake({
+    branch: 'data',
+    files: {...driftedWidgetFiles(), 'metadata/repos.yaml': registry},
+  })
+  return loadWikiRepairTreeAtHead({
+    octokit: fake.client as unknown as OctokitClient,
+    owner: 'fro-bot',
+    repo: '.github',
+    grandfatherPages: [],
+    resolver,
+  })
+}
+
+describe('loadWikiRepairTreeAtHead with an archived row', () => {
+  it('admits the row to the public slug map when it resolves PUBLIC', async () => {
+    const {resolver, calls} = recordingResolver(answers.public)
+
+    const tree = await load(archivedRegistry('archived'), resolver)
+
+    expect([...tree.publicSlugMap.keys()]).toEqual(['acme--widget'])
+    expect(calls).toEqual(['R_arch'])
+  })
+
+  it.each([
+    ['PRIVATE', answers.private],
+    ['a missing visibility', answers.missing],
+    ['a failed lookup', answers.failed],
+    ['an access-lost lookup', answers.lost],
+  ])('leaves the row out when the lookup says %s', async (_label, answer) => {
+    const {resolver} = recordingResolver(answer)
+
+    const tree = await load(archivedRegistry('archived'), resolver)
+
+    expect(tree.publicSlugMap.size).toBe(0)
+  })
+
+  it('leaves the row out when there is no resolver', async () => {
+    expect((await load(archivedRegistry('archived'), undefined)).publicSlugMap.size).toBe(0)
+  })
+
+  it('makes no lookup and admits a public row that is not archived, as before', async () => {
+    const {resolver, calls} = recordingResolver(answers.private)
+
+    const tree = await load(archivedRegistry('onboarded'), resolver)
+
+    expect([...tree.publicSlugMap.keys()]).toEqual(['acme--widget'])
+    expect(calls).toEqual([])
+  })
+})
+
+describe('runWikiRepairCli with an archived row', () => {
+  let root = ''
+  let stdout: string[] = []
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-repair-archived-'))
+    stdout = []
+    for (const [path, content] of Object.entries(driftedWidgetFiles())) {
+      await mkdir(dirname(join(root, path)), {recursive: true})
+      await writeFile(join(root, path), content, 'utf8')
+    }
+  })
+
+  afterEach(async () => {
+    await rm(root, {recursive: true, force: true})
+  })
+
+  async function repair(
+    registry: string,
+    resolver: NodeIdResolver,
+    token: string | null = 'read-only-token',
+  ): Promise<{result: WikiRepairResultCounts; factoryTokens: string[]}> {
+    await mkdir(join(root, 'metadata'), {recursive: true})
+    await writeFile(join(root, 'metadata', 'repos.yaml'), registry, 'utf8')
+    const factoryTokens: string[] = []
+    await runWikiRepairCli(
+      {
+        WIKI_REPAIR_DRY_RUN: 'true',
+        WIKI_REPAIR_DATA_TIP_SHA: 'tip-1',
+        GRANDFATHER_WIKI_REPOS_DIR: join(root, 'grandfather'),
+        GITHUB_TOKEN: token ?? undefined,
+      },
+      {stdout: text => stdout.push(text)},
+      root,
+      factoryToken => {
+        factoryTokens.push(factoryToken)
+        return resolver
+      },
+    )
+    return {result: JSON.parse(stdout.join('')) as WikiRepairResultCounts, factoryTokens}
+  }
+
+  it('repairs when the archived row resolves PUBLIC, looking it up with the job token', async () => {
+    const {resolver, calls} = recordingResolver(answers.public)
+
+    const {result, factoryTokens} = await repair(archivedRegistry('archived'), resolver)
+
+    expect(result).toMatchObject({privacy_blocked: 0, aborted: 0, dry_run: true})
+    expect(result.repaired).toBeGreaterThan(0)
+    expect(calls).toEqual(['R_arch'])
+    expect(factoryTokens).toEqual(['read-only-token'])
+  })
+
+  it.each([
+    ['PRIVATE', answers.private],
+    ['a missing visibility', answers.missing],
+    ['a failed lookup', answers.failed],
+  ])('aborts as a privacy block when the archived row lookup says %s', async (_label, answer) => {
+    const {resolver} = recordingResolver(answer)
+
+    const {result} = await repair(archivedRegistry('archived'), resolver)
+
+    expect(result).toMatchObject({privacy_blocked: 1, aborted: 1, repaired: 0})
+  })
+
+  it('aborts as a privacy block, and builds no resolver, when the job has no token', async () => {
+    const {resolver, calls} = recordingResolver(answers.public)
+
+    const {result, factoryTokens} = await repair(archivedRegistry('archived'), resolver, null)
+
+    expect(result).toMatchObject({privacy_blocked: 1, aborted: 1})
+    expect(factoryTokens).toEqual([])
+    expect(calls).toEqual([])
+  })
+
+  it('aborts as a privacy block for an empty token', async () => {
+    const {resolver} = recordingResolver(answers.public)
+
+    const {result, factoryTokens} = await repair(archivedRegistry('archived'), resolver, '')
+
+    expect(result).toMatchObject({privacy_blocked: 1})
+    expect(factoryTokens).toEqual([])
+  })
+
+  it('aborts for a redacted archived row without a lookup', async () => {
+    const {resolver, calls} = recordingResolver(answers.public)
+
+    const {result} = await repair(archivedRegistry('archived', 'R_arch', true), resolver)
+
+    expect(result).toMatchObject({privacy_blocked: 1})
+    expect(calls).toEqual([])
+  })
+
+  it('makes no lookup for a registry with no archived row, and repairs as before', async () => {
+    const {resolver, calls} = recordingResolver(answers.private)
+
+    const {result} = await repair(archivedRegistry('onboarded'), resolver)
+
+    expect(result).toMatchObject({privacy_blocked: 0, aborted: 0})
+    expect(result.repaired).toBeGreaterThan(0)
+    expect(calls).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An unconfirmed archived row stays in the slug-collision accounting
+// ---------------------------------------------------------------------------
+
+/** An archived row `acme/Widget` and a public row `acme/widget`: one page slug, `acme--widget`. */
+function collidingRegistry(): string {
+  const row = (name: string, status: string, nodeId: string): string[] => [
+    '  - owner: acme',
+    `    name: ${name}`,
+    '    private: false',
+    `    node_id: ${nodeId}`,
+    '    added: "2026-01-01"',
+    `    onboarding_status: ${status}`,
+    '    last_survey_at: null',
+    '    last_survey_status: null',
+    '    has_fro_bot_workflow: false',
+    '    has_renovate: false',
+  ]
+  return [
+    'version: 1',
+    'repos:',
+    ...row('Widget', 'archived', 'R_arch'),
+    ...row('widget', 'onboarded', 'R_pub'),
+    '',
+  ].join('\n')
+}
+
+async function loadColliding(resolver: NodeIdResolver | undefined) {
+  const fake = createGitDataFake({
+    branch: 'data',
+    files: {...driftedWidgetFiles(), 'metadata/repos.yaml': collidingRegistry()},
+  })
+  return loadWikiRepairTreeAtHead({
+    octokit: fake.client as unknown as OctokitClient,
+    owner: 'fro-bot',
+    repo: '.github',
+    grandfatherPages: [],
+    resolver,
+  })
+}
+
+describe('loadWikiRepairTreeAtHead with an archived row that shares a slug', () => {
+  it.each([
+    ['PRIVATE', answers.private],
+    ['a failed lookup', answers.failed],
+  ])('keeps the slug as a collision blocker, not a candidate, when the lookup says %s', async (_label, answer) => {
+    const tree = await loadColliding(recordingResolver(answer).resolver)
+
+    expect([...(tree.unconfirmedSlugs ?? [])]).toEqual(['acme--widget'])
+    expect(tree.publicSlugMap.get('acme--widget')).toHaveLength(1)
+  })
+
+  it('keeps it with no resolver', async () => {
+    expect([...((await loadColliding(undefined)).unconfirmedSlugs ?? [])]).toEqual(['acme--widget'])
+  })
+
+  it('has no blocker, and two candidates, when the lookup confirms the archived row public', async () => {
+    const tree = await loadColliding(recordingResolver(answers.public).resolver)
+
+    expect(tree.unconfirmedSlugs?.size).toBe(0)
+    expect(tree.publicSlugMap.get('acme--widget')).toHaveLength(2)
+  })
+})
+
+describe('gateWikiRepairs with an unconfirmed archived row at the slug', () => {
+  it('blocks a page that cites the public repository, and passes it unchanged from main', () => {
+    const files = {'knowledge/wiki/repos/acme--widget.md': widgetPage}
+    const publicRow = {
+      owner: 'acme',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'onboarded',
+      node_id: 'R_pub',
+    } as RepoEntry
+    const archivedRow = {...publicRow, name: 'Widget', onboarding_status: 'archived', node_id: 'R_arch'} as RepoEntry
+    const rows = [archivedRow, publicRow]
+    const gate = (grandfatherPages: ReturnType<typeof passingGateInputs>['grandfatherPages']) =>
+      gateWikiRepairs({
+        repairedWikiFiles: files,
+        publicSlugMap: buildPublicSlugMap(rows, new Set()),
+        unconfirmedSlugs: buildUnconfirmedArchivedSlugs(rows, new Set()),
+        grandfatherPages,
+      })
+
+    expect(gate([])).toMatchObject({ok: false, leaks: [{reason: 'ambiguous-public-slug'}]})
+    expect(gate(passingGateInputs(files).grandfatherPages).ok).toBe(true)
+  })
+})
+
+describe('runWikiRepairCli with an archived row that shares a slug', () => {
+  let root = ''
+  let stdout: string[] = []
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-repair-collision-'))
+    stdout = []
+    for (const [path, content] of Object.entries(driftedWidgetFiles())) {
+      await mkdir(dirname(join(root, path)), {recursive: true})
+      await writeFile(join(root, path), content, 'utf8')
+    }
+    await mkdir(join(root, 'metadata'), {recursive: true})
+    await writeFile(join(root, 'metadata', 'repos.yaml'), collidingRegistry(), 'utf8')
+  })
+
+  afterEach(async () => {
+    await rm(root, {recursive: true, force: true})
+  })
+
+  async function repair(resolver: NodeIdResolver, token: string | undefined = 'read-only-token') {
+    await runWikiRepairCli(
+      {
+        WIKI_REPAIR_DRY_RUN: 'true',
+        WIKI_REPAIR_DATA_TIP_SHA: 'tip-1',
+        GRANDFATHER_WIKI_REPOS_DIR: join(root, 'grandfather'),
+        GITHUB_TOKEN: token,
+      },
+      {stdout: text => stdout.push(text)},
+      root,
+      () => resolver,
+    )
+    return JSON.parse(stdout.join('')) as WikiRepairResultCounts
+  }
+
+  it.each([
+    ['PRIVATE', answers.private],
+    ['a failed lookup', answers.failed],
+  ])('aborts as a privacy block when the archived row lookup says %s', async (_label, answer) => {
+    const result = await repair(recordingResolver(answer).resolver)
+
+    expect(result).toMatchObject({privacy_blocked: 1, aborted: 1, repaired: 0})
+  })
+
+  it('aborts as a privacy block with no token', async () => {
+    const result = await repair(recordingResolver(answers.public).resolver, '')
+
+    expect(result).toMatchObject({privacy_blocked: 1, aborted: 1})
+  })
+})
+
+describe('the claimant set cannot be omitted', () => {
+  it('is required by gateWikiRepairs, the plan params and the tree snapshot: leaving it out does not compile', () => {
+    // `check-types` compiles this file: each directive fails the build if the omission ever type-checks.
+    // @ts-expect-error unconfirmedSlugs is required, so a caller cannot silently drop the collision check
+    expect(gateWikiRepairs({repairedWikiFiles: {}, publicSlugMap: new Map(), grandfatherPages: []}).ok).toBe(true)
+
+    // @ts-expect-error unconfirmedSlugs is required
+    const params: Parameters<typeof planAndVerifyWikiRepairs>[0] = {
+      baselineFindings: [],
+      wikiFiles: {},
+      publicSlugMap: new Map(),
+      grandfatherPages: [],
+    }
+    // @ts-expect-error unconfirmedSlugs is required
+    const snapshot: Awaited<ReturnType<typeof loadWikiRepairTreeAtHead>> = {
+      tipSha: 'tip',
+      wikiFiles: {},
+      publicSlugMap: new Map(),
+      grandfatherPages: [],
+    }
+
+    expect([params, snapshot]).toHaveLength(2)
   })
 })

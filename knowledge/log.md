@@ -10741,3 +10741,79 @@ metadata, the HEAD commit, directory listings, READMEs, manifests,
 Run: https://github.com/fro-bot/.github/actions/runs/43715725875
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-11-16 06:10] manual-edit | repo:fro-bot/agent
+
+Daily oversight pass (Observe). Added a dated section to
+`wiki/repos/fro-bot--agent.md` on how `isolate-agent` trusts the runner-owned
+checkout for git: the sandbox account's `~/.gitconfig` only at `v0.144.1`, and
+also the `GIT_CONFIG_COUNT`/`KEY`/`VALUE` environment from `v0.144.2` (#2222),
+still present at `v0.144.4`. It records the residual boundary: a git call that
+replaces the environment and sends global and system config to `/dev/null`
+loses both, as one intentional fro-bot/.github test does. Staged from the
+Remediation handoff after checking the action source at both tags and the test
+file at `5d78031`; run-log figures were left out. Remediation learnings: 1
+staged, 0 skipped.
+
+Sources: https://github.com/fro-bot/agent/pull/2222, https://github.com/fro-bot/agent/blob/v0.144.4/src/harness/phases/sandbox-lifecycle.ts, https://github.com/fro-bot/.github/blob/5d78031/packages/reports/src/improvement-metrics-detect.test.ts
+Run: https://github.com/fro-bot/.github/actions/runs/43812012295
+
+## [2026-11-16 06:08] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@5d7803192b3bb5dc1440f19aae83a8f608d950ee
+
+## [2026-11-16 13:45] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Repeat survey of bfra-me/works at public `main`
+`c8d6d1cb14066f1573d77b8ea19e4c706264e6a0`. Nothing material changed: it is
+still public, unarchived, MIT-licensed TypeScript on `main`, and it still uses
+pnpm with Changesets releases. Fro Bot is still set up (daily 03:30 UTC
+review/autoheal workflow with autoheal `branch-pr` output and
+`persist-credentials: false`), so no onboarding follow-up is needed. Renovate
+and org-dispatch callers are still on bfra-me/.github v4.43.0, and settings
+sync is still on v4.16.0. The nine package versions and Node engines are
+unchanged. Docs `validate` still backgrounds its checks with a bare `wait`.
+The semantic-release `|| true` test fallback, the dry-run-only Docs Sync and
+the weekly report-only benchmarks are all still there. There are still 13 YAML
+workflows plus one Markdown examples file.
+
+Only versions moved: pnpm 12.16.1 → 12.20.0, Vitest 5.0.5 → 5.1.0, ESLint
+10.13.0 → 10.14.0, Prettier 3.9.10 → 3.10.1, and Fro Bot agent v0.130.3 →
+v0.144.4.
+
+Changes to `wiki/repos/bfra-me--works.md`: one short current-state line near
+the top, because those versions were only stated inside dated sections. The
+`updated` date was bumped. No sources entry was added and no dated section was
+edited. No topic, entity or comparison page needed changes. Reads were limited
+to repo metadata, the HEAD commit, directory listings, the root README,
+manifests and workflow files. The corrections context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43878395710
+
+Sources: https://github.com/bfra-me/works
+
+## [2026-11-16 13:46] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Repeat survey of fro-bot/space-bus. `main` moved `20ab67c` → `2d7f6b7a` (14
+commits: 12 Renovate, 2 human, all workflow/manifest/lockfile; README and
+`src/`-facing manifest shape unchanged, version still `0.15.0`). No material
+change, so no dated section and no new `sources` entry; added one short
+current-state statement near the top of [[fro-bot--space-bus]] covering the
+facts whose only prior statements sit in dated sections: MCP SDK `1.32.2`
+(security bump #202), plugin dev pin `1.19.5`, release npm `11.21.2`,
+`bfra-me/.github` `v4.43.0`, agent `v0.144.3` with `isolate-agent` (#254),
+unconditional `persist-credentials: false`, and exact-title-plus-author report
+rotation (#239). The workflow still has no `output-mode` or caller delivery
+step. Added an additive dated update to [[github-actions-ci]] under the
+title-matched rolling issue section recording space-bus's adoption of the
+author check (no body marker). Fro Bot workflow present; no follow-up needed.
+Reads limited to repo metadata, compare listing, directory listings, README,
+manifest and workflow files. Corrections context was empty.
+
+Sources: https://github.com/fro-bot/space-bus
