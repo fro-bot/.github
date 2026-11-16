@@ -101,6 +101,7 @@
     "packages/privacy/src/check-private-leak.test.ts",
     "packages/privacy/src/check-wiki-private-presence-cli.test.ts",
     "packages/privacy/src/check-wiki-private-presence.test.ts",
+    "packages/privacy/src/private-leak-adapter-agreement.test.ts",
     "packages/registry/src/merge-back-data-cli.test.ts",
     "packages/registry/src/merge-back-data.test.ts",
     "packages/registry/src/promotion-qualify.test.ts",

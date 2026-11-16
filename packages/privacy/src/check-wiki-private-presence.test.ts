@@ -1,4 +1,5 @@
 import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 
 import {resolve} from 'node:path'
 import process from 'node:process'
@@ -9,6 +10,7 @@ import YAML from 'yaml'
 import {
   buildPublicSlugMap,
   buildPublicSlugs,
+  buildUnconfirmedArchivedSlugs,
   detectPrivateWikiLeaks,
   findStructuralViolations,
   formatLeakReport,
@@ -66,6 +68,7 @@ function widgetLeaks(content: string) {
     dataWikiPages: [page('acme--widget.md', 'h1', content)],
     publicSlugMap: widgetSlugMap(),
     grandfatherPages: [],
+    unconfirmedSlugs: new Set<string>(),
   })
 }
 
@@ -114,6 +117,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['some-org--some-repo', [{owner: 'some-org', name: 'some-repo', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -128,6 +132,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['some-org--public', [{owner: 'some-org', name: 'public', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -142,6 +147,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['some-org--public', [{owner: 'some-org', name: 'public', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -160,6 +166,7 @@ describe('detectPrivateWikiLeaks', () => {
           page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting content'),
           page('other--grandfathered.md', 'other-hash', '# other content'),
         ],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -173,6 +180,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'new-hash', '# updated content')],
         publicSlugMap: new Map(), // not public
         grandfatherPages: [page('marcusrbrown--copiloting.md', 'old-hash', '# original content')],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'marcusrbrown--copiloting.md', reason: 'unattributable-page'})
@@ -189,6 +197,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [page('acme--widget.md', 'old-hash', 'old content')],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -201,6 +210,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('acme--secret.md', 'h1', 'private content')],
         publicSlugMap: new Map(),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--secret.md', reason: 'unattributable-page'})
@@ -225,6 +235,7 @@ describe('detectPrivateWikiLeaks', () => {
           ],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--foo-bar.md', reason: 'ambiguous-public-slug'})
@@ -240,6 +251,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -265,6 +277,7 @@ describe('detectPrivateWikiLeaks', () => {
           ],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -286,6 +299,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -306,6 +320,7 @@ describe('detectPrivateWikiLeaks', () => {
           [slug, [{owner: 'marcusrbrown', name: '.dotfiles', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -323,6 +338,7 @@ describe('detectPrivateWikiLeaks', () => {
           page('marcusrbrown--copiloting.md', 'copiloting-hash', '# content'),
           page('other--grandfathered.md', 'other-hash', '# other content'),
         ],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -335,6 +351,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'h1', 'content')],
         publicSlugMap: new Map(),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'marcusrbrown--copiloting.md', reason: 'unattributable-page'})
@@ -348,6 +365,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('marcusrbrown--copiloting.md', 'new-hash', 'modified content')],
         publicSlugMap: new Map(),
         grandfatherPages: [page('marcusrbrown--copiloting.md', 'old-hash', 'original content')],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'marcusrbrown--copiloting.md', reason: 'unattributable-page'})
@@ -365,6 +383,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--public-repo', [{owner: 'acme', name: 'public-repo', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [page('other--old-page.md', 'h2', 'other content')],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result).toContainEqual({filename: 'acme--secret-repo.md', reason: 'unattributable-page'})
@@ -381,6 +400,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('deleted-org--deleted-repo.md', 'h1', 'content')],
         publicSlugMap: new Map(),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'deleted-org--deleted-repo.md', reason: 'unattributable-page'})
@@ -398,6 +418,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('acme--mystery.md', 'h1', 'content')],
         publicSlugMap: new Map(), // absent private correctly excluded
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(resultWithAbsentPrivate).toHaveLength(1)
       expect(resultWithAbsentPrivate[0]).toMatchObject({reason: 'unattributable-page'})
@@ -413,6 +434,7 @@ describe('detectPrivateWikiLeaks', () => {
         dataWikiPages: [page('R_kgDOABCDEF.md', 'h1', 'content')],
         publicSlugMap: new Map(),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'R_kgDOABCDEF.md', reason: 'unattributable-page'})
@@ -439,6 +461,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['owner--name', [{owner: 'owner', name: 'name', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -463,6 +486,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -529,6 +553,7 @@ describe('detectPrivateWikiLeaks', () => {
           dataWikiPages: [page('acme--widget.md', 'h1', content)],
           publicSlugMap: widgetSlugMap(),
           grandfatherPages: [],
+          unconfirmedSlugs: new Set<string>(),
         })
         expect(result).toStrictEqual([{filename: 'acme--widget.md', reason: 'unattributable-page'}])
         expect(JSON.stringify(result)).not.toContain(sensitiveName)
@@ -555,6 +580,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -577,6 +603,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -597,6 +624,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -617,6 +645,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -638,6 +667,7 @@ describe('detectPrivateWikiLeaks', () => {
             ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
           ]),
           grandfatherPages: [],
+          unconfirmedSlugs: new Set<string>(),
         }),
       ).not.toThrow()
       const result = detectPrivateWikiLeaks({
@@ -646,6 +676,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -671,6 +702,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -691,6 +723,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -708,6 +741,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['marcusrbrown--cart', [{owner: 'marcusrbrown', name: 'cart', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toEqual([])
     })
@@ -728,6 +762,7 @@ describe('detectPrivateWikiLeaks', () => {
           ['acme--public', [{owner: 'acme', name: 'public', private: false} as unknown as RepoEntry]],
         ]),
         grandfatherPages: [page('marcusrbrown--copiloting.md', 'same-hash', '# copiloting')],
+        unconfirmedSlugs: new Set<string>(),
       })
       expect(result).toHaveLength(1)
       expect(result[0]).toMatchObject({filename: 'acme--secret.md', reason: 'unattributable-page'})
@@ -993,6 +1028,7 @@ describe('findStructuralViolations', () => {
         ['acme--public', [{owner: 'acme', name: 'public', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     const allLeaks = [...structuralLeaks, ...contentLeaks]
 
@@ -1220,6 +1256,7 @@ describe('slug-variant + collision regression', () => {
       dataWikiPages: [page('marcusrbrown--cart.draft.md', 'h1', 'some content')],
       publicSlugMap,
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({reason: 'unattributable-page'})
@@ -1237,6 +1274,7 @@ describe('slug-variant + collision regression', () => {
       dataWikiPages: [page('acme--foo-bar.md', 'h1', sourced('https://github.com/acme/foo-bar'))],
       publicSlugMap,
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({reason: 'unattributable-page'})
@@ -1252,6 +1290,7 @@ describe('slug-variant + collision regression', () => {
       dataWikiPages: [page('MARCUSRBROWN--CART.md', 'h1', 'content')],
       publicSlugMap: new Map(),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({reason: 'unattributable-page'})
@@ -1293,6 +1332,7 @@ describe('fail-safe regression — private:true cannot smuggle through', () => {
       dataWikiPages: [page('marcusrbrown--cart.md', 'h1', 'content')],
       publicSlugMap,
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'marcusrbrown--cart.md', reason: 'unattributable-page'})
@@ -1395,6 +1435,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1415,6 +1456,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toEqual([])
   })
@@ -1427,6 +1469,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toEqual([])
   })
@@ -1439,6 +1482,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1452,6 +1496,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1466,6 +1511,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1480,6 +1526,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1494,6 +1541,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toEqual([])
   })
@@ -1508,6 +1556,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toEqual([])
   })
@@ -1521,6 +1570,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1537,6 +1587,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1553,6 +1604,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1568,6 +1620,7 @@ describe('prefix-collision guard — sourceUrlMatchesRepo exact owner/repo match
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1597,6 +1650,7 @@ describe('false-frontmatter guard — body-embedded block must not be treated as
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1617,6 +1671,7 @@ describe('false-frontmatter guard — body-embedded block must not be treated as
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toEqual([])
   })
@@ -1637,6 +1692,7 @@ describe('present-sources key is authoritative regardless of content — no subs
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1658,6 +1714,7 @@ describe('present-sources key is authoritative regardless of content — no subs
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1672,6 +1729,7 @@ describe('present-sources key is authoritative regardless of content — no subs
         ['acme--widget', [{owner: 'acme', name: 'widget', private: false} as unknown as RepoEntry]],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toHaveLength(1)
     expect(result[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1719,6 +1777,7 @@ describe('a page the ingest wrote for its target', () => {
       dataWikiPages: [page('acme--widget.md', 'h1', ingestTarget([]))],
       publicSlugMap,
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(leaks).toStrictEqual([])
   })
@@ -1776,6 +1835,7 @@ describe('a page the ingest wrote for its target', () => {
       dataWikiPages: [page('acme--widget.md', 'h1', migrated)],
       publicSlugMap,
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(leaks).toStrictEqual([])
   })
@@ -1791,6 +1851,7 @@ describe('a page the ingest wrote for its target', () => {
       ],
       publicSlugMap,
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(leaks).toHaveLength(1)
     expect(leaks[0]).toMatchObject({filename: 'acme--widget.md', reason: 'unattributable-page'})
@@ -1890,6 +1951,7 @@ describe('the block rule at the gate: a public repo page passes only with a vali
         ],
       ]),
       grandfatherPages: [],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(result).toStrictEqual([{filename: 'acme--foo-bar.md', reason: 'ambiguous-public-slug'}])
   })
@@ -1901,11 +1963,13 @@ describe('the block rule at the gate: a public repo page passes only with a vali
       dataWikiPages: [page('acme--private.md', 'same', unreadable)],
       publicSlugMap: new Map(),
       grandfatherPages: [page('acme--private.md', 'same', unreadable)],
+      unconfirmedSlugs: new Set<string>(),
     })
     const changed = detectPrivateWikiLeaks({
       dataWikiPages: [page('acme--private.md', 'new', sourced(widgetUrl))],
       publicSlugMap: new Map(),
       grandfatherPages: [page('acme--private.md', 'old', unreadable)],
+      unconfirmedSlugs: new Set<string>(),
     })
     expect(unchanged).toStrictEqual([])
     expect(changed).toStrictEqual([{filename: 'acme--private.md', reason: 'unattributable-page'}])
@@ -2398,5 +2462,447 @@ describe('runCli — normal mode (no --operator-report flag)', () => {
     expect(result.stdout).toContain('no private wiki leaks detected')
     // stderr must be exactly empty on the clean normal-mode path
     expect(result.stderr).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An archived row is attributed a page only when GitHub confirms it public now
+// ---------------------------------------------------------------------------
+
+describe('buildPublicSlugMap — an archived row', () => {
+  const archived = (extra: Partial<RepoEntry>): RepoEntry =>
+    ({
+      owner: 'acme',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'archived',
+      node_id: 'R_arch',
+      ...extra,
+    }) as RepoEntry
+
+  it('is left out unless its node ID is confirmed public', () => {
+    expect(buildPublicSlugMap([archived({})]).size).toBe(0)
+    expect(buildPublicSlugMap([archived({})], new Set()).size).toBe(0)
+    expect(buildPublicSlugMap([archived({})], new Set(['R_other'])).size).toBe(0)
+  })
+
+  it('is admitted when its node ID is confirmed public', () => {
+    expect([...buildPublicSlugMap([archived({})], new Set(['R_arch'])).keys()]).toEqual(['acme--widget'])
+  })
+
+  it('is never admitted with no node ID, even beside a confirmed set', () => {
+    expect(buildPublicSlugMap([archived({node_id: undefined})], new Set(['R_arch'])).size).toBe(0)
+  })
+
+  it('is never admitted when it is stored private or has no private key, even when confirmed', () => {
+    expect(buildPublicSlugMap([archived({private: true})], new Set(['R_arch'])).size).toBe(0)
+    expect(buildPublicSlugMap([archived({private: undefined})], new Set(['R_arch'])).size).toBe(0)
+  })
+
+  it('leaves a row that is not archived unchanged, confirmed set or not', () => {
+    const onboarded = archived({onboarding_status: 'onboarded', node_id: undefined})
+
+    expect([...buildPublicSlugMap([onboarded]).keys()]).toEqual(['acme--widget'])
+    expect([...buildPublicSlugMap([onboarded], new Set(['R_arch'])).keys()]).toEqual(['acme--widget'])
+  })
+
+  it('passes the confirmed set through buildPublicSlugs', () => {
+    expect(buildPublicSlugs([archived({})]).size).toBe(0)
+    expect([...buildPublicSlugs([archived({})], new Set(['R_arch']))]).toEqual(['acme--widget'])
+  })
+})
+
+function resolverFor(answer: Awaited<ReturnType<NodeIdResolver>>): {resolver: NodeIdResolver; calls: string[]} {
+  const calls: string[] = []
+  return {
+    calls,
+    resolver: async nodeId => {
+      calls.push(nodeId)
+      return answer
+    },
+  }
+}
+
+describe('runCli — an archived row and the data → main gate', () => {
+  const grandfatherDir = '/tmp/grandfather-archived'
+  const pageName = 'acme-labs--archived-widget.md'
+  const sourcedPage = (body: string): string => sourced('https://github.com/acme-labs/archived-widget', body)
+
+  interface RowSpec {
+    readonly nodeId?: string
+    readonly isPrivate: boolean
+    readonly status: string
+  }
+
+  const reposYaml = (rows: readonly RowSpec[]): string =>
+    rows.length === 0
+      ? 'version: 1\nrepos: []\n'
+      : `version: 1\nrepos:\n${rows
+          .map(
+            row =>
+              `  - owner: acme-labs\n    name: archived-widget\n    private: ${row.isPrivate}${
+                row.nodeId === undefined ? '' : `\n    node_id: ${row.nodeId}`
+              }\n    added: "2024-01-01"\n    onboarding_status: ${row.status}\n    last_survey_at: null\n    last_survey_status: null\n    has_fro_bot_workflow: false\n    has_renovate: false`,
+          )
+          .join('\n')}\n`
+
+  function arrange(yaml: string, dataPage: string, mainPage: string | undefined): void {
+    mockReaddir.mockImplementation(async (dir: string) => {
+      if (dir === grandfatherDir) {
+        if (mainPage === undefined) throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+        return [dirent(pageName)]
+      }
+      return [dirent(pageName)]
+    })
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path === 'metadata/repos.yaml') return yaml
+      if (path.startsWith(grandfatherDir)) return mainPage
+      return dataPage
+    })
+  }
+
+  const archivedRow: RowSpec = {nodeId: 'R_arch', isPrivate: false, status: 'archived'}
+  const published = sourcedPage('Published body.')
+  const edited = sourcedPage('Body with an addition that names no repository.')
+
+  it('attributes an edited page to a named archived row that resolves PUBLIC', async () => {
+    arrange(reposYaml([archivedRow]), edited, published)
+    const {resolver, calls} = resolverFor({nameWithOwner: 'acme-labs/archived-widget', visibility: 'PUBLIC'})
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(result).toEqual({exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''})
+    expect(calls).toEqual(['R_arch'])
+  })
+
+  it.each([
+    ['PRIVATE', {nameWithOwner: 'acme-labs/archived-widget', visibility: 'PRIVATE'}],
+    ['INTERNAL', {nameWithOwner: 'acme-labs/archived-widget', visibility: 'INTERNAL'}],
+    ['a missing visibility', {nameWithOwner: 'acme-labs/archived-widget'}],
+    ['a null visibility', {nameWithOwner: 'acme-labs/archived-widget', visibility: null}],
+    ['a lowercase public', {nameWithOwner: 'acme-labs/archived-widget', visibility: 'public'}],
+    ['a failed lookup', {error: 'error'}],
+    ['an access-lost lookup', {error: 'access-lost'}],
+  ] as const)('blocks an edited page, and passes an unchanged one, when the lookup says %s', async (_label, answer) => {
+    const {resolver, calls} = resolverFor(answer)
+
+    arrange(reposYaml([archivedRow]), edited, published)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+    arrange(reposYaml([archivedRow]), published, published)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(blocked.exitCode).toBe(1)
+    expect(blocked.stderr).toContain('leak-1: unattributable-page')
+    expect(blocked.stderr).not.toContain('archived-widget')
+    expect(unchanged).toEqual({exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''})
+    expect(calls).toEqual(['R_arch', 'R_arch'])
+  })
+
+  it('blocks an edited page and passes an unchanged one with no resolver at all: no token fails closed', async () => {
+    arrange(reposYaml([archivedRow]), edited, published)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+    arrange(reposYaml([archivedRow]), published, published)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+
+    expect(blocked.exitCode).toBe(1)
+    expect(blocked.stderr).toContain('leak-1: unattributable-page')
+    expect(unchanged.exitCode).toBe(0)
+  })
+
+  it.each([
+    ['an archived row with no node ID', {isPrivate: false, status: 'archived'}],
+    ['a redacted archived row', {nodeId: 'R_arch', isPrivate: true, status: 'archived'}],
+  ] as const)('blocks an edited page for %s without a lookup, and passes an unchanged one', async (_label, row) => {
+    const {resolver, calls} = resolverFor({nameWithOwner: 'acme-labs/archived-widget', visibility: 'PUBLIC'})
+
+    arrange(reposYaml([row]), edited, published)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+    arrange(reposYaml([row]), published, published)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(blocked.exitCode).toBe(1)
+    expect(unchanged.exitCode).toBe(0)
+    expect(calls).toEqual([])
+  })
+
+  it('makes no lookup, and gives the same result as a run with no resolver, when no row is archived', async () => {
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      throw new Error('a lookup must not happen')
+    }
+    const onboarded: RowSpec = {nodeId: 'R_arch', isPrivate: false, status: 'onboarded'}
+    const withoutResolver: unknown[] = []
+    const withResolver: unknown[] = []
+
+    for (const rows of [[], [onboarded], [{...onboarded, isPrivate: true}]] as const) {
+      arrange(reposYaml(rows), edited, published)
+      withoutResolver.push(await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}))
+      arrange(reposYaml(rows), edited, published)
+      withResolver.push(await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver))
+    }
+
+    expect(withResolver).toEqual(withoutResolver)
+    expect(calls).toEqual([])
+  })
+
+  it('treats the operator report the same way', async () => {
+    arrange(reposYaml([archivedRow]), edited, published)
+    const {resolver} = resolverFor({nameWithOwner: 'acme-labs/archived-widget', visibility: 'PRIVATE'})
+
+    const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toContain(`knowledge/wiki/repos/${pageName}  (unattributable-page)`)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An unconfirmed archived row stays in the slug-collision accounting
+// ---------------------------------------------------------------------------
+
+describe('an unconfirmed archived row sharing a slug with another row', () => {
+  const row = (extra: Partial<RepoEntry>): RepoEntry =>
+    ({
+      owner: 'example',
+      name: 'some-repo',
+      private: false,
+      onboarding_status: 'onboarded',
+      node_id: 'R_pub',
+      ...extra,
+    }) as RepoEntry
+  const archivedRow = row({name: 'some.repo', onboarding_status: 'archived', node_id: 'R_arch'})
+  const publicRow = row({})
+  const rows = [archivedRow, publicRow]
+  const slug = 'example--some-repo'
+  const bothSources = [
+    '---',
+    'type: repo',
+    'sources:',
+    '  - url: https://github.com/example/some.repo',
+    '    accessed: 2026-11-12',
+    '  - url: https://github.com/example/some-repo',
+    '    accessed: 2026-11-12',
+    '---',
+    'Body with a new, private sentence.',
+    '',
+  ].join('\n')
+  const changedPage = page(`${slug}.md`, 'changed-hash', bothSources)
+  const unchangedPage = page(`${slug}.md`, 'main-hash', bothSources)
+  const onMain = [page(`${slug}.md`, 'main-hash', bothSources)]
+
+  function leaks(confirmed: ReadonlySet<string>, dataPage: WikiPageSnapshot, grandfatherPages: WikiPageSnapshot[]) {
+    return detectPrivateWikiLeaks({
+      dataWikiPages: [dataPage],
+      publicSlugMap: buildPublicSlugMap(rows, confirmed),
+      grandfatherPages,
+      unconfirmedSlugs: buildUnconfirmedArchivedSlugs(rows, confirmed),
+    })
+  }
+
+  it('blocks a changed page that cites both repositories, as ambiguous: the archived row is never a candidate', () => {
+    expect(leaks(new Set(), changedPage, onMain)).toStrictEqual([
+      {filename: `${slug}.md`, reason: 'ambiguous-public-slug'},
+    ])
+    expect(leaks(new Set(), changedPage, [])).toStrictEqual([{filename: `${slug}.md`, reason: 'ambiguous-public-slug'}])
+  })
+
+  it('passes the same page when it is unchanged from main: grandfathering is unchanged', () => {
+    expect(leaks(new Set(), unchangedPage, onMain)).toStrictEqual([])
+  })
+
+  it("gives today's two-public-rows outcome when the archived row is confirmed public, changed or not", () => {
+    const confirmed = new Set(['R_arch'])
+
+    expect(buildPublicSlugMap(rows, confirmed).get(slug)).toHaveLength(2)
+    expect(buildUnconfirmedArchivedSlugs(rows, confirmed).size).toBe(0)
+    expect(leaks(confirmed, changedPage, onMain)).toStrictEqual([
+      {filename: `${slug}.md`, reason: 'ambiguous-public-slug'},
+    ])
+    expect(leaks(confirmed, unchangedPage, onMain)).toStrictEqual([
+      {filename: `${slug}.md`, reason: 'ambiguous-public-slug'},
+    ])
+  })
+
+  it('still blocks an unchanged page when two other public rows share the slug, beside an unconfirmed one', () => {
+    const three = [archivedRow, publicRow, row({name: 'some_repo', node_id: 'R_pub2'})]
+
+    expect(
+      detectPrivateWikiLeaks({
+        dataWikiPages: [unchangedPage],
+        publicSlugMap: buildPublicSlugMap(three, new Set()),
+        grandfatherPages: onMain,
+        unconfirmedSlugs: buildUnconfirmedArchivedSlugs(three, new Set()),
+      }),
+    ).toStrictEqual([{filename: `${slug}.md`, reason: 'ambiguous-public-slug'}])
+  })
+
+  it('leaves an unconfirmed archived row alone at its slug: a changed page is unattributable, an unchanged one passes', () => {
+    const alone = [archivedRow]
+    const detect = (dataPage: WikiPageSnapshot) =>
+      detectPrivateWikiLeaks({
+        dataWikiPages: [dataPage],
+        publicSlugMap: buildPublicSlugMap(alone, new Set()),
+        grandfatherPages: onMain,
+        unconfirmedSlugs: buildUnconfirmedArchivedSlugs(alone, new Set()),
+      })
+
+    expect(detect(changedPage)).toStrictEqual([{filename: `${slug}.md`, reason: 'unattributable-page'}])
+    expect(detect(unchangedPage)).toStrictEqual([])
+  })
+
+  it('does not touch a page at a slug no unconfirmed row shares', () => {
+    const other = page('example--other.md', 'h', sourced('https://github.com/example/other'))
+    const detect = detectPrivateWikiLeaks({
+      dataWikiPages: [other],
+      publicSlugMap: buildPublicSlugMap([...rows, row({name: 'other', node_id: 'R_o'})], new Set()),
+      grandfatherPages: [],
+      unconfirmedSlugs: buildUnconfirmedArchivedSlugs(rows, new Set()),
+    })
+
+    expect(detect).toStrictEqual([])
+  })
+})
+
+describe('buildUnconfirmedArchivedSlugs', () => {
+  const archived = (extra: Partial<RepoEntry>): RepoEntry =>
+    ({
+      owner: 'example',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'archived',
+      node_id: 'R_a',
+      ...extra,
+    }) as RepoEntry
+
+  it('lists the slug of an archived named row that is not confirmed', () => {
+    expect([...buildUnconfirmedArchivedSlugs([archived({})], new Set())]).toEqual(['example--widget'])
+    expect([...buildUnconfirmedArchivedSlugs([archived({})])]).toEqual(['example--widget'])
+    expect([...buildUnconfirmedArchivedSlugs([archived({})], new Set(['R_other']))]).toEqual(['example--widget'])
+  })
+
+  it('lists a named archived row with no private key and one with no node ID', () => {
+    expect(buildUnconfirmedArchivedSlugs([archived({private: undefined})], new Set()).size).toBe(1)
+    expect(buildUnconfirmedArchivedSlugs([archived({node_id: undefined})], new Set(['R_a'])).size).toBe(1)
+  })
+
+  it('omits a confirmed row', () => {
+    expect(buildUnconfirmedArchivedSlugs([archived({})], new Set(['R_a'])).size).toBe(0)
+  })
+
+  it('omits a redacted archived row: its stored name is `[REDACTED]`, so it has no real slug to collide at', () => {
+    const redacted = archived({private: true, owner: '[REDACTED]', name: 'R_red'})
+
+    expect(buildUnconfirmedArchivedSlugs([redacted], new Set()).size).toBe(0)
+    expect(buildPublicSlugMap([redacted], new Set(['R_a'])).size).toBe(0)
+  })
+
+  it.each([
+    ['an onboarded public row', {onboarding_status: 'onboarded'}],
+    ['a row stored private that is not archived', {onboarding_status: 'onboarded', private: true}],
+  ] as const)('omits %s', (_label, extra) => {
+    expect(buildUnconfirmedArchivedSlugs([archived(extra as Partial<RepoEntry>)], new Set()).size).toBe(0)
+  })
+
+  it('skips a row whose name cannot form a slug, without throwing', () => {
+    expect(buildUnconfirmedArchivedSlugs([archived({name: '!!!'}), archived({})], new Set())).toEqual(
+      new Set(['example--widget']),
+    )
+  })
+})
+
+describe('runCli — an unconfirmed archived row sharing a slug with a public row', () => {
+  const grandfatherDir = '/tmp/grandfather-collision'
+  const pageName = 'example--some-repo.md'
+  const bothSources = [
+    '---',
+    'type: repo',
+    'sources:',
+    '  - url: https://github.com/example/some.repo',
+    '    accessed: 2026-11-12',
+    '  - url: https://github.com/example/some-repo',
+    '    accessed: 2026-11-12',
+    '---',
+    'Body.',
+    '',
+  ].join('\n')
+  const registry = (archivedNodeId: string): string =>
+    [
+      'version: 1',
+      'repos:',
+      '  - owner: example',
+      '    name: some.repo',
+      '    private: false',
+      `    node_id: ${archivedNodeId}`,
+      '    added: "2024-01-01"',
+      '    onboarding_status: archived',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '  - owner: example',
+      '    name: some-repo',
+      '    private: false',
+      '    node_id: R_pub',
+      '    added: "2024-01-01"',
+      '    onboarding_status: onboarded',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '',
+    ].join('\n')
+
+  function arrange(dataPage: string, mainPage: string): void {
+    mockReaddir.mockImplementation(async () => [dirent(pageName)])
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path === 'metadata/repos.yaml') return registry('R_arch')
+      return path.startsWith(grandfatherDir) ? mainPage : dataPage
+    })
+  }
+
+  it.each([
+    ['PRIVATE', {nameWithOwner: 'example/some.repo', visibility: 'PRIVATE'}],
+    ['a failed lookup', {error: 'error'}],
+  ] as const)('blocks a changed page that cites both repositories when the lookup says %s', async (_label, answer) => {
+    arrange(`${bothSources}New private sentence.\n`, bothSources)
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, async () => answer)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('leak-1: ambiguous-public-slug')
+    expect(result.stderr).not.toContain('some-repo')
+  })
+
+  it('blocks it with no resolver, and passes the page unchanged from main', async () => {
+    arrange(`${bothSources}New private sentence.\n`, bothSources)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+    arrange(bothSources, bothSources)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+
+    expect(blocked.exitCode).toBe(1)
+    expect(unchanged).toEqual({exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''})
+  })
+
+  it('gives the two-public-rows outcome when the lookup confirms the archived row public', async () => {
+    arrange(bothSources, bothSources)
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, async () => ({
+      nameWithOwner: 'example/some.repo',
+      visibility: 'PUBLIC',
+    }))
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('leak-1: ambiguous-public-slug')
+  })
+})
+
+describe('detectPrivateWikiLeaks claimant set', () => {
+  it('is required: leaving it out does not compile', () => {
+    // `check-types` compiles this file: the directive fails the build if the omission ever type-checks.
+    // @ts-expect-error unconfirmedSlugs is required, so a caller cannot silently drop the collision check
+    const leaks = detectPrivateWikiLeaks({dataWikiPages: [], publicSlugMap: new Map(), grandfatherPages: []})
+
+    expect(leaks).toEqual([])
   })
 })

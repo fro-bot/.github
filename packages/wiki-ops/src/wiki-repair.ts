@@ -1,4 +1,5 @@
 import type {PrivateWikiLeak, WikiPageSnapshot} from '@fro-bot/privacy/check-wiki-private-presence'
+import type {NodeIdResolver} from '@fro-bot/privacy/private-repo-resolution'
 import type {
   CommitWikiChangesParams,
   CommitWikiChangesResult,
@@ -14,12 +15,15 @@ import process from 'node:process'
 
 import {createOctokit, OctokitLoadError} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
+import {confirmArchivedPublic} from '@fro-bot/privacy/check-private-leak'
 import {
   buildPublicSlugMap,
+  buildUnconfirmedArchivedSlugs,
   detectPrivateWikiLeaks,
   loadWikiPages,
   requireGrandfatherDir,
 } from '@fro-bot/privacy/check-wiki-private-presence'
+import {makeGhNodeIdResolver} from '@fro-bot/privacy/private-repo-resolution'
 import {
   commitWikiChanges,
   lintWikiSnapshot,
@@ -282,6 +286,8 @@ export function verifyWikiRepairs(params: VerifyWikiRepairsParams): VerifyWikiRe
 export interface GateWikiRepairsParams {
   readonly repairedWikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  /** Slugs claimed by an archived row GitHub did not confirm public; see `buildUnconfirmedArchivedSlugs`. */
+  readonly unconfirmedSlugs: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -313,6 +319,7 @@ export function gateWikiRepairs(params: GateWikiRepairsParams): GateWikiRepairsR
   const leaks = detectPrivateWikiLeaks({
     dataWikiPages,
     publicSlugMap: params.publicSlugMap,
+    unconfirmedSlugs: params.unconfirmedSlugs,
     grandfatherPages: params.grandfatherPages,
   })
 
@@ -325,6 +332,7 @@ export interface PlanAndVerifyWikiRepairsParams {
   readonly baselineFindings: readonly WikiLintFinding[]
   readonly wikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  readonly unconfirmedSlugs: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -361,6 +369,7 @@ export function planAndVerifyWikiRepairs(params: PlanAndVerifyWikiRepairsParams)
   const gate = gateWikiRepairs({
     repairedWikiFiles: plan.repairedFiles,
     publicSlugMap: params.publicSlugMap,
+    unconfirmedSlugs: params.unconfirmedSlugs,
     grandfatherPages: params.grandfatherPages,
   })
 
@@ -384,6 +393,8 @@ export interface WikiRepairTreeSnapshot {
   readonly tipSha: string
   readonly wikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  /** Slugs claimed by an archived row GitHub did not confirm public: they block, and never attribute. */
+  readonly unconfirmedSlugs: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -462,6 +473,7 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
       baselineFindings: baseline,
       wikiFiles: tree.wikiFiles,
       publicSlugMap: tree.publicSlugMap,
+      unconfirmedSlugs: tree.unconfirmedSlugs,
       grandfatherPages: tree.grandfatherPages,
     })
 
@@ -573,6 +585,8 @@ export interface LoadWikiRepairTreeAtHeadParams {
   readonly repo: string
   /** Read from the job's restore: they come from the checkout, not from `data`. */
   readonly grandfatherPages: readonly WikiPageSnapshot[]
+  /** Confirms an archived row public at load time; without it an archived row is unconfirmed. */
+  readonly resolver?: NodeIdResolver
 }
 
 /**
@@ -620,10 +634,13 @@ export async function loadWikiRepairTreeAtHead(
   assertReposFile(reposParsed)
   const wikiFiles = Object.fromEntries(contents)
 
+  const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, params.resolver)
+
   return {
     tipSha,
     wikiFiles,
-    publicSlugMap: buildPublicSlugMap(reposParsed.repos),
+    publicSlugMap: buildPublicSlugMap(reposParsed.repos, confirmedPublic),
+    unconfirmedSlugs: buildUnconfirmedArchivedSlugs(reposParsed.repos, confirmedPublic),
     grandfatherPages: params.grandfatherPages,
   }
 }
@@ -750,6 +767,7 @@ export async function runWikiRepairCli(
   env: Readonly<Record<string, string | undefined>>,
   io: WikiRepairCliIo,
   rootDir: string = process.cwd(),
+  makeResolver: (token: string) => NodeIdResolver = makeGhNodeIdResolver,
 ): Promise<number> {
   const dryRun = env.WIKI_REPAIR_DRY_RUN === 'true'
   const resultPath = env.WIKI_REPAIR_RESULT_PATH
@@ -757,6 +775,11 @@ export async function runWikiRepairCli(
     owner: env.WIKI_REPAIR_OWNER ?? 'fro-bot',
     repo: env.WIKI_REPAIR_REPO ?? '.github',
   }
+
+  // The job's own token confirms an archived row public (see `buildPublicSlugMap`). Without one, the
+  // gate treats an archived row as unconfirmed; no token is added.
+  const resolver =
+    env.GITHUB_TOKEN === undefined || env.GITHUB_TOKEN === '' ? undefined : makeResolver(env.GITHUB_TOKEN)
 
   const loadFromCheckout = async (): Promise<WikiRepairTreeSnapshot> => {
     const tipSha = env.WIKI_REPAIR_DATA_TIP_SHA
@@ -769,12 +792,14 @@ export async function runWikiRepairCli(
     const reposRaw = await readFile(join(rootDir, 'metadata', 'repos.yaml'), 'utf8')
     const reposParsed: unknown = YAML.parse(reposRaw)
     assertReposFile(reposParsed)
-    const publicSlugMap = buildPublicSlugMap(reposParsed.repos)
+    const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, resolver)
+    const publicSlugMap = buildPublicSlugMap(reposParsed.repos, confirmedPublic)
+    const unconfirmedSlugs = buildUnconfirmedArchivedSlugs(reposParsed.repos, confirmedPublic)
 
     const grandfatherDir = requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR)
     const grandfatherPages = await loadWikiPages(grandfatherDir)
 
-    return {tipSha, wikiFiles, publicSlugMap, grandfatherPages}
+    return {tipSha, wikiFiles, publicSlugMap, unconfirmedSlugs, grandfatherPages}
   }
 
   let octokitPromise: Promise<OctokitClient> | undefined
@@ -786,7 +811,7 @@ export async function runWikiRepairCli(
   const loadTree = createWikiRepairTreeLoader({
     loadFromCheckout,
     loadAtHead: async grandfatherPages =>
-      loadWikiRepairTreeAtHead({octokit: await getOctokit(), ...target, grandfatherPages}),
+      loadWikiRepairTreeAtHead({octokit: await getOctokit(), ...target, grandfatherPages, resolver}),
   })
 
   const getCurrentDataTipSha = async (): Promise<string> => {

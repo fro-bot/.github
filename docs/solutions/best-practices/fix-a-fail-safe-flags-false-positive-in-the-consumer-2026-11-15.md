@@ -30,7 +30,7 @@ Here `metadata/repos.yaml` stores one record per tracked repository. Reconcile w
 
 [#4251](https://github.com/fro-bot/.github/pull/4251) made the stored value precise: reconcile kept an archived public repository as a public, named record. Its review reproduced two sequences that left a private repository named, one through a name reused by another repository and one through a return path the change had not edited. The pull request was closed.
 
-[#4256](https://github.com/fro-bot/.github/pull/4256) left reconcile alone. The lookup the scans already made now also requests the repository's `visibility` (`packages/privacy/src/private-repo-resolution.ts:42`), and a record contributes no private name only when GitHub reports exactly `PUBLIC` (`packages/privacy/src/check-private-leak.ts:803`). The next promotion run passed ([run 43705065121](https://github.com/fro-bot/.github/actions/runs/43705065121)).
+[#4256](https://github.com/fro-bot/.github/pull/4256) left reconcile alone. The lookup the scans already made now also requests the repository's `visibility` (`packages/privacy/src/private-repo-resolution.ts:42`), and a record contributes no private name only when GitHub reports exactly `PUBLIC` (`packages/privacy/src/check-private-leak.ts:803`). The next promotion run passed ([run 43705065121](https://github.com/fro-bot/.github/actions/runs/43705065121)). An archived repository later got a row of its own, stored `private: false` with its real name; the same consumer-side rule selects that row too, but reads the opposite way: only a live `PUBLIC` clears it, and a failed lookup scans by its stored name instead of blocking.
 
 ## Guidance
 

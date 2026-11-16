@@ -148,8 +148,14 @@ jobs:
       #     (e.g. marcusrbrown/copiloting: onboarding_status=lost-access, absent private)
       #   - dead/node-null orphans are tolerated: if already on main → grandfathered;
       #     if genuinely new → correctly flagged without any GraphQL call
+      #   - the one exception is an archived row: its stored `private: false` is not evidence, so the gate
+      #     asks GitHub whether that row's node is public right now, with the read-only `github.token`
+      #     (public data only; no new permission or secret). A row it cannot confirm is left out of the
+      #     public set, and a page for it then passes only when unchanged from main. With no archived
+      #     row the gate makes no request.
       - name: 🔒 Block private wiki pages
         env:
+          GH_TOKEN: ${{ github.token }}
           GRANDFATHER_WIKI_REPOS_DIR: ../knowledge/wiki/repos
         working-directory: data-branch-check
         run: bun --no-install --no-env-file ../scripts/check-wiki-private-presence.ts

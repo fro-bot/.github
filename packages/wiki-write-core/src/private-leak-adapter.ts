@@ -21,6 +21,7 @@ const PRIVATE_REPOSITORIES_QUERY = `
       ... on Repository {
         nameWithOwner
         isPrivate
+        visibility
       }
     }
   }
@@ -81,30 +82,49 @@ export async function createGitHubPrivateLeakAdapter(
   const owner = params.owner ?? DEFAULT_OWNER
   const repo = params.repo ?? DEFAULT_REPO
   const branch = params.branch ?? DEFAULT_BRANCH
+  // Only the rows stored private are cached, by metadata blob SHA: their names do not depend on a
+  // visibility that can change under an unchanged blob.
   const resolutionCache = new Map<string, Promise<readonly string[]>>()
+
+  async function resolveStoredPrivateNames(metadata: {
+    readonly sha: string
+    readonly rows: readonly ScanRow[]
+  }): Promise<readonly string[]> {
+    const cached = resolutionCache.get(metadata.sha)
+    if (cached !== undefined) return cached
+
+    const resolution = resolvePrivateRepositoryNames(
+      octokit,
+      metadata.rows.filter(row => !row.archivedNamed),
+    )
+    resolutionCache.set(metadata.sha, resolution)
+    try {
+      return await resolution
+    } catch (error: unknown) {
+      resolutionCache.delete(metadata.sha)
+      throw error
+    }
+  }
 
   return {
     resolvePrivateRepositoryNames: async () => {
       const metadata = await readPrivateMetadata(octokit, owner, repo, branch)
-      const cached = resolutionCache.get(metadata.sha)
-      if (cached !== undefined) return cached
-
-      const resolution = resolvePrivateRepositoryNames(octokit, metadata.nodeIds)
-      resolutionCache.set(metadata.sha, resolution)
-      try {
-        return await resolution
-      } catch (error: unknown) {
-        resolutionCache.delete(metadata.sha)
-        throw error
-      }
+      const privateNames = await resolveStoredPrivateNames(metadata)
+      // An archived named row is resolved on every scan, never from the cache: its result is GitHub's
+      // current visibility (and live name), which changes without the metadata blob changing.
+      const archivedNames = await resolveArchivedRepositoryNames(
+        octokit,
+        metadata.rows.filter(row => row.archivedNamed),
+      )
+      return [...privateNames, ...archivedNames]
     },
   }
 }
 
 /**
  * Scan candidate content with the GitHub-backed privacy adapter. Callers may
- * reuse an adapter to cache resolution by the metadata blob SHA, or provide
- * only a token and the request content.
+ * reuse an adapter to cache the names of rows stored private by the metadata blob SHA (an archived
+ * named row is re-resolved on every scan), or provide only a token and the request content.
  */
 export async function checkPrivateLeakWithGitHub(request: GitHubPrivateLeakScanRequest): Promise<GuardResult> {
   const adapter =
@@ -142,7 +162,7 @@ async function readPrivateMetadata(
   owner: string,
   repo: string,
   branch: string,
-): Promise<{readonly sha: string; readonly nodeIds: readonly string[]}> {
+): Promise<{readonly sha: string; readonly rows: readonly ScanRow[]}> {
   let response: Awaited<ReturnType<GitHubPrivateLeakClient['rest']['repos']['getContent']>>
   try {
     response = await octokit.rest.repos.getContent({owner, repo, path: METADATA_PATH, ref: branch})
@@ -184,12 +204,22 @@ async function readPrivateMetadata(
     })
   }
 
-  const privateEntries = parsed.repos.filter(entry => entry.private === true)
-  const nodeIds = privateEntries.flatMap(entry =>
-    typeof entry.node_id === 'string' && entry.node_id !== '' ? [entry.node_id] : [],
-  )
+  // The rows to resolve: every row stored private, and every archived row whatever its `private`
+  // value. An archived row is stored `private: false` with its real name, and reconcile keeps it
+  // unchanged when it cannot see the repository, so the stored value is not trusted. This is a copy
+  // of `selectScanRows` in `@fro-bot/privacy`, which a published package cannot import;
+  // `private-leak-adapter-agreement.test.ts` there keeps the two equal.
+  const rows = parsed.repos
+    .filter(entry => entry.private === true || entry.onboarding_status === 'archived')
+    .map((entry): ScanRow => ({
+      nodeId: typeof entry.node_id === 'string' && entry.node_id !== '' ? entry.node_id : undefined,
+      archivedNamed: entry.private !== true,
+      storedName: `${entry.owner}/${entry.name}`,
+    }))
 
-  if (nodeIds.length !== privateEntries.length) {
+  // A private row with no node ID cannot be resolved: the scan cannot cover what it cannot identify.
+  // An archived named row with none is scanned by its stored name.
+  if (rows.some(row => !row.archivedNamed && row.nodeId === undefined)) {
     throw new PrivateLeakAdapterError({
       code: 'RESOLUTION_FAILED',
       message: 'Authoritative metadata contains private entries without resolvable node IDs',
@@ -197,57 +227,126 @@ async function readPrivateMetadata(
     })
   }
 
-  return {sha: payload.sha, nodeIds}
+  return {sha: payload.sha, rows}
 }
 
+/**
+ * One row to resolve. `archivedNamed` is an archived row not stored private: GitHub's live answer
+ * decides it, and a failed lookup does not block (it is scanned by its stored name). A row stored
+ * private keeps today's rule: it throws when the lookup fails or GitHub reports it public.
+ */
+interface ScanRow {
+  readonly nodeId: string | undefined
+  readonly archivedNamed: boolean
+  readonly storedName: string
+}
+
+/** The tokens for rows stored private, in one batched lookup. Every failure is an error. */
 async function resolvePrivateRepositoryNames(
   octokit: GitHubPrivateLeakClient,
-  nodeIds: readonly string[],
+  rows: readonly ScanRow[],
 ): Promise<readonly string[]> {
+  const nodeIds = rows.flatMap(row => (row.nodeId === undefined ? [] : [row.nodeId]))
   if (nodeIds.length === 0) return []
 
+  const lookup = await lookUpNodes(octokit, nodeIds)
+  if ('error' in lookup) throw lookup.error
+
+  return lookup.nodes.flatMap(node => privateRowTokens(node))
+}
+
+/**
+ * The tokens for archived named rows, in one batched lookup per call. A failed lookup is not an
+ * error: each row falls back to its stored name. Called on every scan, never cached.
+ */
+async function resolveArchivedRepositoryNames(
+  octokit: GitHubPrivateLeakClient,
+  rows: readonly ScanRow[],
+): Promise<readonly string[]> {
+  const nodeIds = rows.flatMap(row => (row.nodeId === undefined ? [] : [row.nodeId]))
+  const lookup = nodeIds.length === 0 ? {nodes: []} : await lookUpNodes(octokit, nodeIds)
+
+  const names: string[] = []
+  let position = 0
+  for (const row of rows) {
+    const node = row.nodeId === undefined || 'error' in lookup ? undefined : lookup.nodes[position]
+    if (row.nodeId !== undefined) position += 1
+    names.push(...archivedRowTokens(row, node))
+  }
+
+  return names
+}
+
+/** One batched lookup. A failure is returned, not thrown: only the rows stored private make it fatal. */
+async function lookUpNodes(
+  octokit: GitHubPrivateLeakClient,
+  nodeIds: readonly string[],
+): Promise<{readonly nodes: readonly unknown[]} | {readonly error: PrivateLeakAdapterError}> {
   let response: unknown
   try {
     response = await octokit.graphql(PRIVATE_REPOSITORIES_QUERY, {ids: nodeIds})
   } catch {
-    throw new PrivateLeakAdapterError({
-      code: 'RESOLUTION_FAILED',
-      message: 'GitHub could not resolve the authoritative private repository identities',
-      remediation: 'Verify token visibility and GitHub API availability, then retry the privacy scan.',
-    })
+    return {
+      error: new PrivateLeakAdapterError({
+        code: 'RESOLUTION_FAILED',
+        message: 'GitHub could not resolve the authoritative private repository identities',
+        remediation: 'Verify token visibility and GitHub API availability, then retry the privacy scan.',
+      }),
+    }
   }
 
   const nodes = isRecord(response) ? response.nodes : undefined
   if (!Array.isArray(nodes) || nodes.length !== nodeIds.length) {
+    return {
+      error: new PrivateLeakAdapterError({
+        code: 'RESOLUTION_FAILED',
+        message: 'GitHub returned an incomplete private repository resolution response',
+        remediation: 'Verify token visibility for every private repository and retry the privacy scan.',
+      }),
+    }
+  }
+
+  return {nodes}
+}
+
+/** The tokens for a row stored private; it throws unless GitHub resolves it and does not report it public. */
+function privateRowTokens(node: unknown): readonly string[] {
+  if (!isRecord(node) || typeof node.nameWithOwner !== 'string' || node.nameWithOwner === '') {
     throw new PrivateLeakAdapterError({
       code: 'RESOLUTION_FAILED',
-      message: 'GitHub returned an incomplete private repository resolution response',
+      message: 'GitHub could not resolve every authoritative private repository identity',
       remediation: 'Verify token visibility for every private repository and retry the privacy scan.',
     })
   }
 
-  const names: string[] = []
-  for (const node of nodes) {
-    if (!isRecord(node) || typeof node.nameWithOwner !== 'string' || node.nameWithOwner === '') {
-      throw new PrivateLeakAdapterError({
-        code: 'RESOLUTION_FAILED',
-        message: 'GitHub could not resolve every authoritative private repository identity',
-        remediation: 'Verify token visibility for every private repository and retry the privacy scan.',
-      })
-    }
-
-    if ('isPrivate' in node && node.isPrivate !== true) {
-      throw new PrivateLeakAdapterError({
-        code: 'RESOLUTION_FAILED',
-        message: 'GitHub returned a non-private repository for an authoritative private entry',
-        remediation: 'Reconcile metadata visibility before retrying the privacy scan.',
-      })
-    }
-
-    names.push(...buildPrivateNameTokens(node.nameWithOwner))
+  if ('isPrivate' in node && node.isPrivate !== true) {
+    throw new PrivateLeakAdapterError({
+      code: 'RESOLUTION_FAILED',
+      message: 'GitHub returned a non-private repository for an authoritative private entry',
+      remediation: 'Reconcile metadata visibility before retrying the privacy scan.',
+    })
   }
 
-  return names
+  return buildPrivateNameTokens(node.nameWithOwner)
+}
+
+/**
+ * The tokens for an archived named row. A node cleared as public contributes none, and it is cleared
+ * only when its `visibility` is exactly `PUBLIC` and it carries a live `nameWithOwner` that is a
+ * non-blank string: a malformed answer confirms nothing. Anything else (any other visibility, a
+ * missing or wrong-typed field, a node that did not resolve, a failed lookup) gives the stored owner
+ * and name, and the live owner and name too when the live name is usable: an archived row keeps its
+ * stored name through a rename or a transfer on GitHub.
+ */
+function archivedRowTokens(row: ScanRow, node: unknown): readonly string[] {
+  if (!isRecord(node)) return buildPrivateNameTokens(row.storedName)
+  const liveName =
+    typeof node.nameWithOwner === 'string' && node.nameWithOwner.trim() !== '' ? node.nameWithOwner : undefined
+  if (liveName !== undefined && node.visibility === 'PUBLIC') return []
+  return [
+    ...buildPrivateNameTokens(row.storedName),
+    ...(liveName === undefined ? [] : buildPrivateNameTokens(liveName)),
+  ]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

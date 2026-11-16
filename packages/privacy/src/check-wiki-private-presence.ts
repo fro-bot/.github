@@ -1,4 +1,5 @@
 import type {Dirent} from 'node:fs'
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {createHash} from 'node:crypto'
 import {readdir, readFile} from 'node:fs/promises'
 import {join, resolve} from 'node:path'
@@ -7,6 +8,7 @@ import {parseFrontmatterDocument} from '@fro.bot/wiki-write-core/frontmatter'
 import {assertReposFile, type RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import YAML from 'yaml'
+import {confirmArchivedPublic} from './check-private-leak.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -135,6 +137,10 @@ function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): b
  *    and non-matching sources all report `unattributable-page`. The page body is never
  *    read, and nothing from the page reaches the result or stderr.
  *
+ *    If that one entry shares its slug with an archived row GitHub did not confirm public
+ *    (`unconfirmedSlugs`), attribution is skipped: the page cannot be told apart between the
+ *    two claimants. It then takes step 3, and a changed page is `ambiguous-public-slug`.
+ *
  * 3. If the stem appears in `grandfatherPages` with the **same hash** as the
  *    corresponding data page → **passes** (content-identical to what is already on
  *    main; e.g. `marcusrbrown/copiloting` with `lost-access`). The page's block is
@@ -150,8 +156,13 @@ export function detectPrivateWikiLeaks(params: {
   dataWikiPages: readonly WikiPageSnapshot[]
   publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
   grandfatherPages: readonly WikiPageSnapshot[]
+  /**
+   * Slugs of archived rows GitHub did not confirm public (`buildUnconfirmedArchivedSlugs`). Required, with
+   * an empty set where there are none: a caller that left it out would silently skip the collision check.
+   */
+  unconfirmedSlugs: ReadonlySet<string>
 }): PrivateWikiLeak[] {
-  const {dataWikiPages, publicSlugMap, grandfatherPages} = params
+  const {dataWikiPages, publicSlugMap, grandfatherPages, unconfirmedSlugs} = params
 
   // Build grandfather index: stem → hash (for O(1) lookup)
   const grandfatherByStem = new Map<string, string>()
@@ -172,30 +183,39 @@ export function detectPrivateWikiLeaks(params: {
         continue
       }
 
-      // entries.length === 1 here: the `entries.length > 1` branch above already continued.
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const entry = entries[0]!
-      const sources = parseFrontmatterSources(page.content)
+      // An archived row GitHub did not confirm public shares this slug with the one public row. It is never
+      // an attribution candidate, but it is a claimant: a page sourced to both cannot be told apart, so it
+      // is attributed to neither and falls through to the grandfather check below.
+      if (!unconfirmedSlugs.has(page.stem)) {
+        // entries.length === 1 here: the `entries.length > 1` branch above already continued.
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const entry = entries[0]!
+        const sources = parseFrontmatterSources(page.content)
 
-      // A public repo page passes only with a valid frontmatter block whose `sources` has a URL for this
-      // repository. The body is never consulted: no block, an unclosed block, invalid YAML, a non-mapping,
-      // a mapping with no `sources` key and non-matching sources are all unattributable.
-      if (sources !== null && sources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
+        // A public repo page passes only with a valid frontmatter block whose `sources` has a URL for this
+        // repository. The body is never consulted: no block, an unclosed block, invalid YAML, a non-mapping,
+        // a mapping with no `sources` key and non-matching sources are all unattributable.
+        if (sources !== null && sources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
+          continue
+        }
+        leaks.push({filename: page.filename, reason: 'unattributable-page'})
         continue
       }
-      leaks.push({filename: page.filename, reason: 'unattributable-page'})
-      continue
     }
 
-    // Stem not in publicSlugMap — check content-identity grandfathering.
+    // Stem not attributable through publicSlugMap — check content-identity grandfathering.
     // page.hash is always a string, so an undefined grandfatherHash already fails this check.
     const grandfatherHash = grandfatherByStem.get(page.stem)
     if (grandfatherHash === page.hash) {
       continue // unchanged from main → grandfathered (e.g. copiloting/lost-access)
     }
 
-    // Not public, not unchanged-grandfathered → block.
-    leaks.push({filename: page.filename, reason: 'unattributable-page'})
+    // Not public, not unchanged-grandfathered → block. A slug also claimed by an unconfirmed archived row
+    // is ambiguous (`entries !== undefined` here means exactly that); any other stem is unattributable.
+    leaks.push({
+      filename: page.filename,
+      reason: entries === undefined ? 'unattributable-page' : 'ambiguous-public-slug',
+    })
   }
 
   return leaks
@@ -285,7 +305,16 @@ export async function findStructuralViolations(dir: string): Promise<PrivateWiki
 // ---------------------------------------------------------------------------
 
 /**
- * Build a map from slug → RepoEntry[] for all entries with explicit `private === false`.
+ * Build a map from slug → RepoEntry[] for all entries admitted as public: an entry with explicit
+ * `private === false` that is not archived, and an archived entry only when its node is in
+ * `confirmedPublicNodeIds`.
+ *
+ * Reconcile keeps an archived row named, `private: false`, when it cannot see the repository, so for
+ * an archived row the stored value is not evidence. `confirmArchivedPublic` collects the nodes GitHub
+ * reports `PUBLIC` at check time, and only those are admitted. An archived row with no node ID, a
+ * redacted one and an unconfirmed one are left out, so a page for it passes only when it is
+ * unchanged from `main` (the grandfather rule in `detectPrivateWikiLeaks`). The set is typed to
+ * accept `undefined` so a row with no node ID is "not in the set" without a branch of its own.
  *
  * A stem with 2+ entries signals a slug collision (two repos sanitize to the same
  * string). Callers must flag ambiguous stems rather than silently admitting them.
@@ -295,10 +324,16 @@ export async function findStructuralViolations(dir: string): Promise<PrivateWiki
  *
  * Exported for testing.
  */
-export function buildPublicSlugMap(repos: readonly RepoEntry[]): Map<string, RepoEntry[]> {
+export function buildPublicSlugMap(
+  repos: readonly RepoEntry[],
+  confirmedPublicNodeIds: ReadonlySet<string | undefined> = new Set<string>(),
+): Map<string, RepoEntry[]> {
   const map = new Map<string, RepoEntry[]>()
   for (const entry of repos) {
-    if (entry.private === false) {
+    if (
+      entry.private === false &&
+      (entry.onboarding_status !== 'archived' || confirmedPublicNodeIds.has(entry.node_id))
+    ) {
       const slug = computeRepoSlug(entry.owner, entry.name)
       const existing = map.get(slug)
       if (existing === undefined) {
@@ -312,17 +347,48 @@ export function buildPublicSlugMap(repos: readonly RepoEntry[]): Map<string, Rep
 }
 
 /**
+ * The slugs of archived named rows GitHub did not confirm public. `buildPublicSlugMap` leaves such a
+ * row out so it can never attribute a page, but it must still count as a claimant of its slug: if it
+ * vanished, a page sourced to it and to a public row sharing the slug would look unambiguous and
+ * pass. `detectPrivateWikiLeaks` treats a stem in this set as ambiguous. A row stored private (a
+ * redacted archived row included) is not listed: its stored name is `[REDACTED]`, so no slug of a
+ * real repository can be computed from it. A name that cannot form a slug cannot name a page file
+ * and is skipped.
+ */
+export function buildUnconfirmedArchivedSlugs(
+  repos: readonly RepoEntry[],
+  confirmedPublicNodeIds: ReadonlySet<string | undefined> = new Set<string>(),
+): Set<string> {
+  const slugs = new Set<string>()
+  for (const entry of repos) {
+    if (entry.onboarding_status !== 'archived' || entry.private === true || confirmedPublicNodeIds.has(entry.node_id)) {
+      continue
+    }
+    try {
+      slugs.add(computeRepoSlug(entry.owner, entry.name))
+    } catch {
+      // A name that cannot form a slug cannot name a wiki page file.
+    }
+  }
+  return slugs
+}
+
+/**
  * Build the set of public repo slugs from a repos.yaml entry list.
  *
  * Only entries with explicit `private === false` are admitted — absent/undefined
- * private is treated as private (fail-safe). Uses `computeRepoSlug` (not a raw
+ * private is treated as private (fail-safe) — and an archived entry only when its node is in
+ * `confirmedPublicNodeIds` (see `buildPublicSlugMap`). Uses `computeRepoSlug` (not a raw
  * `owner--name` join) so leading-dot sanitization matches actual wiki filenames.
  *
  * Exported as a pure helper so tests can exercise the predicate directly without
  * standing up the full CLI entry-point.
  */
-export function buildPublicSlugs(repos: readonly RepoEntry[]): Set<string> {
-  return new Set(buildPublicSlugMap(repos).keys())
+export function buildPublicSlugs(
+  repos: readonly RepoEntry[],
+  confirmedPublicNodeIds: ReadonlySet<string | undefined> = new Set<string>(),
+): Set<string> {
+  return new Set(buildPublicSlugMap(repos, confirmedPublicNodeIds).keys())
 }
 
 /**
@@ -419,8 +485,14 @@ export function formatOperatorReport(leaks: readonly PrivateWikiLeak[]): string 
  *
  * Extracted as a shared helper so the normal (redacted) path and the operator
  * (unredacted) path use ONE detection implementation with no drift risk.
+ *
+ * `resolver` looks up archived rows (see `buildPublicSlugMap`); with none, an archived row is
+ * unconfirmed. A registry with no archived row makes no lookup at all.
  */
-async function collectLeaks(env: Record<string, string | undefined>): Promise<PrivateWikiLeak[]> {
+async function collectLeaks(
+  env: Record<string, string | undefined>,
+  resolver: NodeIdResolver | undefined,
+): Promise<PrivateWikiLeak[]> {
   const dataWikiDir = resolve('knowledge/wiki/repos')
   const grandfatherDir = resolve(requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR))
   if (dataWikiDir === grandfatherDir) {
@@ -439,7 +511,11 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
   // 2. Build publicSlugMap from entries with explicit private === false.
   //    IMPORTANT: absent/undefined private is NOT admitted — fail-safe default is "private".
   //    Uses computeRepoSlug (not raw owner--name) so sanitization matches actual wiki filenames.
-  const publicSlugMap = buildPublicSlugMap(reposParsed.repos)
+  //    An archived entry is admitted only when GitHub confirms its node public right now.
+  const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, resolver)
+  const publicSlugMap = buildPublicSlugMap(reposParsed.repos, confirmedPublic)
+  //    An unconfirmed archived row never attributes a page, but it still claims its slug.
+  const unconfirmedSlugs = buildUnconfirmedArchivedSlugs(reposParsed.repos, confirmedPublic)
 
   // 3. Check for structural violations (subdirs, symlinks) in the wiki repos dir.
   //    Any non-regular entry is blocked immediately — nesting is always illegal.
@@ -454,7 +530,7 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
   const grandfatherPages = await loadWikiPages(grandfatherDir)
 
   // 6. Detect content-attribution leaks — pure function, no GraphQL.
-  const contentLeaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages})
+  const contentLeaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages, unconfirmedSlugs})
 
   // 7. Merge structural and content leaks.
   return [...structuralLeaks, ...contentLeaks]
@@ -474,6 +550,7 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
 export async function runCli(
   argv: string[],
   env: Record<string, string | undefined>,
+  resolver?: NodeIdResolver,
 ): Promise<{exitCode: number; stdout: string; stderr: string}> {
   const operatorMode = argv.includes('--operator-report')
 
@@ -489,7 +566,7 @@ export async function runCli(
     }
 
     // Local operator path — run detection and emit unredacted report.
-    const leaks = await collectLeaks(env)
+    const leaks = await collectLeaks(env, resolver)
     if (leaks.length > 0) {
       return {exitCode: 1, stdout: formatOperatorReport(leaks), stderr: ''}
     }
@@ -497,7 +574,7 @@ export async function runCli(
   }
 
   // Normal (redacted) path — used in CI and locally without the flag.
-  const leaks = await collectLeaks(env)
+  const leaks = await collectLeaks(env, resolver)
   if (leaks.length > 0) {
     return {exitCode: 1, stdout: '', stderr: formatLeakReport(leaks)}
   }
