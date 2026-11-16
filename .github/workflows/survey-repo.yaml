@@ -296,8 +296,14 @@ jobs:
       # Attempt 1 of up to 3 (KTD4/KTD9). 20-minute agent-internal timeout; the
       # 23-minute step timeout-minutes adds headroom for OpenCode bootstrap and the
       # action's post phase, which the agent timeout does not cover.
+      #
+      # Runs only when the start check above admitted the target, so a refused target (an archived
+      # repository, one absent from the registry) never reaches the agent. Both retries run only after
+      # this step concluded success, so a skipped first attempt skips the whole chain, and the final
+      # conclusion stays `skipped`, which keeps the persist job from recording a result.
       - name: Run Fro Bot survey ingest
         id: survey-agent
+        if: ${{ steps.onboarded.outputs.onboarded == 'true' }}
         uses: fro-bot/agent@b3d5cd8de673ba285160777aa1eab3d4e5c0b03a # v0.144.4
         timeout-minutes: 23
         with:
@@ -605,6 +611,10 @@ jobs:
       # synced: a page the agent edited, or a path in the write set such as `knowledge/log.md`
       # (wiki-ingest.ts exit 3). Gates survey-redispatch.
       conflict: ${{ steps.wiki-commit.outputs.conflict }}
+      # `true` when the target's row is archived: the writer found it so in the tree it was about to write onto
+      # (wiki-ingest.ts writes nothing and sets this), or the survey result write-back did. Gates the
+      # announce and survey-redispatch, so an archived target causes neither.
+      archived: ${{ steps.wiki-commit.outputs.archived == 'true' || steps.record-result.outputs.archived == 'true' }}
     steps:
       - name: Checkout trusted code (default branch)
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -779,7 +789,8 @@ jobs:
         if: >-
           ${{ !cancelled() && needs.survey-repo.outputs.agent-conclusion == 'success' && needs.survey-repo.outputs.wiki-changed == 'true' &&
           needs.survey-repo.result == 'success' && steps.recheck.conclusion == 'success' &&
-          needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success' }}
+          needs.survey-repo.outputs.onboarded == 'true' && steps.wiki-commit.conclusion == 'success' &&
+          steps.wiki-commit.outputs.archived != 'true' && steps.record-result.outputs.archived != 'true' }}
         env:
           REPO_OWNER: ${{ needs.survey-resolve.outputs.resolve-owner }}
           REPO_NAME: ${{ needs.survey-resolve.outputs.resolve-repo }}
@@ -836,7 +847,7 @@ jobs:
     needs: [survey-resolve, survey-persist]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: ${{ always() && !cancelled() && needs.survey-persist.outputs.conflict == 'true' && contains(fromJSON('["1", "2"]'), inputs.attempt) }}
+    if: ${{ always() && !cancelled() && needs.survey-persist.outputs.conflict == 'true' && needs.survey-persist.outputs.archived != 'true' && contains(fromJSON('["1", "2"]'), inputs.attempt) }}
     permissions: {}
     steps:
       # The same reach as the reconcile writer's dispatch of this workflow: this repository,

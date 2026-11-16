@@ -421,8 +421,10 @@ export interface RecordSurveyResultInput {
  * - `name-mismatch`: the node ID matched but the stored owner/name differs from the survey
  *   target (a pending rename or a transfer). `failure` was recorded and the stored name kept.
  * - `visibility-mismatch`: the survey reported public for a row stored as private. Nothing was written.
+ * - `archived`: the matched row is archived. Nothing was written, for a success and for a failure, so a
+ *   survey that was already running when the archive landed leaves no trace.
  */
-export type SurveyWriteBackOutcome = 'recorded' | 'name-mismatch' | 'visibility-mismatch'
+export type SurveyWriteBackOutcome = 'recorded' | 'name-mismatch' | 'visibility-mismatch' | 'archived'
 
 export interface AppliedSurveyResult {
   file: ReposFile
@@ -455,6 +457,12 @@ export function applySurveyResult(current: unknown, input: RecordSurveyResultInp
   const match = matchIndex === -1 ? undefined : current.repos[matchIndex]
   if (match === undefined) {
     throw new RepoEntryNotFoundError(input.owner, input.repo)
+  }
+
+  // Before every other decision: an archived row is not surveyed, so a result for it is not recorded,
+  // not even as a failure, and a name or visibility difference is not acted on.
+  if (match.onboarding_status === 'archived') {
+    return {file: current, outcome: 'archived', written: undefined}
   }
 
   const storedPrivate = match.private === true || match.owner === REDACTED_OWNER
@@ -614,11 +622,18 @@ export function resetSurveyResult(current: unknown, input: ResetSurveyResultInpu
  * predicate. If `current` is not a valid repos file, `assertReposFile` throws
  * and the caller decides how to handle it (fail-closed).
  *
+ * An archived row is not an existing entry for this purpose: the predicate gates a survey at its start and at
+ * its persist recheck, and an archived repository is not surveyed. An archived row keeps its stored name through a
+ * rename on GitHub, so its new name matches no row and is refused as unlisted.
+ *
  * Pure: no I/O, no mutation of `current`.
  */
 export function publicRepoEntryExists(current: unknown, owner: string, repo: string): boolean {
   assertReposFile(current, 'repos')
-  return current.repos.some(entry => entry.owner === owner && entry.name === repo && entry.private === false)
+  return current.repos.some(
+    entry =>
+      entry.owner === owner && entry.name === repo && entry.private === false && entry.onboarding_status !== 'archived',
+  )
 }
 
 export class RepoEntryNotFoundError extends Error {

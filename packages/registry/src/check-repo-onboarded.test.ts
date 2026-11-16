@@ -256,6 +256,52 @@ async function withOutputFile<T>(run: (path: string) => Promise<T>): Promise<{va
   }
 }
 
+describe('runCheck on an archived row', () => {
+  const archivedYaml = makeReposYaml([{...makePublicEntry('fro-bot', 'dashboard'), onboarding_status: 'archived'}])
+
+  it('refuses an archived row with the same reason as an unlisted repository', async () => {
+    const result = await runCheck(
+      {REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard'},
+      {readFileImpl: stubReadFile(archivedYaml)},
+    )
+
+    expect(result).toEqual({
+      onboarded: false,
+      target: 'fro-bot/dashboard',
+      reason: 'fro-bot/dashboard has no public entry in metadata/repos.yaml',
+    })
+  })
+
+  it('refuses the new name of a renamed archived repository, because the row keeps its stored name', async () => {
+    const result = await runCheck(
+      {REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard-renamed'},
+      {readFileImpl: stubReadFile(archivedYaml)},
+    )
+
+    expect(result.onboarded).toBe(false)
+  })
+
+  it('admits the same row once it is onboarded', async () => {
+    const result = await runCheck(
+      {REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard'},
+      {readFileImpl: stubReadFile(makeReposYaml([makePublicEntry('fro-bot', 'dashboard')]))},
+    )
+
+    expect(result.onboarded).toBe(true)
+  })
+
+  it('appends onboarded=false to GITHUB_OUTPUT for an archived row', async () => {
+    const {io} = sinks()
+    const {written} = await withOutputFile(async path =>
+      runCheckRepoOnboarded({REPO_OWNER: 'fro-bot', REPO_NAME: 'dashboard', GITHUB_OUTPUT: path}, io, {
+        readFileImpl: stubReadFile(archivedYaml),
+      }),
+    )
+
+    expect(written).toBe('onboarded=false\n')
+  })
+})
+
 describe('runCheckRepoOnboarded', () => {
   const found = async () => makeReposYaml([makePublicEntry('fro-bot', 'dashboard')])
 
