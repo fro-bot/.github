@@ -8,6 +8,7 @@ import {parse as parseYaml} from 'yaml'
 
 interface RepoEntry {
   private?: boolean
+  onboarding_status?: string
   last_survey_at?: string | null
 }
 
@@ -18,6 +19,8 @@ interface ReposYaml {
 export interface DigestCounts {
   repos_tracked: number
   surveys_today: number
+  /** Public archived rows: an archived row is neither tracked nor surveyed, and is counted here instead. */
+  repos_archived: number
   should_post: boolean
   count_status: 'ok' | 'error'
 }
@@ -46,6 +49,7 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
   const errorResult: DigestCounts = {
     repos_tracked: 0,
     surveys_today: 0,
+    repos_archived: 0,
     should_post: false,
     count_status: 'error',
   }
@@ -83,6 +87,7 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
 
   let reposTracked = 0
   let surveysYesterday = 0
+  let reposArchived = 0
 
   for (const entry of data.repos) {
     // Guard: a null or non-object element is a malformed entry — treat as data error.
@@ -93,6 +98,13 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
 
     // Only entries with explicit `private: false` count as public.
     // Entries missing `private` or with `private: true` are NOT counted.
+    // An archived row is counted on its own and never as tracked, and its survey date is not counted. Only a
+    // public one (explicit `private: false`) is counted, as with tracked rows: the number is posted publicly.
+    if (entry.private === false && entry.onboarding_status === 'archived') {
+      reposArchived++
+      continue
+    }
+
     if (entry.private === false) {
       reposTracked++
 
@@ -107,6 +119,7 @@ export function deriveCounts(yamlContent: string, todayUtc: string): DigestCount
   return {
     repos_tracked: reposTracked,
     surveys_today: surveysYesterday,
+    repos_archived: reposArchived,
     should_post: true, // count_status === 'ok': post every day; suppress only on read error
     count_status: 'ok',
   }
@@ -145,6 +158,7 @@ export function runDailyDigestCounts(
     const errorResult: DigestCounts = {
       repos_tracked: 0,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: false,
       count_status: 'error',
     }
@@ -161,6 +175,7 @@ export function runDailyDigestCounts(
     const errorResult: DigestCounts = {
       repos_tracked: 0,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: false,
       count_status: 'error',
     }

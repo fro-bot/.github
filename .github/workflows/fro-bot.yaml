@@ -339,6 +339,18 @@ env:
     rather than a fix, do not log it there: report it as the knowledge_persistence
     block below says.
 
+    REGISTRY RULE
+    The categories below concern this repository. If any of them leads you to act on
+    another repository taken from metadata/repos.yaml, this checkout's
+    metadata/repos.yaml is `main`'s copy, which can lag `data`, the authoritative
+    registry. Before you act on such a repository, read `data`'s copy with
+    `git show origin/data:metadata/repos.yaml` (this checkout has the full history)
+    and skip every repository whose row there has `onboarding_status: archived`;
+    match by `node_id` or `database_id`, else by owner and name for a row with
+    neither ID. A repository renamed on GitHub keeps its IDs, so it still matches.
+    If that command fails, or its output is not a valid registry, act on no
+    repository other than this one.
+
   REMEDIATE_CATEGORIES: |
     CATEGORIES (work in order)
 
@@ -473,7 +485,15 @@ env:
        Scope: all repositories the fro-bot account can see. Enumerate them with
        paginated repository listing API calls for the authenticated account and its
        organizations; define "can see" as repositories returned with at least read
-       access, and report anything that could not be enumerated. Summarize with
+       access, and report anything that could not be enumerated. Exclude every
+       repository that an archived row of metadata/repos.yaml identifies
+       (`onboarding_status: archived`; match by `node_id` or `database_id` from the
+       listing, else by owner and name for a row with neither ID; a repository
+       renamed on GitHub keeps its IDs, so it still matches): do not scan it, do
+       not count it in any finding, ranking or hotspot, and open no issue, tracking
+       issue or attention item for it. If you cannot read metadata/repos.yaml or it
+       is not a valid registry, mark Oversight ❔, name the source, and open no
+       tracking issue and list no attention item from this category. Summarize with
        links only. Detect: new issues, open PRs, stale issues (>30d) and PRs (>7d
        aging, >14d stale), failing main checks, security alerts, unassigned bugs,
        and the top three repo hotspots (ranked by qualifying finding count in the
@@ -486,11 +506,13 @@ env:
 
     6. CROSS-PROJECT INTELLIGENCE (report-only)
        Fro Bot surveys tracked repositories into the wiki. Treat every entry in
-       metadata/repos.yaml (not an example list) as tracked; scan every accessible
-       entry for automation patterns, prompt strategies, or workflow improvements
-       that could benefit this repository. Report inaccessible or otherwise
-       unscanned entries and mark coverage partial. Report adoptable findings only;
-       make no changes in this category.
+       metadata/repos.yaml (not an example list) whose `onboarding_status` is not
+       `archived` as tracked; scan every accessible entry for automation patterns,
+       prompt strategies, or workflow improvements that could benefit this
+       repository. An archived entry is not scanned, is not reported as inaccessible
+       or unscanned and does not make coverage partial. Report inaccessible or
+       otherwise unscanned entries and mark coverage partial. Report adoptable
+       findings only; make no changes in this category.
 
     7. PROGRESSIVE IMPROVEMENT (report-only)
        Scan for durable improvement opportunities: tool-version drift in
@@ -551,6 +573,7 @@ env:
     | Oversight | ✅/⚠️/❌/❔ | ... |
     | Cross-Project Intelligence | ✅/⚠️/❌/❔ | ... |
     | Progressive Improvement | ✅/⚠️/❌/❔ | ... |
+    | Archived repositories | ✅/❔ | ... |
     ### Errored PRs
     ### Security
     ### Control-Plane Integrity
@@ -567,6 +590,14 @@ env:
     nothing was found. Use ❔ when any source is unavailable, stale, empty,
     access denied, or scan failed; name the affected source and reason. Never
     render ✅ for could-not-check.
+
+    ARCHIVED REPOSITORIES
+    The Run Summary row "Archived repositories" states how many repositories are
+    archived and skipped. Count the rows of metadata/repos.yaml whose
+    `onboarding_status` is `archived` and whose repository the PUBLIC-ONLY REPORT
+    RULE lets you name (explicit `private: false`, confirmed PUBLIC in this run).
+    Show the number and no name. Mark the row ✅ with the count, or ❔ when the
+    registry could not be read.
 
     PUBLIC-ONLY REPORT RULE
     The report is a public issue in a public repository, and this run's token can
@@ -1502,12 +1533,16 @@ jobs:
           RESULT="$(bun scripts/daily-digest-counts.ts metadata/repos.yaml "$TODAY_UTC")"
           REPOS_TRACKED="$(echo "$RESULT" | jq '.repos_tracked')"
           SURVEYS_TODAY="$(echo "$RESULT" | jq '.surveys_today')"
+          REPOS_ARCHIVED="$(echo "$RESULT" | jq '.repos_archived')"
           COUNT_STATUS="$(echo "$RESULT" | jq -r '.count_status')"
           {
             echo "repos_tracked=${REPOS_TRACKED}"
             echo "surveys_today=${SURVEYS_TODAY}"
+            echo "repos_archived=${REPOS_ARCHIVED}"
             echo "count_status=${COUNT_STATUS}"
           } >> "$GITHUB_OUTPUT"
+          # The archived count is logged, not announced: the gateway payload keeps its three fields.
+          echo "daily-digest: repos_archived=${REPOS_ARCHIVED}"
           if [ "$COUNT_STATUS" = "error" ]; then
             echo "::warning::daily-digest-counts: count_status=error — metadata overlay may have failed; treating as quiet day"
           fi

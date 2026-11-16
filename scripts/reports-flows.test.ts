@@ -570,7 +570,9 @@ describe('daily-digest-counts through scripts/daily-digest-counts.ts', () => {
     const result = await run('daily-digest-counts', {cwd, argv: ['metadata/repos.yaml', '2000-01-02']})
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('')
-    expect(result.stdout).toBe('{"repos_tracked":3,"surveys_today":2,"should_post":true,"count_status":"ok"}\n')
+    expect(result.stdout).toBe(
+      '{"repos_tracked":3,"surveys_today":2,"repos_archived":0,"should_post":true,"count_status":"ok"}\n',
+    )
   })
 
   it('takes the date argument before TODAY_UTC, TODAY_UTC before the clock, and metadata/repos.yaml as the default path', async () => {
@@ -603,6 +605,7 @@ describe('daily-digest-counts through scripts/daily-digest-counts.ts', () => {
     'RESULT="$(bun --no-install --no-env-file "$1" metadata/repos.yaml "$TODAY_UTC")"',
     'echo "repos_tracked=$(echo "$RESULT" | jq \'.repos_tracked\')"',
     'echo "surveys_today=$(echo "$RESULT" | jq \'.surveys_today\')"',
+    'echo "repos_archived=$(echo "$RESULT" | jq \'.repos_archived\')"',
     'echo "count_status=$(echo "$RESULT" | jq -r \'.count_status\')"',
   ].join('\n')
 
@@ -614,7 +617,7 @@ describe('daily-digest-counts through scripts/daily-digest-counts.ts', () => {
       argv: [],
     })
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toBe('repos_tracked=3\nsurveys_today=2\ncount_status=ok\n')
+    expect(result.stdout).toBe('repos_tracked=3\nsurveys_today=2\nrepos_archived=0\ncount_status=ok\n')
   })
 
   it.each([
@@ -633,7 +636,7 @@ describe('daily-digest-counts through scripts/daily-digest-counts.ts', () => {
       env: {TODAY_UTC: '2000-01-02'},
     })
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toBe('repos_tracked=0\nsurveys_today=0\ncount_status=error\n')
+    expect(result.stdout).toBe('repos_tracked=0\nsurveys_today=0\nrepos_archived=0\ncount_status=error\n')
     expect(result.stderr.startsWith(stderr)).toBe(true)
   })
 
