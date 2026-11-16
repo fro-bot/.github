@@ -104,6 +104,9 @@ async function adapterOutcome(kind: RowKind, answer: Answer | undefined, diff: s
 
 const answerOf = (visibility: unknown): Answer => ({nameWithOwner: liveName, visibility})
 const failed: Answer = {error: 'error'}
+/** An answer the typed result does not allow: what a malformed upstream response looks like. */
+const malformed = (answer: Record<string, unknown>): Answer => answer as unknown as Answer
+const publicNamed = (name: unknown): Answer => malformed({nameWithOwner: name, visibility: 'PUBLIC'})
 const lost: Answer = {error: 'access-lost'}
 
 /** [label, row, answer, stored name blocks, live name blocks, blocks as a resolution failure]. */
@@ -120,6 +123,11 @@ const table: readonly (readonly [string, RowKind, Answer | undefined, boolean, b
   ['archived named, a null visibility', 'archived-named', answerOf(null), true, true, false],
   ['archived named, a lowercase public', 'archived-named', answerOf('public'), true, true, false],
   ['archived named, a padded PUBLIC', 'archived-named', answerOf('PUBLIC '), true, true, false],
+  ['archived named, PUBLIC with an empty name', 'archived-named', publicNamed(''), true, false, false],
+  ['archived named, PUBLIC with a whitespace-only name', 'archived-named', publicNamed(' \t '), true, false, false],
+  ['archived named, PUBLIC with a number for a name', 'archived-named', publicNamed(5), true, false, false],
+  ['archived named, PUBLIC with a null name', 'archived-named', publicNamed(null), true, false, false],
+  ['archived named, PUBLIC with no name', 'archived-named', malformed({visibility: 'PUBLIC'}), true, false, false],
   ['archived named, a failed lookup', 'archived-named', failed, true, false, false],
   ['archived named, an access-lost lookup', 'archived-named', lost, true, false, false],
   ['archived named, no node ID', 'archived-named-no-id', undefined, true, false, false],
@@ -155,10 +163,16 @@ describe('the promotion scan and the published adapter agree on the decision tab
     },
   )
 
-  it('keeps the stored-private PUBLIC divergence: the scan skips the row, the adapter throws', async () => {
-    const diff = diffNaming(liveName)
+  it.each([
+    ['a usable name', answerOf('PUBLIC')],
+    ['an empty name', publicNamed('')],
+  ])(
+    'keeps the stored-private PUBLIC divergence with %s: the scan skips the row, the adapter throws',
+    async (_label, answer) => {
+      const diff = diffNaming(liveName)
 
-    expect(await scanOutcome('private', answerOf('PUBLIC'), diff)).toBe('pass')
-    expect(await adapterOutcome('private', answerOf('PUBLIC'), diff)).toBe('resolution')
-  })
+      expect(await scanOutcome('private', answer, diff)).toBe('pass')
+      expect(await adapterOutcome('private', answer, diff)).toBe('resolution')
+    },
+  )
 })

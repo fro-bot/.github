@@ -137,6 +137,10 @@ function sourceUrlMatchesRepo(sourceUrl: string, owner: string, name: string): b
  *    and non-matching sources all report `unattributable-page`. The page body is never
  *    read, and nothing from the page reaches the result or stderr.
  *
+ *    If that one entry shares its slug with an archived row GitHub did not confirm public
+ *    (`unconfirmedSlugs`), attribution is skipped: the page cannot be told apart between the
+ *    two claimants. It then takes step 3, and a changed page is `ambiguous-public-slug`.
+ *
  * 3. If the stem appears in `grandfatherPages` with the **same hash** as the
  *    corresponding data page → **passes** (content-identical to what is already on
  *    main; e.g. `marcusrbrown/copiloting` with `lost-access`). The page's block is
@@ -152,8 +156,10 @@ export function detectPrivateWikiLeaks(params: {
   dataWikiPages: readonly WikiPageSnapshot[]
   publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
   grandfatherPages: readonly WikiPageSnapshot[]
+  /** Slugs of archived rows GitHub did not confirm public (`buildUnconfirmedArchivedSlugs`); none by default. */
+  unconfirmedSlugs?: ReadonlySet<string>
 }): PrivateWikiLeak[] {
-  const {dataWikiPages, publicSlugMap, grandfatherPages} = params
+  const {dataWikiPages, publicSlugMap, grandfatherPages, unconfirmedSlugs = new Set<string>()} = params
 
   // Build grandfather index: stem → hash (for O(1) lookup)
   const grandfatherByStem = new Map<string, string>()
@@ -174,30 +180,39 @@ export function detectPrivateWikiLeaks(params: {
         continue
       }
 
-      // entries.length === 1 here: the `entries.length > 1` branch above already continued.
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      const entry = entries[0]!
-      const sources = parseFrontmatterSources(page.content)
+      // An archived row GitHub did not confirm public shares this slug with the one public row. It is never
+      // an attribution candidate, but it is a claimant: a page sourced to both cannot be told apart, so it
+      // is attributed to neither and falls through to the grandfather check below.
+      if (!unconfirmedSlugs.has(page.stem)) {
+        // entries.length === 1 here: the `entries.length > 1` branch above already continued.
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        const entry = entries[0]!
+        const sources = parseFrontmatterSources(page.content)
 
-      // A public repo page passes only with a valid frontmatter block whose `sources` has a URL for this
-      // repository. The body is never consulted: no block, an unclosed block, invalid YAML, a non-mapping,
-      // a mapping with no `sources` key and non-matching sources are all unattributable.
-      if (sources !== null && sources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
+        // A public repo page passes only with a valid frontmatter block whose `sources` has a URL for this
+        // repository. The body is never consulted: no block, an unclosed block, invalid YAML, a non-mapping,
+        // a mapping with no `sources` key and non-matching sources are all unattributable.
+        if (sources !== null && sources.some(url => sourceUrlMatchesRepo(url, entry.owner, entry.name))) {
+          continue
+        }
+        leaks.push({filename: page.filename, reason: 'unattributable-page'})
         continue
       }
-      leaks.push({filename: page.filename, reason: 'unattributable-page'})
-      continue
     }
 
-    // Stem not in publicSlugMap — check content-identity grandfathering.
+    // Stem not attributable through publicSlugMap — check content-identity grandfathering.
     // page.hash is always a string, so an undefined grandfatherHash already fails this check.
     const grandfatherHash = grandfatherByStem.get(page.stem)
     if (grandfatherHash === page.hash) {
       continue // unchanged from main → grandfathered (e.g. copiloting/lost-access)
     }
 
-    // Not public, not unchanged-grandfathered → block.
-    leaks.push({filename: page.filename, reason: 'unattributable-page'})
+    // Not public, not unchanged-grandfathered → block. A slug also claimed by an unconfirmed archived row
+    // is ambiguous (`entries !== undefined` here means exactly that); any other stem is unattributable.
+    leaks.push({
+      filename: page.filename,
+      reason: entries === undefined ? 'unattributable-page' : 'ambiguous-public-slug',
+    })
   }
 
   return leaks
@@ -326,6 +341,33 @@ export function buildPublicSlugMap(
     }
   }
   return map
+}
+
+/**
+ * The slugs of archived named rows GitHub did not confirm public. `buildPublicSlugMap` leaves such a
+ * row out so it can never attribute a page, but it must still count as a claimant of its slug: if it
+ * vanished, a page sourced to it and to a public row sharing the slug would look unambiguous and
+ * pass. `detectPrivateWikiLeaks` treats a stem in this set as ambiguous. A row stored private (a
+ * redacted archived row included) is not listed: its stored name is `[REDACTED]`, so no slug of a
+ * real repository can be computed from it. A name that cannot form a slug cannot name a page file
+ * and is skipped.
+ */
+export function buildUnconfirmedArchivedSlugs(
+  repos: readonly RepoEntry[],
+  confirmedPublicNodeIds: ReadonlySet<string | undefined> = new Set<string>(),
+): Set<string> {
+  const slugs = new Set<string>()
+  for (const entry of repos) {
+    if (entry.onboarding_status !== 'archived' || entry.private === true || confirmedPublicNodeIds.has(entry.node_id)) {
+      continue
+    }
+    try {
+      slugs.add(computeRepoSlug(entry.owner, entry.name))
+    } catch {
+      // A name that cannot form a slug cannot name a wiki page file.
+    }
+  }
+  return slugs
 }
 
 /**
@@ -469,6 +511,8 @@ async function collectLeaks(
   //    An archived entry is admitted only when GitHub confirms its node public right now.
   const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, resolver)
   const publicSlugMap = buildPublicSlugMap(reposParsed.repos, confirmedPublic)
+  //    An unconfirmed archived row never attributes a page, but it still claims its slug.
+  const unconfirmedSlugs = buildUnconfirmedArchivedSlugs(reposParsed.repos, confirmedPublic)
 
   // 3. Check for structural violations (subdirs, symlinks) in the wiki repos dir.
   //    Any non-regular entry is blocked immediately — nesting is always illegal.
@@ -483,7 +527,7 @@ async function collectLeaks(
   const grandfatherPages = await loadWikiPages(grandfatherDir)
 
   // 6. Detect content-attribution leaks — pure function, no GraphQL.
-  const contentLeaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages})
+  const contentLeaks = detectPrivateWikiLeaks({dataWikiPages, publicSlugMap, grandfatherPages, unconfirmedSlugs})
 
   // 7. Merge structural and content leaks.
   return [...structuralLeaks, ...contentLeaks]

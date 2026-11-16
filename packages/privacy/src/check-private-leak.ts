@@ -813,6 +813,11 @@ function unresolvedNodeIds(resolution: PrivateRowResolution): string[] {
 
 type ScanRow = Pick<RepoEntry, 'node_id' | 'owner' | 'name' | 'private'>
 
+/** A live name worth trusting: a string with something other than whitespace in it. */
+function isUsableName(name: unknown): name is string {
+  return typeof name === 'string' && name.trim() !== ''
+}
+
 /**
  * What GitHub's live answer means for one selected row.
  *
@@ -852,8 +857,17 @@ export async function resolveScanRow(row: ScanRow, resolver: NodeIdResolver): Pr
 
   const result = await resolver(row.node_id)
   if ('nameWithOwner' in result) {
-    if (result.visibility === 'PUBLIC') return {kind: 'public', nodeId: row.node_id}
-    return {kind: 'names', names: archivedNamed ? [storedName, result.nameWithOwner] : [result.nameWithOwner]}
+    // An archived row is cleared only by a PUBLIC answer that also carries a live name: a malformed
+    // answer (an empty, blank, missing or non-string name) confirms nothing. A `private: true` row
+    // is skipped on the visibility alone, as it always was.
+    if (result.visibility === 'PUBLIC' && (!archivedNamed || isUsableName(result.nameWithOwner))) {
+      return {kind: 'public', nodeId: row.node_id}
+    }
+    if (!archivedNamed) return {kind: 'names', names: [result.nameWithOwner]}
+    return {
+      kind: 'names',
+      names: isUsableName(result.nameWithOwner) ? [storedName, result.nameWithOwner] : [storedName],
+    }
   }
 
   // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".

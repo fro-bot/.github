@@ -11,9 +11,11 @@ import type {
 import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
+import {runCli} from '@fro-bot/core/cli'
 import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
 import {parse as parseYaml} from 'yaml'
+import {checkPrivateLeakCli} from './check-private-leak-cli.ts'
 import {
   assertCompareNotTruncated,
   checkPrivateLeak,
@@ -7427,5 +7429,226 @@ describe('confirmArchivedPublic', () => {
 
     expect((await confirmArchivedPublic([], resolver)).size).toBe(0)
     expect(calls).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// PUBLIC clears an archived row only with a usable live name
+// ---------------------------------------------------------------------------
+
+/** A live name that is not a non-empty string; paired with the visibility `PUBLIC` it must confirm nothing. */
+const unusableLiveNames: readonly (readonly [string, unknown])[] = [
+  ['an empty name', ''],
+  ['a whitespace-only name', ' \t '],
+  ['a number', 5],
+  ['null', null],
+  ['an undefined name', undefined],
+]
+
+/** A resolver answer that the typed result does not allow: what a malformed upstream response looks like. */
+const malformed = (answer: Record<string, unknown>): PrRowAnswer => answer as unknown as PrRowAnswer
+
+describe('an archived named row whose PUBLIC answer has no usable live name', () => {
+  const reposYaml = registryYaml([archivedNamedRow])
+  const pageDiff = diffNaming([storedArchivedName], storedArchivedPage)
+
+  it.each(unusableLiveNames)('is scanned by its stored name when the live name is %s', async (_label, name) => {
+    const resolver = tableResolver({R_arch: malformed({nameWithOwner: name, visibility: 'PUBLIC'})})
+
+    const named = await runPromotionScan({reposYaml, resolver, diff: pageDiff})
+    const clean = await runPromotionScan({reposYaml, resolver, diff: diffNaming(['acme-labs/unrelated'])})
+
+    expect(named).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+    expect(clean).toEqual({ok: true, publicSkipped: 0})
+  })
+
+  it('is scanned by its stored name when the answer has no name at all', async () => {
+    const resolver = tableResolver({R_arch: malformed({visibility: 'PUBLIC'})})
+
+    expect(await runPromotionScan({reposYaml, resolver, diff: pageDiff})).toMatchObject({ok: false})
+  })
+
+  it.each(unusableLiveNames)(
+    'is not confirmed for the presence gate when the live name is %s',
+    async (_label, name) => {
+      const resolver = tableResolver({R_arch: malformed({nameWithOwner: name, visibility: 'PUBLIC'})})
+      const rows = (parseYaml(reposYaml) as {repos: RepoEntry[]}).repos
+
+      expect((await confirmArchivedPublic(rows, resolver)).size).toBe(0)
+    },
+  )
+
+  it('is confirmed with a usable live name, whatever it is', async () => {
+    const resolver = tableResolver({R_arch: {nameWithOwner: liveRenamedName, visibility: 'PUBLIC'}})
+    const rows = (parseYaml(reposYaml) as {repos: RepoEntry[]}).repos
+
+    expect([...(await confirmArchivedPublic(rows, resolver))]).toEqual(['R_arch'])
+  })
+
+  it.each(unusableLiveNames)('adds no live token, and does not throw, when %s is not public', async (_label, name) => {
+    const resolver = tableResolver({R_arch: malformed({nameWithOwner: name, visibility: 'PRIVATE'})})
+
+    const named = await runPromotionScan({reposYaml, resolver, diff: pageDiff})
+
+    expect(named).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+  })
+
+  it.each([
+    ['an empty name', ''],
+    ['a whitespace-only name', ' \t '],
+  ])('is detected in PR mode when the live name is %s', async (_label, name) => {
+    const run = await runPrMode({
+      rows: {R_arch: {nameWithOwner: name, visibility: 'PUBLIC'}},
+      reposYaml,
+      diff: pageDiff,
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+  })
+
+  it.each([
+    ['a number', 5],
+    ['null', null],
+  ])(
+    'is detected in PR mode when the live name is %s: the production resolver reports it unresolved',
+    async (_label, name) => {
+      const run = await runPrMode({
+        rows: {R_arch: malformed({nameWithOwner: name, visibility: 'PUBLIC'})},
+        reposYaml,
+        diff: pageDiff,
+      })
+
+      expect(run.exitCode).toBe(1)
+      expect(run.scanResult).toBe('detection')
+    },
+  )
+})
+
+describe("a row stored private keeps main's rule for an empty live name", () => {
+  const privateRow: RegistryRowSpec = {
+    owner: '[REDACTED]',
+    name: 'R_priv',
+    nodeId: 'R_priv',
+    isPrivate: true,
+    status: 'onboarded',
+  }
+
+  it.each([
+    ['an empty name', ''],
+    ['a whitespace-only name', ' \t '],
+  ])('skips it as public with %s: only the visibility decides, as on main', async (_label, name) => {
+    const resolver = tableResolver({R_priv: {nameWithOwner: name, visibility: 'PUBLIC'}})
+
+    const promotion = await runPromotionScan({
+      reposYaml: registryYaml([privateRow]),
+      resolver,
+      diff: diffNaming([storedArchivedName]),
+    })
+    const pr = await runPrMode({
+      rows: {R_priv: {nameWithOwner: name, visibility: 'PUBLIC'}},
+      reposYaml: registryYaml([privateRow]),
+      diff: diffNaming([storedArchivedName]),
+    })
+
+    expect(promotion).toEqual({ok: true, publicSkipped: 1})
+    expect(pr.scanResult).toBe('success')
+    expect(pr.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 0 private name(s))\n`)
+  })
+
+  it('treats a redacted archived row the same way', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([{...privateRow, status: 'archived'}]),
+      resolver: tableResolver({R_priv: {nameWithOwner: '', visibility: 'PUBLIC'}}),
+      diff: diffNaming([storedArchivedName]),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 1})
+  })
+})
+
+describe('the CLI entry points on an archived named row the lookup says is PRIVATE', () => {
+  const reposYaml = registryYaml([archivedNamedRow])
+  const privateNode = JSON.stringify({data: {node: {nameWithOwner: storedArchivedName, visibility: 'PRIVATE'}}})
+  const addedLine = diffNaming([storedArchivedName], storedArchivedPage)
+
+  it('exits 1 in promotion mode and prints only the redacted path', async () => {
+    mockExecFileSync.mockReset()
+    mockReadFile.mockReset()
+    mockReadFile.mockResolvedValueOnce(reposYaml)
+    mockExecFileSync.mockImplementation((command: string, args: string[]) => {
+      if (command === 'git') return addedLine
+      if (args.includes('graphql')) return privateNode
+      throw new Error(`unexpected call: ${command} ${args.join(' ')}`)
+    })
+    const stderr: string[] = []
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      stderr.push(String(chunk))
+      return true
+    })
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    try {
+      const result = await runCli(checkPrivateLeakCli(), {argv: ['--promotion'], env: {}})
+
+      expect(result.exitCode).toBe(1)
+      expect(stderr.join('')).toContain('FAILED — private repository name(s) detected in promotion diff')
+      expect(stderr.join('')).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+      expect(stderr.join('')).not.toContain('archived-widget')
+    } finally {
+      delete process.env.FRO_BOT_POLL_PAT
+      vi.restoreAllMocks()
+      mockExecFileSync.mockReset()
+      mockReadFile.mockReset()
+    }
+  })
+
+  it('exits 1 in PR mode with a detection and the redacted path', async () => {
+    const headSha = 'sha-cli-entry'
+    mockExecFileSync.mockReset()
+    mockAppendFileSync.mockReset()
+    mockReadFile.mockReset()
+    mockReadFile.mockResolvedValueOnce(makeWorkflowRunEvent({headSha}))
+    mockExecFileSync.mockImplementation((_command: string, args: string[]) => {
+      const joined = args.join(' ')
+      if (joined.includes('/pulls/42')) return JSON.stringify(makePrApiResponse({number: 42, headSha}))
+      if (joined.startsWith('repo view')) return 'fro-bot/.github'
+      if (joined.includes('contents/metadata/repos.yaml')) return Buffer.from(reposYaml).toString('base64')
+      if (args.includes('graphql')) return privateNode
+      if (joined.includes('/compare/') && args.includes('-H')) return addedLine
+      if (joined.includes('/compare/')) return makeCompareJson()
+      throw new Error(`unexpected gh call: ${joined}`)
+    })
+    const stderr: string[] = []
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk: unknown) => {
+      stderr.push(String(chunk))
+      return true
+    })
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(() => {
+      throw new Error('process.exit called')
+    })
+    process.env.GITHUB_EVENT_PATH = '/fake/event.json'
+    process.env.FRO_BOT_POLL_PAT = 'test-pat'
+    process.env.GITHUB_OUTPUT = '/fake/output.txt'
+    try {
+      const result = await runCli(checkPrivateLeakCli(), {argv: [], env: {GITHUB_OUTPUT: '/fake/output.txt'}})
+
+      expect(result.exitCode).toBe(1)
+      expect(exitSpy).toHaveBeenCalledWith(1)
+      expect(String(mockAppendFileSync.mock.calls[0]?.[1])).toBe('scan_result=detection\n')
+      expect(stderr.join('')).toContain('FAILED — private repository name(s) detected in PR diff')
+      expect(stderr.join('')).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+      expect(stderr.join('')).not.toContain('archived-widget')
+    } finally {
+      delete process.env.GITHUB_EVENT_PATH
+      delete process.env.FRO_BOT_POLL_PAT
+      delete process.env.GITHUB_OUTPUT
+      vi.restoreAllMocks()
+      mockExecFileSync.mockReset()
+      mockAppendFileSync.mockReset()
+      mockReadFile.mockReset()
+    }
   })
 })

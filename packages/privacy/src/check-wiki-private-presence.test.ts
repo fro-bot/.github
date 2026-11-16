@@ -10,6 +10,7 @@ import YAML from 'yaml'
 import {
   buildPublicSlugMap,
   buildPublicSlugs,
+  buildUnconfirmedArchivedSlugs,
   detectPrivateWikiLeaks,
   findStructuralViolations,
   formatLeakReport,
@@ -2591,5 +2592,245 @@ describe('runCli — an archived row and the data → main gate', () => {
 
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toContain(`knowledge/wiki/repos/${pageName}  (unattributable-page)`)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An unconfirmed archived row stays in the slug-collision accounting
+// ---------------------------------------------------------------------------
+
+describe('an unconfirmed archived row sharing a slug with another row', () => {
+  const row = (extra: Partial<RepoEntry>): RepoEntry =>
+    ({
+      owner: 'example',
+      name: 'some-repo',
+      private: false,
+      onboarding_status: 'onboarded',
+      node_id: 'R_pub',
+      ...extra,
+    }) as RepoEntry
+  const archivedRow = row({name: 'some.repo', onboarding_status: 'archived', node_id: 'R_arch'})
+  const publicRow = row({})
+  const rows = [archivedRow, publicRow]
+  const slug = 'example--some-repo'
+  const bothSources = [
+    '---',
+    'type: repo',
+    'sources:',
+    '  - url: https://github.com/example/some.repo',
+    '    accessed: 2026-11-12',
+    '  - url: https://github.com/example/some-repo',
+    '    accessed: 2026-11-12',
+    '---',
+    'Body with a new, private sentence.',
+    '',
+  ].join('\n')
+  const changedPage = page(`${slug}.md`, 'changed-hash', bothSources)
+  const unchangedPage = page(`${slug}.md`, 'main-hash', bothSources)
+  const onMain = [page(`${slug}.md`, 'main-hash', bothSources)]
+
+  function leaks(confirmed: ReadonlySet<string>, dataPage: WikiPageSnapshot, grandfatherPages: WikiPageSnapshot[]) {
+    return detectPrivateWikiLeaks({
+      dataWikiPages: [dataPage],
+      publicSlugMap: buildPublicSlugMap(rows, confirmed),
+      grandfatherPages,
+      unconfirmedSlugs: buildUnconfirmedArchivedSlugs(rows, confirmed),
+    })
+  }
+
+  it('blocks a changed page that cites both repositories, as ambiguous: the archived row is never a candidate', () => {
+    expect(leaks(new Set(), changedPage, onMain)).toStrictEqual([
+      {filename: `${slug}.md`, reason: 'ambiguous-public-slug'},
+    ])
+    expect(leaks(new Set(), changedPage, [])).toStrictEqual([{filename: `${slug}.md`, reason: 'ambiguous-public-slug'}])
+  })
+
+  it('passes the same page when it is unchanged from main: grandfathering is unchanged', () => {
+    expect(leaks(new Set(), unchangedPage, onMain)).toStrictEqual([])
+  })
+
+  it("gives today's two-public-rows outcome when the archived row is confirmed public, changed or not", () => {
+    const confirmed = new Set(['R_arch'])
+
+    expect(buildPublicSlugMap(rows, confirmed).get(slug)).toHaveLength(2)
+    expect(buildUnconfirmedArchivedSlugs(rows, confirmed).size).toBe(0)
+    expect(leaks(confirmed, changedPage, onMain)).toStrictEqual([
+      {filename: `${slug}.md`, reason: 'ambiguous-public-slug'},
+    ])
+    expect(leaks(confirmed, unchangedPage, onMain)).toStrictEqual([
+      {filename: `${slug}.md`, reason: 'ambiguous-public-slug'},
+    ])
+  })
+
+  it('still blocks an unchanged page when two other public rows share the slug, beside an unconfirmed one', () => {
+    const three = [archivedRow, publicRow, row({name: 'some_repo', node_id: 'R_pub2'})]
+
+    expect(
+      detectPrivateWikiLeaks({
+        dataWikiPages: [unchangedPage],
+        publicSlugMap: buildPublicSlugMap(three, new Set()),
+        grandfatherPages: onMain,
+        unconfirmedSlugs: buildUnconfirmedArchivedSlugs(three, new Set()),
+      }),
+    ).toStrictEqual([{filename: `${slug}.md`, reason: 'ambiguous-public-slug'}])
+  })
+
+  it('leaves an unconfirmed archived row alone at its slug: a changed page is unattributable, an unchanged one passes', () => {
+    const alone = [archivedRow]
+    const detect = (dataPage: WikiPageSnapshot) =>
+      detectPrivateWikiLeaks({
+        dataWikiPages: [dataPage],
+        publicSlugMap: buildPublicSlugMap(alone, new Set()),
+        grandfatherPages: onMain,
+        unconfirmedSlugs: buildUnconfirmedArchivedSlugs(alone, new Set()),
+      })
+
+    expect(detect(changedPage)).toStrictEqual([{filename: `${slug}.md`, reason: 'unattributable-page'}])
+    expect(detect(unchangedPage)).toStrictEqual([])
+  })
+
+  it('does not touch a page at a slug no unconfirmed row shares', () => {
+    const other = page('example--other.md', 'h', sourced('https://github.com/example/other'))
+    const detect = detectPrivateWikiLeaks({
+      dataWikiPages: [other],
+      publicSlugMap: buildPublicSlugMap([...rows, row({name: 'other', node_id: 'R_o'})], new Set()),
+      grandfatherPages: [],
+      unconfirmedSlugs: buildUnconfirmedArchivedSlugs(rows, new Set()),
+    })
+
+    expect(detect).toStrictEqual([])
+  })
+})
+
+describe('buildUnconfirmedArchivedSlugs', () => {
+  const archived = (extra: Partial<RepoEntry>): RepoEntry =>
+    ({
+      owner: 'example',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'archived',
+      node_id: 'R_a',
+      ...extra,
+    }) as RepoEntry
+
+  it('lists the slug of an archived named row that is not confirmed', () => {
+    expect([...buildUnconfirmedArchivedSlugs([archived({})], new Set())]).toEqual(['example--widget'])
+    expect([...buildUnconfirmedArchivedSlugs([archived({})])]).toEqual(['example--widget'])
+    expect([...buildUnconfirmedArchivedSlugs([archived({})], new Set(['R_other']))]).toEqual(['example--widget'])
+  })
+
+  it('lists a named archived row with no private key and one with no node ID', () => {
+    expect(buildUnconfirmedArchivedSlugs([archived({private: undefined})], new Set()).size).toBe(1)
+    expect(buildUnconfirmedArchivedSlugs([archived({node_id: undefined})], new Set(['R_a'])).size).toBe(1)
+  })
+
+  it('omits a confirmed row', () => {
+    expect(buildUnconfirmedArchivedSlugs([archived({})], new Set(['R_a'])).size).toBe(0)
+  })
+
+  it('omits a redacted archived row: its stored name is `[REDACTED]`, so it has no real slug to collide at', () => {
+    const redacted = archived({private: true, owner: '[REDACTED]', name: 'R_red'})
+
+    expect(buildUnconfirmedArchivedSlugs([redacted], new Set()).size).toBe(0)
+    expect(buildPublicSlugMap([redacted], new Set(['R_a'])).size).toBe(0)
+  })
+
+  it.each([
+    ['an onboarded public row', {onboarding_status: 'onboarded'}],
+    ['a row stored private that is not archived', {onboarding_status: 'onboarded', private: true}],
+  ] as const)('omits %s', (_label, extra) => {
+    expect(buildUnconfirmedArchivedSlugs([archived(extra as Partial<RepoEntry>)], new Set()).size).toBe(0)
+  })
+
+  it('skips a row whose name cannot form a slug, without throwing', () => {
+    expect(buildUnconfirmedArchivedSlugs([archived({name: '!!!'}), archived({})], new Set())).toEqual(
+      new Set(['example--widget']),
+    )
+  })
+})
+
+describe('runCli — an unconfirmed archived row sharing a slug with a public row', () => {
+  const grandfatherDir = '/tmp/grandfather-collision'
+  const pageName = 'example--some-repo.md'
+  const bothSources = [
+    '---',
+    'type: repo',
+    'sources:',
+    '  - url: https://github.com/example/some.repo',
+    '    accessed: 2026-11-12',
+    '  - url: https://github.com/example/some-repo',
+    '    accessed: 2026-11-12',
+    '---',
+    'Body.',
+    '',
+  ].join('\n')
+  const registry = (archivedNodeId: string): string =>
+    [
+      'version: 1',
+      'repos:',
+      '  - owner: example',
+      '    name: some.repo',
+      '    private: false',
+      `    node_id: ${archivedNodeId}`,
+      '    added: "2024-01-01"',
+      '    onboarding_status: archived',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '  - owner: example',
+      '    name: some-repo',
+      '    private: false',
+      '    node_id: R_pub',
+      '    added: "2024-01-01"',
+      '    onboarding_status: onboarded',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '',
+    ].join('\n')
+
+  function arrange(dataPage: string, mainPage: string): void {
+    mockReaddir.mockImplementation(async () => [dirent(pageName)])
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path === 'metadata/repos.yaml') return registry('R_arch')
+      return path.startsWith(grandfatherDir) ? mainPage : dataPage
+    })
+  }
+
+  it.each([
+    ['PRIVATE', {nameWithOwner: 'example/some.repo', visibility: 'PRIVATE'}],
+    ['a failed lookup', {error: 'error'}],
+  ] as const)('blocks a changed page that cites both repositories when the lookup says %s', async (_label, answer) => {
+    arrange(`${bothSources}New private sentence.\n`, bothSources)
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, async () => answer)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('leak-1: ambiguous-public-slug')
+    expect(result.stderr).not.toContain('some-repo')
+  })
+
+  it('blocks it with no resolver, and passes the page unchanged from main', async () => {
+    arrange(`${bothSources}New private sentence.\n`, bothSources)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+    arrange(bothSources, bothSources)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+
+    expect(blocked.exitCode).toBe(1)
+    expect(unchanged).toEqual({exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''})
+  })
+
+  it('gives the two-public-rows outcome when the lookup confirms the archived row public', async () => {
+    arrange(bothSources, bothSources)
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, async () => ({
+      nameWithOwner: 'example/some.repo',
+      visibility: 'PUBLIC',
+    }))
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('leak-1: ambiguous-public-slug')
   })
 })

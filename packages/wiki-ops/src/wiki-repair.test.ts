@@ -7,7 +7,7 @@ import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {dirname, join} from 'node:path'
 import process from 'node:process'
-import {buildPublicSlugMap} from '@fro-bot/privacy/check-wiki-private-presence'
+import {buildPublicSlugMap, buildUnconfirmedArchivedSlugs} from '@fro-bot/privacy/check-wiki-private-presence'
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {lintWikiSnapshot} from '@fro.bot/wiki-write-core/wiki-lint'
@@ -1869,5 +1869,144 @@ describe('runWikiRepairCli with an archived row', () => {
     expect(result).toMatchObject({privacy_blocked: 0, aborted: 0})
     expect(result.repaired).toBeGreaterThan(0)
     expect(calls).toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An unconfirmed archived row stays in the slug-collision accounting
+// ---------------------------------------------------------------------------
+
+/** An archived row `acme/Widget` and a public row `acme/widget`: one page slug, `acme--widget`. */
+function collidingRegistry(): string {
+  const row = (name: string, status: string, nodeId: string): string[] => [
+    '  - owner: acme',
+    `    name: ${name}`,
+    '    private: false',
+    `    node_id: ${nodeId}`,
+    '    added: "2026-01-01"',
+    `    onboarding_status: ${status}`,
+    '    last_survey_at: null',
+    '    last_survey_status: null',
+    '    has_fro_bot_workflow: false',
+    '    has_renovate: false',
+  ]
+  return [
+    'version: 1',
+    'repos:',
+    ...row('Widget', 'archived', 'R_arch'),
+    ...row('widget', 'onboarded', 'R_pub'),
+    '',
+  ].join('\n')
+}
+
+async function loadColliding(resolver: NodeIdResolver | undefined) {
+  const fake = createGitDataFake({
+    branch: 'data',
+    files: {...driftedWidgetFiles(), 'metadata/repos.yaml': collidingRegistry()},
+  })
+  return loadWikiRepairTreeAtHead({
+    octokit: fake.client as unknown as OctokitClient,
+    owner: 'fro-bot',
+    repo: '.github',
+    grandfatherPages: [],
+    resolver,
+  })
+}
+
+describe('loadWikiRepairTreeAtHead with an archived row that shares a slug', () => {
+  it.each([
+    ['PRIVATE', answers.private],
+    ['a failed lookup', answers.failed],
+  ])('keeps the slug as a collision blocker, not a candidate, when the lookup says %s', async (_label, answer) => {
+    const tree = await loadColliding(recordingResolver(answer).resolver)
+
+    expect([...(tree.unconfirmedSlugs ?? [])]).toEqual(['acme--widget'])
+    expect(tree.publicSlugMap.get('acme--widget')).toHaveLength(1)
+  })
+
+  it('keeps it with no resolver', async () => {
+    expect([...((await loadColliding(undefined)).unconfirmedSlugs ?? [])]).toEqual(['acme--widget'])
+  })
+
+  it('has no blocker, and two candidates, when the lookup confirms the archived row public', async () => {
+    const tree = await loadColliding(recordingResolver(answers.public).resolver)
+
+    expect(tree.unconfirmedSlugs?.size).toBe(0)
+    expect(tree.publicSlugMap.get('acme--widget')).toHaveLength(2)
+  })
+})
+
+describe('gateWikiRepairs with an unconfirmed archived row at the slug', () => {
+  it('blocks a page that cites the public repository, and passes it unchanged from main', () => {
+    const files = {'knowledge/wiki/repos/acme--widget.md': widgetPage}
+    const publicRow = {
+      owner: 'acme',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'onboarded',
+      node_id: 'R_pub',
+    } as RepoEntry
+    const archivedRow = {...publicRow, name: 'Widget', onboarding_status: 'archived', node_id: 'R_arch'} as RepoEntry
+    const rows = [archivedRow, publicRow]
+    const gate = (grandfatherPages: ReturnType<typeof passingGateInputs>['grandfatherPages']) =>
+      gateWikiRepairs({
+        repairedWikiFiles: files,
+        publicSlugMap: buildPublicSlugMap(rows, new Set()),
+        unconfirmedSlugs: buildUnconfirmedArchivedSlugs(rows, new Set()),
+        grandfatherPages,
+      })
+
+    expect(gate([])).toMatchObject({ok: false, leaks: [{reason: 'ambiguous-public-slug'}]})
+    expect(gate(passingGateInputs(files).grandfatherPages).ok).toBe(true)
+  })
+})
+
+describe('runWikiRepairCli with an archived row that shares a slug', () => {
+  let root = ''
+  let stdout: string[] = []
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'wiki-repair-collision-'))
+    stdout = []
+    for (const [path, content] of Object.entries(driftedWidgetFiles())) {
+      await mkdir(dirname(join(root, path)), {recursive: true})
+      await writeFile(join(root, path), content, 'utf8')
+    }
+    await mkdir(join(root, 'metadata'), {recursive: true})
+    await writeFile(join(root, 'metadata', 'repos.yaml'), collidingRegistry(), 'utf8')
+  })
+
+  afterEach(async () => {
+    await rm(root, {recursive: true, force: true})
+  })
+
+  async function repair(resolver: NodeIdResolver, token: string | undefined = 'read-only-token') {
+    await runWikiRepairCli(
+      {
+        WIKI_REPAIR_DRY_RUN: 'true',
+        WIKI_REPAIR_DATA_TIP_SHA: 'tip-1',
+        GRANDFATHER_WIKI_REPOS_DIR: join(root, 'grandfather'),
+        GITHUB_TOKEN: token,
+      },
+      {stdout: text => stdout.push(text)},
+      root,
+      () => resolver,
+    )
+    return JSON.parse(stdout.join('')) as WikiRepairResultCounts
+  }
+
+  it.each([
+    ['PRIVATE', answers.private],
+    ['a failed lookup', answers.failed],
+  ])('aborts as a privacy block when the archived row lookup says %s', async (_label, answer) => {
+    const result = await repair(recordingResolver(answer).resolver)
+
+    expect(result).toMatchObject({privacy_blocked: 1, aborted: 1, repaired: 0})
+  })
+
+  it('aborts as a privacy block with no token', async () => {
+    const result = await repair(recordingResolver(answers.public).resolver, '')
+
+    expect(result).toMatchObject({privacy_blocked: 1, aborted: 1})
   })
 })

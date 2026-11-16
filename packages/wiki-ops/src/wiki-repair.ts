@@ -18,6 +18,7 @@ import {retry} from '@fro-bot/core/retry'
 import {confirmArchivedPublic} from '@fro-bot/privacy/check-private-leak'
 import {
   buildPublicSlugMap,
+  buildUnconfirmedArchivedSlugs,
   detectPrivateWikiLeaks,
   loadWikiPages,
   requireGrandfatherDir,
@@ -285,6 +286,8 @@ export function verifyWikiRepairs(params: VerifyWikiRepairsParams): VerifyWikiRe
 export interface GateWikiRepairsParams {
   readonly repairedWikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  /** Slugs claimed by an archived row GitHub did not confirm public; see `buildUnconfirmedArchivedSlugs`. */
+  readonly unconfirmedSlugs?: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -316,6 +319,7 @@ export function gateWikiRepairs(params: GateWikiRepairsParams): GateWikiRepairsR
   const leaks = detectPrivateWikiLeaks({
     dataWikiPages,
     publicSlugMap: params.publicSlugMap,
+    unconfirmedSlugs: params.unconfirmedSlugs,
     grandfatherPages: params.grandfatherPages,
   })
 
@@ -328,6 +332,7 @@ export interface PlanAndVerifyWikiRepairsParams {
   readonly baselineFindings: readonly WikiLintFinding[]
   readonly wikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  readonly unconfirmedSlugs?: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -364,6 +369,7 @@ export function planAndVerifyWikiRepairs(params: PlanAndVerifyWikiRepairsParams)
   const gate = gateWikiRepairs({
     repairedWikiFiles: plan.repairedFiles,
     publicSlugMap: params.publicSlugMap,
+    unconfirmedSlugs: params.unconfirmedSlugs,
     grandfatherPages: params.grandfatherPages,
   })
 
@@ -387,6 +393,8 @@ export interface WikiRepairTreeSnapshot {
   readonly tipSha: string
   readonly wikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
+  /** Slugs claimed by an archived row GitHub did not confirm public: they block, and never attribute. */
+  readonly unconfirmedSlugs?: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -465,6 +473,7 @@ export async function runWikiRepair(params: RunWikiRepairParams): Promise<WikiRe
       baselineFindings: baseline,
       wikiFiles: tree.wikiFiles,
       publicSlugMap: tree.publicSlugMap,
+      unconfirmedSlugs: tree.unconfirmedSlugs,
       grandfatherPages: tree.grandfatherPages,
     })
 
@@ -625,13 +634,13 @@ export async function loadWikiRepairTreeAtHead(
   assertReposFile(reposParsed)
   const wikiFiles = Object.fromEntries(contents)
 
+  const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, params.resolver)
+
   return {
     tipSha,
     wikiFiles,
-    publicSlugMap: buildPublicSlugMap(
-      reposParsed.repos,
-      await confirmArchivedPublic(reposParsed.repos, params.resolver),
-    ),
+    publicSlugMap: buildPublicSlugMap(reposParsed.repos, confirmedPublic),
+    unconfirmedSlugs: buildUnconfirmedArchivedSlugs(reposParsed.repos, confirmedPublic),
     grandfatherPages: params.grandfatherPages,
   }
 }
@@ -783,15 +792,14 @@ export async function runWikiRepairCli(
     const reposRaw = await readFile(join(rootDir, 'metadata', 'repos.yaml'), 'utf8')
     const reposParsed: unknown = YAML.parse(reposRaw)
     assertReposFile(reposParsed)
-    const publicSlugMap = buildPublicSlugMap(
-      reposParsed.repos,
-      await confirmArchivedPublic(reposParsed.repos, resolver),
-    )
+    const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, resolver)
+    const publicSlugMap = buildPublicSlugMap(reposParsed.repos, confirmedPublic)
+    const unconfirmedSlugs = buildUnconfirmedArchivedSlugs(reposParsed.repos, confirmedPublic)
 
     const grandfatherDir = requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR)
     const grandfatherPages = await loadWikiPages(grandfatherDir)
 
-    return {tipSha, wikiFiles, publicSlugMap, grandfatherPages}
+    return {tipSha, wikiFiles, publicSlugMap, unconfirmedSlugs, grandfatherPages}
   }
 
   let octokitPromise: Promise<OctokitClient> | undefined
