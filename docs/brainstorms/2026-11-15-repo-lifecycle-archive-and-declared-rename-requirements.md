@@ -7,7 +7,7 @@ topic: repo-lifecycle-archive-and-declared-rename
 
 ## Summary
 
-One operator workflow handles a tracked repository's lifecycle. `archive` records the repository as archived under its real name, marks its wiki page archived in place and stops all active work on it. `declare-rename` records a new name ahead of time; when GitHub shows exactly that name on the same repository, the rename is applied without a second operator step and the old page address redirects.
+One operator workflow handles a tracked repository's lifecycle. `archive` records the repository as archived under its real name, marks its wiki page archived in place and stops all active work on it. `unarchive` reverses that. `declare-rename` records a new name ahead of time; when GitHub shows exactly that name on the same repository, the rename is applied without a second operator step and the old page address redirects.
 
 ---
 
@@ -63,24 +63,27 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 - R7. The archive works before or after the repository is archived on GitHub.
 
 **What may change an archived row or page**
-- R8. Reconcile leaves an archived row unchanged on every path, with one exception: when GitHub does not confirm the repository public, the row is redacted and keeps its archived state. That covers a private repository, a missing or failed lookup, and ambiguous or conflicting evidence.
+- R8. Reconcile leaves an archived row unchanged on every path, with one exception: when GitHub shows the repository private, the row is redacted and keeps its archived state. A failed or missing lookup leaves the row unchanged.
 - R9. A redacted archived row is never un-redacted automatically. The operator restores its name by running `archive` again, which requires GitHub to confirm the same node public.
-- R10. Both leak scans check every archived repository's visibility live. When the result is anything except public, including a failed lookup, the repository's name is treated as private, using the stored name when the row still has one.
+- R10. Every leak scan checks every archived repository's visibility live. When the result is anything except public, including a failed lookup, the repository's name is treated as private, using the stored name when the row still has one.
 - R11. A survey of an archived repository is refused, including one dispatched by hand, and a survey already running when the archive lands does not write the page.
-- R12. The operator's dashboard edits and wiki repair may change an archived page, and must keep the archive date and notice. An archived repository cannot be renamed through this workflow.
+- R12. The operator's dashboard edits and wiki repair may change an archived page, and must keep the archive date and notice. An archived repository cannot be renamed through this workflow. Once an archived row is redacted, an edit to its page fails the privacy gate until the operator restores the name.
+- R25. The operator can reverse an archive with `unarchive`. It requires GitHub to confirm the same node public and not archived. The row returns to the active state, the archive date and notice are removed, and surveys resume.
 
 **Declared rename**
 - R13. The operator can declare a new name for a tracked public repository with one workflow dispatch that takes the node ID and the new name. The row's name, the page and surveys do not change at that point.
 - R14. A declaration is refused when the new name, or the wiki slug it maps to, belongs to another tracked repository, an existing page or an existing redirect.
 - R15. When reconcile sees the same node, under the same owner, carrying exactly the declared name, it starts the lifecycle workflow's apply action for that node and writes nothing for that row itself.
 - R16. The apply action renames the row, moves the page, updates inbound links and the index, writes a log entry and clears the declaration in one commit. It writes nothing when it cannot prove the node's identity; the declaration then stays and the block is reported.
-- R17. After a rename is applied, by a declaration or by the operator's own dispatch, the old page address redirects to the new page. A redirect never attributes a page or identifies a repository.
+- R17. After a rename is applied, by a declaration or by the operator's own dispatch, the old page address redirects to the new page. A redirect never attributes a page or identifies a repository. When the old and new names map to the same page address, no redirect is written.
+- R26. Pages renamed earlier get the same redirect: an existing alias that is an old page slug is rewritten once so that the old page address redirects. Other aliases are left as they are.
 - R18. When the node carries a new name that differs from the declared one, or has a new owner, nothing is applied. The case is reported as a rename or transfer is today, the report says the declared name differs, and the declaration stays until the operator replaces or cancels it.
 - R19. The operator can replace or cancel a declaration. A pending declaration is listed in reconcile's summary on every run until it is applied or cancelled.
 - R20. A rename with no declaration is handled as today: detected, surveys paused, and applied by the operator's dispatch.
 
 **Both**
 - R21. Each action is refused, with a reason that names no private repository, when the node is not a tracked row, when the row is private, or when GitHub does not confirm the node's identity.
+- R27. `archive` is refused while the row has a pending declaration. `declare-rename` is refused on an archived row. `archive` is refused for a redacted archived row whose repository now has a different name or owner.
 - R22. For a row with no stored node ID, an action accepts the supplied node only when GitHub confirms that the node carries the row's exact owner and name and is public, and exactly one row and one page match. It then stores the node ID in the same commit.
 - R23. No row is given the archived state or a declaration until the shared registry package and every consumer of the registry, the dashboard included, accept them.
 - R24. `marcusrbrown/copiloting` is converted to the archived state by the `archive` action as the first live use.
@@ -94,7 +97,7 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 - AE3. **Covers R7, R8.** Given an archived row, when the operator archives the repository on GitHub and reconcile runs, the row is unchanged: still archived, still named.
 - AE4. **Covers R8.** Given an archived row whose repository is un-archived on GitHub and still public, when reconcile runs, the row is unchanged and no survey is dispatched.
 - AE5. **Covers R8, R10.** Given an archived row, when its repository is made private and reconcile runs, the row is redacted and still archived. Before that run, a promotion that adds a line naming it already fails the leak scan.
-- AE6. **Covers R8.** Given an archived row whose repository is no longer in the access list and whose lookup fails, when reconcile runs, the row is redacted and still archived.
+- AE6. **Covers R8, R10.** Given an archived row whose repository is no longer in the access list and whose lookup fails, when reconcile runs, the row is unchanged. A promotion that adds a line naming it fails the leak scan.
 - AE7. **Covers R9.** Given a redacted archived row whose repository is public again, when reconcile runs, the row stays redacted. When the operator runs `archive`, its name is restored.
 - AE8. **Covers R11.** Given an archived repository, when the operator dispatches a survey of it with rewrite, the survey is refused and the page is unchanged.
 - AE9. **Covers R12.** Given an archived page, when the operator saves an edit from the dashboard, the edit is kept and the archive date and notice are still present.
@@ -106,6 +109,11 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 - AE15. **Covers R14.** Given a tracked repository named `my.repo`, when the operator declares `my-repo` for another repository and both names map to the same wiki slug, the declaration is refused.
 - AE16. **Covers R19.** Given a pending declaration, when the operator cancels it, the row has no declaration and reconcile's next summary does not list it.
 - AE17. **Covers R21.** Given a node ID of a private row, when either action is run, it is refused and the message names no repository.
+- AE18. **Covers R5, R11.** Given a survey that has started, when the archive commits before the survey persists, no page write, survey-result write or re-dispatch lands.
+- AE19. **Covers R25.** Given an archived repository that GitHub shows public and not archived, when the operator runs `unarchive`, the row is active, the page has no archive date or notice, and the next reconcile may survey it.
+- AE20. **Covers R27.** Given a row with a pending declaration, when the operator runs `archive`, it is refused until the declaration is cancelled.
+- AE21. **Covers R17.** Given a rename whose old and new names map to the same page address, when it is applied, the page keeps its address and gains no redirect.
+- AE22. **Covers R26.** Given a page that carries an old page slug as a bare alias, after the one-time rewrite its old page address redirects on the published site.
 
 ---
 
@@ -120,7 +128,6 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 
 ## Scope Boundaries
 
-- Un-archiving. A mistaken archive is corrected by hand for now.
 - Owner transfers. They stay detected and blocked.
 - Renaming an archived repository.
 - A dashboard control, or asking Fro Bot to run the action. Both can sit in front of the workflow later.
@@ -136,11 +143,12 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 
 - The archived page stays where it is: no new directory means the privacy gate, the index builder and the page-move code have no new place to cover, and no address changes.
 - An archive is a declared state, separate from `lost-access`: the operator's action records what happened, so the row does not need the fail-safe that redacts a repository reconcile cannot vouch for.
-- Reconcile has one rule for an archived row, redact when not confirmed public, and the leak scans carry the precision. #4251 showed that a named, inactive row is unsafe when several reconcile paths each have to maintain it; see `docs/solutions/best-practices/fix-a-fail-safe-flags-false-positive-in-the-consumer-2026-11-15.md`.
+- Reconcile has one rule for an archived row, redact when GitHub shows it private, and the leak scans carry the precision: they treat an archived repository as private whenever they cannot confirm it public. A failed lookup does not redact, because a redaction is never undone automatically. #4251 showed that a named, inactive row is unsafe when several reconcile paths each have to maintain it; see `docs/solutions/best-practices/fix-a-fail-safe-flags-false-positive-in-the-consumer-2026-11-15.md`.
 - A declared rename applies itself; an undeclared one waits: the declaration is the approval that the earlier rejection of automatic renames asked for. Recorded as complete in `docs/plans/2026-10-09-004-fix-reconcile-redirect-rename-plan.md`.
 - The declaration changes nothing until GitHub agrees: the registry is never ahead of GitHub, and an abandoned declaration costs nothing.
 - The lifecycle workflow is the only writer of the row-and-page commit. Reconcile detects and starts it, so one run never has two writers of the registry for the same row.
 - Archived pages are frozen to automation and open to the operator: surveys are refused, edits and repair keep the marker.
+- `unarchive` exists because nothing else can undo an archive: `data` takes writes only from trusted workflows.
 - Skipping covers active work only. Passive readers keep the page, because it stays useful as reference.
 - Redirects from an old page address are allowed. Aliases are used for redirects only. This narrows the earlier rejection of rename aliases, recorded in `docs/solutions/integration-issues/identity-probe-follows-redirects-hides-repo-renames-2026-10-10.md`.
 
@@ -148,8 +156,9 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 
 ## Dependencies / Assumptions
 
-- A new row state and a new row field change the registry schema in the published `@fro.bot/wiki-write-core` package. Code built against the current schema rejects a state it does not know. How `fro-bot/dashboard` reads and saves the registry is not verified.
-- The published site has alias redirects enabled. The address it emits for an alias was not checked for this document.
+- A new row state and a new row field change the registry schema in the published `@fro.bot/wiki-write-core` package. Code built against the current schema rejects a state it does not know, so the schema reaches `main` before any row carries the state.
+- `fro-bot/dashboard` does not validate a row's state, does not write the registry, and keeps unknown frontmatter keys on save.
+- The published site writes a redirect at exactly the alias text. A bare alias redirects from the site root, so a redirect from an old page address needs the page's full site path.
 - The survey ingest writes an alias when it migrates a page by node ID, and `knowledge/schema.md` says the operator rename adds none. The schema text must match the behaviour after this work.
 
 ---
@@ -162,8 +171,7 @@ One tracked repository is archived today (`marcusrbrown/copiloting`, since April
 - [Affects R5, R11][Technical] The change each active job needs. The onboarding gate, cross-repo dispatch and Renovate dispatch do not read the row's state today, and the daily prompts list every accessible row.
 - [Affects R12][Technical] How the archive date and notice survive each permitted writer: the dashboard save, wiki repair and the ingest's frontmatter handling.
 - [Affects R15, R16][Technical] How reconcile starts the workflow, with which credential, and how the apply action's proofs behave when the old address no longer redirects.
-- [Affects R14, R17][Needs research] The address the published site emits for an alias, and the rule for an old name that another repository later takes.
-- [Affects R23][Needs research] How the dashboard treats the new state and field, the release and rollout order, the rollback, and whether the gate contract version changes.
+- [Affects R14, R17][Technical] The rule for an old page address that another repository later takes. The site build does not warn when an alias equals a live page.
 - [Affects R20][Technical] Whether the two manual follow-ups recorded for the rename workflow, the allowlist and `reset-survey-status` taking the new name, still exist and should fold into the action.
 
 ---
