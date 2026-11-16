@@ -95,7 +95,7 @@ Declared rename (phase 2):
 
 - `archived` is a new `onboarding_status` value, not a separate flag: every reader that allowlists `onboarded` and `pending` skips it without a change, and a row cannot be active and archived at once. The archive date lives on the page.
 - Reconcile exits early for an archived row, before `migrateRepoEntry`. The exit has one write: redaction when an access-list entry for the row's node says `private === true`. A duplicate, a missing flag, conflicting entries with no explicit private, and a failed or missing lookup write nothing. `accessPrivateForStorage` is not used here, because it treats any duplicate as private.
-- Archived rows form an identity group before classification: every row that shares the archived row's node ID, database ID or, for a row with no ID, its owner and name. No row in the group is classified, surveyed, merged, restricted or reported, and the archived row is the group's survivor. Rename detection skips the group.
+- A duplicate of an archived row is handled by the existing duplicate merge, with one rule: when a duplicate group, formed as on `origin/main`, contains an archived row, the first archived row of the group is the survivor and is returned exactly as stored, taking no field from the others. Groups, the wiki guard and the `merged` count are otherwise unchanged. Special handling of duplicates (a held group, then absorption before classification) produced a new failure in each of two designs: a stale `database_id` deleting a different repository, a bypassed wiki guard, and a duplicate that only becomes one mid-run. Duplicates do not arise in steady state, because reconcile merges them every run and the `archive` action refuses when another row shares the node or database ID. An archived row with no node ID is not supported beyond the early exit (the action always stores the IDs). Rename detection skips archived rows.
 - "Unchanged" means the serialized row is identical, not only that the same object is returned.
 - The leak scans select `private: true` rows and archived rows. For an archived row, a live `PUBLIC` contributes no private name. A live result that is not public contributes both the stored owner and name and the live owner and name, because an archived row keeps its stored name through a rename or transfer on GitHub. A failed lookup or a missing node ID contributes the stored name. None of these blocks the scan. A private row's failed lookup still blocks, as today.
 - The wiki-presence gate attributes a changed page to an archived row only when GitHub confirms that row's node public at check time. Without that confirmation the row is left out of the public slug map, so its page passes only when it is unchanged from `main`. A stored `private: false` alone is not enough for an archived row, because reconcile keeps the row named when it cannot see the repository.
@@ -129,7 +129,7 @@ Declared rename (phase 2):
 
 ### Deferred to Implementation
 
-- The exact input the early exit reads for "positively private" when the row is absent from the access list: the probe drops `private` on a 200 today. Either the probe carries it or the exit acts only on access-list evidence. Decide while writing Unit 4's tests.
+- The exact input the early exit reads for "positively private" (resolved in Unit 4): the node IDs whose raw owned, contrib or collaborator response said `private === true`, read before the collaborator flag is made fail-closed, before each channel's eligibility filters and before channel precedence. Archived rows are not probed, so a probe result is never evidence.
 - Whether `GITHUB_TOKEN`'s GraphQL `node()` distinguishes a public repository from one it cannot see, for the legacy-row lookup in Unit 6. The refusal must name nothing either way.
 - Whether a pending `workflow_dispatch` run is dropped when a second arrives in the same concurrency group; Unit 6 keys the group by node regardless.
 - Whether the wiki lint flags an unknown `archived` key on a repo page.
@@ -288,9 +288,10 @@ Leak-scan decision for one selected row:
 
 **Approach:**
 - An early exit at the top of `classifyTracked`, before the entry migration, returns the row by reference.
-- Its one write: when an access-list entry for the row's node says `private === true`, store the row redacted with the archived state, `node_id` and `database_id` kept, queue the went-private notice, and bump a counter so the commit happens.
+- Its one write: when the row's node is in the explicit-evidence set (a raw response of any channel said `private === true`, collected before any filter), store the row redacted with the archived state, `node_id` and `database_id` kept, queue the went-private notice, and bump a counter so the commit happens.
+- Archived rows are not probed (`fetchPerRepoStatus`, `fetchFieldProbes`), and the handler's lookups by `owner/name` (survey order, channel counts) skip them.
 - A redacted archived row is returned unchanged whatever the evidence.
-- Build the archived identity groups before any row is classified. Skip every row of a group in classification, the newcomer pass, rename detection, duplicate merging and group-visibility restriction. The archived row survives; its siblings produce no dispatch and no issue, and are reported in the summary.
+- In `mergeDuplicateEntries`, a group that contains an archived row keeps the first archived row exactly as stored; `restrictGroupVisibility` never alters it. Rename detection skips archived rows.
 - The job summary gains an archived count and an archived-redacted count.
 
 **Execution note:** characterization first: pin today's outcome for an archived-on-GitHub row, then add the archived-state cases.
@@ -302,12 +303,12 @@ Leak-scan decision for one selected row:
 - Happy path: the same row with the node not archived on GitHub (un-archived there) is unchanged and no survey is planned.
 - Error path: the node is in the access list and private: the row is redacted, still archived, one went-private notice is queued.
 - Edge case: the node is absent from the access list, with each probe result (revoked, deleted, transient, malformed, none): unchanged.
-- Edge case: the node appears twice, both public: unchanged. Twice with one explicit private: redacted. Once with the flag missing: unchanged.
-- Edge case: an onboarded row that duplicates an archived row by node ID, by database ID, and by owner and name for a row with no ID: the duplicate plans no survey and no issue, and the archived row is kept.
+- Edge case: the node appears twice, both public: unchanged. Twice with one explicit private: redacted. Once with the flag missing: unchanged. Owned says public and the collaborator listing says private: redacted. An owned or contrib response that says private is evidence although discovery drops the entry (archived, fork, wrong owner, workflow-ineligible).
+- Edge case: a same-node duplicate of an archived row is merged away by the normal duplicate merge: the archived row is byte-identical and the only row for the node, `merged` counts it, and its outcome is whatever `origin/main` does for any merged-away duplicate (the survey is dropped; a regain or rename issue it queued is still filed). The wiki guard protects the duplicate's name as on main. A database ID shared with another node merges that node's row away as on main (pre-existing). Two archived rows for one node: the first survives.
+- Edge case: an archived row is not probed, including when the probe would abort the run.
 - Edge case: the serialized registry for an unchanged archived row is byte-identical before and after the run.
 - Edge case: a redacted archived row whose node is public again: unchanged.
 - Edge case: the node is observed under another name, and under another owner: no rename or transfer is reported for an archived row.
-- Edge case: a duplicate group by node ID that contains an archived row keeps the archived state.
 - Integration: a three-run sequence, archived then private then public again, ends redacted and archived.
 
 **Verification:** the whole-registry reconcile over a fixture with one archived row produces a plan with no change for that row.
@@ -363,7 +364,7 @@ Leak-scan decision for one selected row:
 - A redacted archived row is re-archived only when GitHub shows the same node public under the name its page is attributed to; otherwise refuse.
 - `unarchive`: prove the node public and not archived on GitHub; set the state to `pending`; keep the survey history fields; remove the date and notice; rebuild the index; log.
 - Identity evidence comes from a GraphQL node lookup with the read-only token: node ID, database ID, owner, name, visibility and archived flag. The stored `database_id` is kept through a redaction, so a redacted row can be proven again.
-- Refusals carry fixed reasons and name no repository: not tracked, private row, identity not confirmed, declaration pending, already in the requested state, ambiguous legacy match.
+- Refusals carry fixed reasons and name no repository: not tracked, private row, identity not confirmed, declaration pending, already in the requested state, ambiguous legacy match, another row shares this repository's node ID or database ID.
 - The change-policy check compares the row and the page before and after, field by field. Archive may change the row's state, its ID fields when they were missing, its redaction, and nothing else; on the page, the `archived` key and the notice paragraph only. Unarchive may change the state and remove that key and paragraph. Any other difference fails the action.
 - The run summary states the action, the outcome and the node ID.
 
@@ -377,6 +378,7 @@ Leak-scan decision for one selected row:
 - Happy path: archive of the legacy row shape (no node ID, no `private`) with a matching node stores the IDs and archives it.
 - Error path: the legacy match is refused when two rows lack a node ID and share the name, when no page lists the URL, and when GitHub's owner or name differs.
 - Error path: a private row, an untracked node, a node GitHub cannot confirm, and a row with a pending declaration are each refused with their reason and no write.
+- Error path: `archive` is refused, with no write, when another row shares the target's node ID or database ID.
 - Edge case: archiving an archived named row is a no-op that reports the state and writes nothing.
 - Error path: re-archiving a redacted archived row whose repository now has another name is refused.
 - Happy path: unarchive sets `pending`, keeps `last_survey_at` and `last_survey_status`, removes the date and notice, and regroups the index. Cases: a previously onboarded row, a never-surveyed row, and a row with a future eligibility date, which is kept.
@@ -565,11 +567,11 @@ Leak-scan decision for one selected row:
 |------|------------|
 | A reader on `main` throws on `archived` before it understands it | Unit 1 lands first; no writer exists until Unit 6 |
 | An archived row can be written before it is protected | Units 2-5 merge before Unit 6; the sequencing is a requirement |
-| A reconcile path other than the early exit alters an archived row | Exclusions in rename detection, duplicate merging and visibility restriction, each with a test |
+| A reconcile path other than the early exit alters an archived row | The early exit precedes migration; rename detection and the probes skip archived rows; the duplicate merge keeps the archived row as stored; each with a test. The `archive` action refuses when another row shares the node or database ID, so duplicates do not arise |
 | A repository turns private while reconcile cannot see it, and its name stays in the registry | Accepted. The scans treat it as private at every scan |
 | A redacted archived row makes its page uneditable | Stated in the docs; re-running `archive` restores the name |
 | A dashboard on an older package moves an archived page back under Repos or drops the notice | Unit 7 waits for the dashboard deploy; a dashboard save of an archived page is read back first |
-| Duplicate and ambiguous access-list entries redact a public archived row for good | Redaction needs an explicit private flag; tests cover public duplicates and a missing flag |
+| Duplicate and ambiguous access-list entries redact a public archived row for good | Redaction needs an explicit raw `private: true` from some channel; tests cover public duplicates, a missing flag and channel precedence |
 | An alias equals a live page's slug and the site silently picks one | Declarations and the one-time fix refuse or skip that case |
 | Stryker survivors in the privacy modules | Table-driven tests in both modes; the mutation gate runs on Unit 3 |
 

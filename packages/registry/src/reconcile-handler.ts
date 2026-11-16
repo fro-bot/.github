@@ -63,7 +63,8 @@ import {
   type WikiPageState,
 } from './metadata-wiki-rename-guard.ts'
 import {
-  fetchAccessList,
+  collectExplicitPrivateNodeIds,
+  fetchAccessListing,
   fetchContribRepos,
   fetchFieldProbes,
   fetchOwnedRepos,
@@ -211,6 +212,10 @@ export interface HandleReconcileResult {
   wikiGuardKept: number
   /** Subset of `wikiGuardKept` kept because wiki state could not be verified. */
   wikiGuardUnverifiable: number
+  /** Rows stored `archived`. Reconcile leaves them alone; the job summary reads this top-level count. */
+  archived: number
+  /** Archived rows redacted this run because the access list explicitly reported their node private. */
+  archivedRedacted: number
 }
 
 /**
@@ -261,7 +266,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //               infrastructure required, deferred to a future plan).
   //    Merge with collab > owned > contrib precedence so a collab entry wins on overlap and
   //    `validateAccessList` (which rejects duplicates) doesn't throw.
-  const collabAccess = await fetchAccessList(userOctokit)
+  const collabListing = await fetchAccessListing(userOctokit)
+  const collabAccess = collabListing.entries
   const owned = await fetchOwnedRepos(discoveryOctokit, owner, logger)
   const contrib = await fetchContribRepos(discoveryOctokit, allowlist, logger)
   // A partial access list cannot prove that anything is no longer pending, so the rename close pass
@@ -271,6 +277,14 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     collab: collabAccess,
     owned: owned.entries,
     contrib: contrib.entries,
+  })
+
+  // The only evidence that redacts an archived row: every channel's raw `private === true`, read before
+  // the collab flag is made fail-closed, before any eligibility filter and before channel precedence.
+  const explicitPrivateNodeIds = collectExplicitPrivateNodeIds({
+    collab: collabListing.explicitPrivateNodeIds,
+    owned: owned.explicitPrivateNodeIds,
+    contrib: contrib.explicitPrivateNodeIds,
   })
 
   // 4. For each tracked entry missing from the access list, probe `GET /repos/{o}/{r}`.
@@ -287,7 +301,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   // Replaced by each commit attempt's re-plan, so everything after the commit uses the plan
   // that was actually written (or, for a no-op or never-run commit, the last one computed).
   let guarded = await planWithWikiGuard(
-    {currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, now},
+    {currentRepos, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, explicitPrivateNodeIds, now},
     lookupWikiPage,
   )
   let plan = guarded.plan
@@ -374,7 +388,16 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
         }
         // Recomputed against the fresh snapshot and data tree on every attempt.
         guarded = await planWithWikiGuard(
-          {currentRepos: currentParsed, accessList, perRepoStatus, allowlist, fieldProbes, accessChannelByKey, now},
+          {
+            currentRepos: currentParsed,
+            accessList,
+            perRepoStatus,
+            allowlist,
+            fieldProbes,
+            accessChannelByKey,
+            explicitPrivateNodeIds,
+            now,
+          },
           lookupWikiPage,
         )
         return guarded.plan.nextRepos
@@ -408,14 +431,17 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   //    The exclusion predicate (pending rename or blocked transfer) is applied to the final list here, after
   //    the planner, regain and pending branches have all pushed, so no path can survey an excluded node.
   const dispatchCandidates = dropExcludedDispatches(plan.dispatches, new Set(plan.excludedNodeIds))
-  const prioritizedDispatches = prioritizeDispatches(dispatchCandidates, plan.nextRepos.repos)
+  // An archived row is never a dispatch target, so it must not answer a lookup by `owner/name` either: a
+  // different repository may hold the name its row stores.
+  const activeRows = plan.nextRepos.repos.filter(row => row.onboarding_status !== 'archived')
+  const prioritizedDispatches = prioritizeDispatches(dispatchCandidates, activeRows)
   const dispatchCap = maxDispatchesPerRun > 0 ? maxDispatchesPerRun : prioritizedDispatches.length
 
   // Rotate within the never-surveyed (null last_survey_at) leading group so that all
   // pending repos cycle through dispatch slots across successive runs. Without rotation,
   // repos that sort alphabetically earlier always fill the cap first, leaving later-
   // sorting repos perpetually deferred when the cap is smaller than the null group.
-  const repoSurveyMap = new Map(plan.nextRepos.repos.map(r => [`${r.owner}/${r.name}`, r.last_survey_at]))
+  const repoSurveyMap = new Map(activeRows.map(r => [`${r.owner}/${r.name}`, r.last_survey_at]))
   const nullGroupSize = prioritizedDispatches.filter(
     d => (repoSurveyMap.get(`${d.owner}/${d.repo}`) ?? null) === null,
   ).length
@@ -435,7 +461,7 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
 
   // Index entries by key so the dispatch loop and the byChannel breakdown can resolve
   // per-dispatch channel + last_survey_at without scanning nextRepos repeatedly.
-  const entryByKey = new Map(plan.nextRepos.repos.map(r => [`${r.owner}/${r.name}`, r]))
+  const entryByKey = new Map(activeRows.map(r => [`${r.owner}/${r.name}`, r]))
 
   // Populate per-channel dispatch + deferred counts. The selected slice fires this run;
   // the deferred slice (rotatedDispatches[dispatchCap..]) waits for next run.
@@ -568,6 +594,8 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     starFailures: starOutcome.starFailures,
     wikiGuardKept: wikiGuard.kept,
     wikiGuardUnverifiable: wikiGuard.unverifiable,
+    archived: plan.summary.archived ?? 0,
+    archivedRedacted: plan.summary.archivedRedacted ?? 0,
   }
 }
 
@@ -656,6 +684,7 @@ function planHasChanges(plan: ReconcileResult): boolean {
     summary.migrated > 0 ||
     summary.renamed > 0 ||
     summary.merged > 0 ||
+    (summary.archivedRedacted ?? 0) > 0 ||
     plan.dispatches.length > 0 ||
     // Rename reports are issue-only: they never change metadata, so they don't warrant a data-branch write.
     plan.issues.some(issue => issue.kind !== 'rename-pending')
@@ -673,6 +702,7 @@ export function formatCommitMessage(summary: ReconcileSummary): string {
     summary.migrated > 0 ? `+${summary.migrated} migrated` : undefined,
     summary.renamed > 0 ? `+${summary.renamed} renamed` : undefined,
     summary.merged > 0 ? `+${summary.merged} merged` : undefined,
+    (summary.archivedRedacted ?? 0) > 0 ? `+${summary.archivedRedacted} archived-redacted` : undefined,
   ].filter((suffix): suffix is string => suffix !== undefined)
   return suffixes.length > 0 ? `${base}, ${suffixes.join(', ')}` : base
 }

@@ -143,6 +143,13 @@ export interface ReconcileInput {
    * apply. Private/unknown results bypass protection, so a public name is never resurrected.
    */
   protectedPublicAssociations?: ReadonlySet<string>
+  /**
+   * Node IDs for which some raw listing, in any channel, said `private === true` (see
+   * `collectExplicitPrivateNodeIds`). The only evidence that redacts an archived row. It is separate from
+   * `accessList[].private`, which is fail-closed (a missing flag reads as private) and keeps one entry per
+   * name. Absent means no evidence.
+   */
+  explicitPrivateNodeIds?: ReadonlySet<string>
   now: Date
 }
 
@@ -203,7 +210,8 @@ export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue | VisibilityTra
  * Per-channel breakdown of reconcile activity for one run. Operators read these to
  * answer "how much did each channel contribute today?" without aggregating manually.
  *
- * - `tracked`: entries on `nextRepos` carrying this channel after the run.
+ * - `tracked`: entries on `nextRepos` carrying this channel after the run, except archived rows, which
+ *   `ReconcileSummary.archived` reports instead.
  * - `dispatched`: dispatches actually fired this run (post-cap, post-rotation).
  * - `deferred`: dispatch candidates excluded by the per-run cap. Sums to
  *   `dispatchesDeferred` across all channels.
@@ -318,6 +326,19 @@ export interface ReconcileSummary {
    * never successfully surveyed).
    */
   stuckCandidates: number
+  /**
+   * Number of rows stored `archived` after the run. Reconcile leaves them alone (see
+   * {@link classifyArchived}); they are not counted in {@link ChannelStats.tracked}. Absent, not
+   * zero, when the registry holds none, so a registry without an archived row summarises exactly as
+   * it did before the state existed.
+   */
+  archived?: number
+  /**
+   * Number of archived rows redacted this run because the access list explicitly reported their
+   * node private. The only write reconcile makes to an archived row, and it commits like any other
+   * change. Absent when zero.
+   */
+  archivedRedacted?: number
 }
 
 export interface ReconcileResult {
@@ -446,6 +467,8 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   const accessNodePrivacy = indexAccessNodePrivacy(accessList)
   const allowlistedOwners = new Set(allowlist.approved_inviters.map(i => i.username))
 
+  const explicitPrivateNodeIds = input.explicitPrivateNodeIds ?? new Set<string>()
+
   // Renames and transfers are detected, never applied. One exclusion set (pending rename or blocked
   // transfer) is computed here and filters every dispatch path below plus the floor.
   const detection = detectRenames({rows: currentRepos.repos, accessList, fieldProbes})
@@ -503,6 +526,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       dispatches,
       rawIssues,
       transitionIssues,
+      explicitPrivateNodeIds,
       now,
     })
     return keepProtectedName({entry, classified, protectedAssociations, summary, before})
@@ -702,6 +726,11 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   // boundary is stable regardless of the time-of-day component of `now`.
   const nowMs = now.getTime()
   for (const entry of next.repos) {
+    // Archived rows are counted from the final rows (after the duplicate merge), not as tracked.
+    if (entry.onboarding_status === 'archived') {
+      summary.archived = (summary.archived ?? 0) + 1
+      continue
+    }
     summary.byChannel[entry.discovery_channel ?? 'collab'].tracked += 1
 
     if (entry.onboarding_status === 'onboarded') {
@@ -758,7 +787,7 @@ export interface RenameDetection {
  * Evidence is the access-list entry for the row's node (when it is public and unambiguous) and the
  * identity probe of the stored name (when it returned the same node). A missing probe value is no
  * information, never a rename. An archived access entry can evidence a transfer but not a rename.
- * Owners compare case-insensitively (logins are); names compare exactly.
+ * Owners compare case-insensitively (logins are); names compare exactly. An archived row is skipped.
  */
 export function detectRenames(input: {
   rows: readonly RepoEntry[]
@@ -770,6 +799,8 @@ export function detectRenames(input: {
   const detection: RenameDetection = {pending: [], transfers: []}
 
   for (const row of input.rows) {
+    // An archived row never reports a rename or a transfer.
+    if (row.onboarding_status === 'archived') continue
     if (row.owner === REDACTED_OWNER || row.private !== false || row.node_id === undefined) continue
     const nodeId = row.node_id
     const access = accessByNodeId.get(nodeId)
@@ -817,6 +848,8 @@ interface ClassifyTrackedParams {
   allowlistedOwners: Set<string>
   /** Stored `owner/name` keys of rows whose owner changed on GitHub (see {@link detectRenames}). */
   transferKeys: ReadonlySet<string>
+  /** Node IDs for which some access-list entry explicitly reports `private === true` (see {@link classifyArchived}). */
+  explicitPrivateNodeIds: ReadonlySet<string>
   summary: ReconcileSummary
   dispatches: DispatchRequest[]
   rawIssues: RawIssue[]
@@ -877,7 +910,8 @@ function restrictGroupVisibility(entries: RepoEntry[], group: number[]): void {
   const groupNodeId = rows.map(row => storedRepoNodeId(row)).find(nodeId => nodeId !== undefined)
   for (const index of group) {
     const row = entries[index]
-    if (row === undefined || row.private !== false) continue
+    // An archived row is redacted only on explicit evidence (see classifyArchived), never by a sibling.
+    if (row === undefined || row.private !== false || row.onboarding_status === 'archived') continue
     const nodeId = storedRepoNodeId(row) ?? groupNodeId
     if (nodeId === undefined) {
       // No node ID to redact with: drop the flag so visibility is unknown (never admitted as public).
@@ -1018,7 +1052,13 @@ function mergeDuplicateEntries(
     const freshestSurvey = freshest.entry
     const firstIndex = group[0]
     if (firstIndex === undefined) throw new Error('reconcile: duplicate group is empty')
-    const merged: RepoEntry = {
+    // The first archived row of a group is its survivor and is returned exactly as stored: it takes no
+    // field from the rows merged into it. Groups are formed, guarded and counted as for any duplicate.
+    const archivedSurvivor = group
+      .toSorted((left, right) => left - right)
+      .map(index => working[index])
+      .find(row => row?.onboarding_status === 'archived')
+    const merged: RepoEntry = archivedSurvivor ?? {
       ...survivor.entry,
       added:
         group
@@ -1065,10 +1105,12 @@ function filterDispatchesAfterMerge(params: {
   const seenNodeIds = new Set<string>()
   return params.dispatches.filter(dispatch => {
     if (seenNodeIds.has(dispatch.node_id)) return false
+    // An archived row never answers for a dispatch: a different repository may hold its stored name.
     const entry = params.nextEntries.find(
       candidate =>
-        repoKey(candidate.owner, candidate.name) === repoKey(dispatch.owner, dispatch.repo) ||
-        storedRepoNodeId(candidate) === dispatch.node_id,
+        candidate.onboarding_status !== 'archived' &&
+        (repoKey(candidate.owner, candidate.name) === repoKey(dispatch.owner, dispatch.repo) ||
+          storedRepoNodeId(candidate) === dispatch.node_id),
     )
     const access = params.accessByNodeId.get(dispatch.node_id)
     if (entry === undefined || access === undefined) return false
@@ -1083,6 +1125,35 @@ function filterDispatchesAfterMerge(params: {
     seenNodeIds.add(dispatch.node_id)
     return true
   })
+}
+
+/**
+ * The early exit for a row stored `archived`: it is returned as stored, whatever GitHub shows (archived
+ * or not, listed or absent, any probe result, renamed, transferred, a duplicate listing). No migration,
+ * refresh, survey, lost-access flip, regain or un-redaction can reach it.
+ *
+ * The one write is redaction, on one exact piece of evidence: the row's own node ID is in
+ * `ReconcileInput.explicitPrivateNodeIds`, the nodes some raw listing reported `private === true`. It is
+ * not read from `accessList`, whose `private` is fail-closed (a missing flag reads as private) and keeps
+ * one entry per name. NOT evidence: a duplicate listing (so `accessPrivateForStorage` is not used here), a
+ * missing or null `private` flag, a probe result, or a lookup that failed. A row with no node ID cannot be
+ * redacted. A row already redacted (owner `[REDACTED]`) is returned unchanged whatever the evidence, so
+ * a node that is public again never restores a name.
+ */
+function classifyArchived(params: ClassifyTrackedParams): RepoEntry {
+  const {entry, summary, transitionIssues} = params
+  if (entry.owner === REDACTED_OWNER) return entry
+
+  const nodeId = storedRepoNodeId(entry)
+  if (nodeId === undefined || !params.explicitPrivateNodeIds.has(nodeId)) return entry
+
+  summary.archivedRedacted = (summary.archivedRedacted ?? 0) + 1
+  if (entry.private !== true) {
+    // The went-private notice names the node ID only, like every visibility transition.
+    summary.visibilityTransitions += 1
+    transitionIssues.push({kind: 'visibility-transition', node_id: nodeId})
+  }
+  return normalizeRepoEntryForStorage(entry, {private: true, node_id: nodeId})
 }
 
 /**
@@ -1105,6 +1176,9 @@ function classifyTracked(params: ClassifyTrackedParams): RepoEntry {
     transitionIssues,
     now,
   } = params
+
+  // An archived row is left alone before any migration, probe or access-list reading can touch it.
+  if (params.entry.onboarding_status === 'archived') return classifyArchived(params)
 
   // Backfill new schema fields on legacy entries before any other logic. Idempotent on
   // already-populated entries (returns by reference) so steady-state runs don't bump the
@@ -1598,6 +1672,7 @@ function isNoOp(summary: ReconcileSummary, dispatches: DispatchRequest[], issues
     summary.renamed === 0 &&
     summary.merged === 0 &&
     summary.transferBlocked === 0 &&
+    (summary.archivedRedacted ?? 0) === 0 &&
     dispatches.length === 0 &&
     issues.length === 0
   )

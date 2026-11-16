@@ -30,14 +30,24 @@ interface AccessListApiEntry {
   node_id: string
 }
 
-export async function fetchAccessList(userOctokit: OctokitClient): Promise<AccessListEntry[]> {
+/** The collaborator listing, plus what the raw response said before `private` was made fail-closed. */
+export interface AccessListing {
+  entries: AccessListEntry[]
+  /** Node IDs whose raw listing entry had `private === true`. A missing or null flag is not evidence. */
+  explicitPrivateNodeIds: Set<string>
+}
+
+export async function fetchAccessListing(userOctokit: OctokitClient): Promise<AccessListing> {
   try {
     const repos = (await userOctokit.paginate(userOctokit.rest.repos.listForAuthenticatedUser, {
       affiliation: 'collaborator',
       per_page: 100,
     })) as unknown as AccessListApiEntry[]
     const entries: AccessListEntry[] = []
+    const explicitPrivateNodeIds = new Set<string>()
     for (const r of repos) {
+      // Evidence comes before the owner guard: an entry that cannot be listed is still private.
+      if (r.private === true) explicitPrivateNodeIds.add(r.node_id)
       if (r.owner == null) continue // GitHub nulls owner for deleted-user repos; skip.
       entries.push({
         owner: r.owner.login,
@@ -47,10 +57,29 @@ export async function fetchAccessList(userOctokit: OctokitClient): Promise<Acces
         node_id: r.node_id,
       })
     }
-    return entries
+    return {entries, explicitPrivateNodeIds}
   } catch (error: unknown) {
     throw toApiError(error, 'enumerating /user/repos')
   }
+}
+
+export async function fetchAccessList(userOctokit: OctokitClient): Promise<AccessListEntry[]> {
+  return (await fetchAccessListing(userOctokit)).entries
+}
+
+/**
+ * Every node ID any channel's raw response reported private. Each channel reads its own raw responses
+ * before its eligibility filters ({@link fetchAccessListing}, {@link fetchOwnedRepos},
+ * {@link fetchContribRepos}), and this union is taken before {@link mergeAccessChannels} keeps one entry
+ * per name, so a private observation that was filtered or lost on precedence still counts. Only an exact
+ * `true` is evidence. Reconcile redacts an archived row on this set alone.
+ */
+export function collectExplicitPrivateNodeIds(input: {
+  collab: ReadonlySet<string>
+  owned: ReadonlySet<string>
+  contrib: ReadonlySet<string>
+}): Set<string> {
+  return new Set([...input.collab, ...input.owned, ...input.contrib])
 }
 
 /**
@@ -74,6 +103,8 @@ export async function fetchPerRepoStatus(
   const accessNodeIds = new Set(accessList.map(a => a.node_id))
   const map = new Map<string, RepoStatusProbe>()
   for (const entry of currentRepos.repos) {
+    // Nothing a probe returns can change an archived row, and an unclassified status would abort the run.
+    if (entry.onboarding_status === 'archived') continue
     const key = `${entry.owner}/${entry.name}`
     if (accessKeys.has(key)) continue
     const nodeId = storedRepoNodeId(entry)
@@ -156,6 +187,7 @@ export async function fetchFieldProbes(
   const map = new Map<string, FieldProbe>()
   let failed = 0
   for (const entry of currentRepos.repos) {
+    if (entry.onboarding_status === 'archived') continue // no field of an archived row is ever refreshed
     const key = `${entry.owner}/${entry.name}`
     const access = accessForTrackedEntry(entry, key, accessByKey, accessByNodeId)
     if (access === undefined) continue // only probe still-accessible tracked entries
@@ -404,6 +436,8 @@ const FRO_BOT_WORKFLOW_PATH = '.github/workflows/fro-bot.yaml'
  * is then missing repos it should have, so nothing may be concluded from a repo's absence.
  */
 interface ChannelEnumeration {
+  /** Node IDs whose raw response said `private === true`, read before any eligibility filter. */
+  explicitPrivateNodeIds: Set<string>
   entries: AccessListEntry[]
   complete: boolean
 }
@@ -499,11 +533,15 @@ export async function fetchOwnedRepos(
   } catch (error: unknown) {
     const status = isRecord(error) && typeof error.status === 'number' ? error.status : 'unknown'
     logger.warn(`reconcile: owned-channel enumeration failed (status=${status}); continuing without owned repos.`)
-    return {entries: [], complete: false}
+    return {entries: [], complete: false, explicitPrivateNodeIds: new Set()}
   }
 
   const entries: AccessListEntry[] = []
+  const explicitPrivateNodeIds = new Set<string>()
   for (const repo of allRepos) {
+    // Evidence comes before every filter: a private repository that is archived, a fork or another owner's
+    // is still private.
+    if (repo.private === true) explicitPrivateNodeIds.add(repo.node_id)
     if (repo.owner.login !== owner) continue
     if (repo.archived) continue
     if (repo.fork) continue
@@ -517,7 +555,7 @@ export async function fetchOwnedRepos(
       node_id: repo.node_id,
     })
   }
-  return {entries, complete: true}
+  return {entries, complete: true, explicitPrivateNodeIds}
 }
 
 /**
@@ -554,6 +592,7 @@ export async function fetchContribRepos(
   const directRepos = allowlist.approved_contrib_repos ?? []
   const seen = new Set<string>()
   const entries: AccessListEntry[] = []
+  const explicitPrivateNodeIds = new Set<string>()
   let complete = true
 
   for (const ownerRepo of directRepos) {
@@ -569,6 +608,8 @@ export async function fetchContribRepos(
       continue
     }
     if (meta === null) continue
+    // Evidence comes before every filter below: only an exact `true` counts (a missing flag read as false).
+    if (meta.private) explicitPrivateNodeIds.add(meta.node_id)
     if (meta.archived || meta.fork) continue
     const probe = await probeContribWorkflow(discoveryOctokit, directOwner, directName, logger)
     if (probe === 'failed') {
@@ -587,7 +628,7 @@ export async function fetchContribRepos(
     seen.add(key)
   }
 
-  return {entries, complete}
+  return {entries, complete, explicitPrivateNodeIds}
 }
 
 /**
