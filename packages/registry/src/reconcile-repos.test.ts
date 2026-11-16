@@ -11367,6 +11367,25 @@ describe('reconcileRepos leaves an archived row alone', () => {
       expectArchivedUntouched(archPlan(result.nextRepos.repos, [archAccess()]), result.nextRepos.repos)
     })
 
+    it('the archived survivor takes no field from a fresher duplicate', () => {
+      const archived = archRow()
+      const fresher = archSibling({
+        added: '2025-06-01',
+        last_survey_at: '2026-04-10',
+        last_survey_status: 'failure',
+        next_survey_eligible_at: '2026-05-10',
+      })
+
+      for (const rows of [
+        [archived, fresher],
+        [fresher, archived],
+      ]) {
+        const result = archPlan(rows, accessFormer())
+
+        expect(serializeRows(result.nextRepos.repos)).toBe(serializeRows([archived]))
+      }
+    })
+
     it('a redacted archived row survives a same-node duplicate untouched', () => {
       const redacted = archRow({owner: '[REDACTED]', name: ARCH_NODE, private: true})
 
