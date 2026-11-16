@@ -102,7 +102,11 @@ function buildCleanFiles(): Record<string, string> {
 }
 
 function emptyGateInputs() {
-  return {publicSlugMap: new Map<string, readonly RepoEntry[]>(), grandfatherPages: []}
+  return {
+    publicSlugMap: new Map<string, readonly RepoEntry[]>(),
+    unconfirmedSlugs: new Set<string>(),
+    grandfatherPages: [],
+  }
 }
 
 /**
@@ -122,7 +126,7 @@ function passingGateInputs(files: Record<string, string>) {
         content,
       }
     })
-  return {publicSlugMap: new Map<string, readonly RepoEntry[]>(), grandfatherPages}
+  return {publicSlugMap: new Map<string, readonly RepoEntry[]>(), unconfirmedSlugs: new Set<string>(), grandfatherPages}
 }
 
 describe('planWikiRepairs', () => {
@@ -550,6 +554,7 @@ describe('gateWikiRepairs', () => {
     const result = gateWikiRepairs({
       repairedWikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     })
 
@@ -599,6 +604,7 @@ describe('gateWikiRepairs', () => {
     const result = gateWikiRepairs({
       repairedWikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     })
 
@@ -659,6 +665,7 @@ describe('runWikiRepair with a blocked public repo page', () => {
       tipSha: 'tip-1',
       wikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     }))
 
@@ -1138,6 +1145,7 @@ describe('runWikiRepair', () => {
       tipSha: 'tip-1',
       wikiFiles: files,
       publicSlugMap: buildPublicSlugMap(repos),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages: [],
     }))
     const getCurrentDataTipSha = vi.fn(async () => 'tip-1')
@@ -1273,6 +1281,7 @@ describe('runWikiRepair against a data branch that moves under it (head reload)'
       tipSha: restored.tipSha,
       wikiFiles: restored.restoredFiles,
       publicSlugMap: new Map<string, readonly RepoEntry[]>(),
+      unconfirmedSlugs: new Set<string>(),
       grandfatherPages,
     }))
     return {
@@ -2008,5 +2017,30 @@ describe('runWikiRepairCli with an archived row that shares a slug', () => {
     const result = await repair(recordingResolver(answers.public).resolver, '')
 
     expect(result).toMatchObject({privacy_blocked: 1, aborted: 1})
+  })
+})
+
+describe('the claimant set cannot be omitted', () => {
+  it('is required by gateWikiRepairs, the plan params and the tree snapshot: leaving it out does not compile', () => {
+    // `check-types` compiles this file: each directive fails the build if the omission ever type-checks.
+    // @ts-expect-error unconfirmedSlugs is required, so a caller cannot silently drop the collision check
+    expect(gateWikiRepairs({repairedWikiFiles: {}, publicSlugMap: new Map(), grandfatherPages: []}).ok).toBe(true)
+
+    // @ts-expect-error unconfirmedSlugs is required
+    const params: Parameters<typeof planAndVerifyWikiRepairs>[0] = {
+      baselineFindings: [],
+      wikiFiles: {},
+      publicSlugMap: new Map(),
+      grandfatherPages: [],
+    }
+    // @ts-expect-error unconfirmedSlugs is required
+    const snapshot: Awaited<ReturnType<typeof loadWikiRepairTreeAtHead>> = {
+      tipSha: 'tip',
+      wikiFiles: {},
+      publicSlugMap: new Map(),
+      grandfatherPages: [],
+    }
+
+    expect([params, snapshot]).toHaveLength(2)
   })
 })

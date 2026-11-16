@@ -108,6 +108,7 @@ function leaksFor(files: Record<string, string>, publicNames: string[]) {
     dataWikiPages: repoSnapshots(files),
     publicSlugMap: buildPublicSlugMap(publicRows(publicNames)),
     grandfatherPages: [],
+    unconfirmedSlugs: new Set<string>(),
   })
 }
 

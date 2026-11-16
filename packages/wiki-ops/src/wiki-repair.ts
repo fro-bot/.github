@@ -287,7 +287,7 @@ export interface GateWikiRepairsParams {
   readonly repairedWikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
   /** Slugs claimed by an archived row GitHub did not confirm public; see `buildUnconfirmedArchivedSlugs`. */
-  readonly unconfirmedSlugs?: ReadonlySet<string>
+  readonly unconfirmedSlugs: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -332,7 +332,7 @@ export interface PlanAndVerifyWikiRepairsParams {
   readonly baselineFindings: readonly WikiLintFinding[]
   readonly wikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
-  readonly unconfirmedSlugs?: ReadonlySet<string>
+  readonly unconfirmedSlugs: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 
@@ -394,7 +394,7 @@ export interface WikiRepairTreeSnapshot {
   readonly wikiFiles: Record<string, string>
   readonly publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
   /** Slugs claimed by an archived row GitHub did not confirm public: they block, and never attribute. */
-  readonly unconfirmedSlugs?: ReadonlySet<string>
+  readonly unconfirmedSlugs: ReadonlySet<string>
   readonly grandfatherPages: readonly WikiPageSnapshot[]
 }
 

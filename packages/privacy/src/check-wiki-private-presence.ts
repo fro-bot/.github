@@ -156,10 +156,13 @@ export function detectPrivateWikiLeaks(params: {
   dataWikiPages: readonly WikiPageSnapshot[]
   publicSlugMap: ReadonlyMap<string, readonly RepoEntry[]>
   grandfatherPages: readonly WikiPageSnapshot[]
-  /** Slugs of archived rows GitHub did not confirm public (`buildUnconfirmedArchivedSlugs`); none by default. */
-  unconfirmedSlugs?: ReadonlySet<string>
+  /**
+   * Slugs of archived rows GitHub did not confirm public (`buildUnconfirmedArchivedSlugs`). Required, with
+   * an empty set where there are none: a caller that left it out would silently skip the collision check.
+   */
+  unconfirmedSlugs: ReadonlySet<string>
 }): PrivateWikiLeak[] {
-  const {dataWikiPages, publicSlugMap, grandfatherPages, unconfirmedSlugs = new Set<string>()} = params
+  const {dataWikiPages, publicSlugMap, grandfatherPages, unconfirmedSlugs} = params
 
   // Build grandfather index: stem → hash (for O(1) lookup)
   const grandfatherByStem = new Map<string, string>()
