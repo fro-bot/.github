@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-13
+updated: 2026-11-16
 sources:
+  - url: https://github.com/fro-bot/space-bus/blob/2d7f6b7a5c14c1e8976080c47c6b3764f589531d/.github/workflows/fro-bot.yaml
+    sha: 2d7f6b7a5c14c1e8976080c47c6b3764f589531d
+    accessed: 2026-11-16
   - url: https://github.com/marcusrbrown/dev-like/blob/7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8/.github/workflows/link-check.yaml
     sha: 7f1f05b68ed45b3ad55a11053a5d23f39a4df8a8
     accessed: 2026-11-13
@@ -1867,6 +1870,16 @@ The replacement is worth copying verbatim:
   on the canonical report.
 - **Ambiguity is reported, not resolved by guessing**: on multiple
   trusted candidates, take the lowest issue number and say so.
+
+**Update (2026-11-16, [[fro-bot--space-bus]] #239).** space-bus, which
+closed reports by title prefix with no author check, now adopts the
+identity half: its `SCHEDULE_PROMPT` defines a report as a whole-title
+match against an anchored regex
+(`^Daily Fro Bot Report — <real calendar date> \(UTC\)$`) authored by
+exactly `fro-bot`, treats GitHub search only as a fuzzy pre-filter, closes
+older reports only after today's issue is created, and requires the body to
+be written once with `--body-file`. It carries no body marker, so trust
+rests on author plus title, one condition short of the two-key shape above.
 
 Two secondary benefits fall out. Dated issues remove the body-growth
 problem that perpetual issues patch with collapse rules — see

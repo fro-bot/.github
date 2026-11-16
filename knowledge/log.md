@@ -10795,3 +10795,25 @@ manifests and workflow files. The corrections context was empty.
 Run: https://github.com/fro-bot/.github/actions/runs/43878395710
 
 Sources: https://github.com/bfra-me/works
+
+## [2026-11-16 13:46] ingest | repo:fro-bot/space-bus
+
+Surveyed fro-bot/space-bus and updated the control-plane wiki.
+
+Repeat survey of fro-bot/space-bus. `main` moved `20ab67c` → `2d7f6b7a` (14
+commits: 12 Renovate, 2 human, all workflow/manifest/lockfile; README and
+`src/`-facing manifest shape unchanged, version still `0.15.0`). No material
+change, so no dated section and no new `sources` entry; added one short
+current-state statement near the top of [[fro-bot--space-bus]] covering the
+facts whose only prior statements sit in dated sections: MCP SDK `1.32.2`
+(security bump #202), plugin dev pin `1.19.5`, release npm `11.21.2`,
+`bfra-me/.github` `v4.43.0`, agent `v0.144.3` with `isolate-agent` (#254),
+unconditional `persist-credentials: false`, and exact-title-plus-author report
+rotation (#239). The workflow still has no `output-mode` or caller delivery
+step. Added an additive dated update to [[github-actions-ci]] under the
+title-matched rolling issue section recording space-bus's adoption of the
+author check (no body marker). Fro Bot workflow present; no follow-up needed.
+Reads limited to repo metadata, compare listing, directory listings, README,
+manifest and workflow files. Corrections context was empty.
+
+Sources: https://github.com/fro-bot/space-bus
