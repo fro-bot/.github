@@ -42,7 +42,7 @@ repos:
     node_id: string
     private: boolean
     added: ISO date
-    onboarding_status: pending | onboarded | failed | lost-access | pending-review
+    onboarding_status: pending | onboarded | failed | lost-access | pending-review | archived
     last_survey_at: ISO datetime | null
     last_survey_status: success | failure | null
     has_fro_bot_workflow: boolean
@@ -71,7 +71,7 @@ Onboarding status values:
 - `failed` — the most recent survey attempt failed.
 - `lost-access` — fro-bot no longer has collaborator access (revoked, archived, or deleted). The entry is preserved for audit; other fields stay at their last-known values.
 - `pending-review` — repo was discovered via collaborator access from an owner not listed in `allowlist.yaml`. A GitHub issue labeled `reconcile:pending-review` tracks each one; the entry stays in this state until an operator promotes it (approve and change status to `pending`) or removes it.
-- `archived` — the operator archived the repository; the row keeps its owner and name. Nothing writes this state yet. Every active job skips it: a survey of it is refused (at its start, at its persist recheck, and by the trusted writer on the `data` head it writes onto), a survey result for it writes nothing, cross-repo dispatch blocks it, Renovate discovery and dispatch drop it (matched by node or database ID, so a rename on GitHub does not hide it), the daily digest counts it as archived instead of tracked, and the daily passes open no issue or attention item for it. Reconcile and the privacy gates do not treat it differently yet.
+- `archived` — the operator archived the repository; the row keeps its owner and name. Nothing writes this state yet. Every active job skips it: a survey of it is refused (at its start, at its persist recheck, and by the trusted writer on the `data` head it writes onto), a survey result for it writes nothing, cross-repo dispatch blocks it, Renovate discovery and dispatch drop it (matched by node or database ID, so a rename on GitHub does not hide it), the daily digest counts it as archived instead of tracked, and the daily passes open no issue or attention item for it. Reconcile leaves it alone: whatever GitHub shows (archived or not, in or absent from the access list, any probe result, renamed, transferred), the row is returned exactly as stored, so it never becomes `lost-access` and never regains. The one write is a redaction: when an access-list entry for the row's own node ID explicitly has `private: true`, the row is stored redacted (`owner` `[REDACTED]`, `name` the node ID) with its archived state, `node_id` and `database_id` kept, and the went-private notice is queued. A duplicate listing, a missing `private` flag, a probe result and a failed lookup are not evidence, and a row with no `node_id` is never redacted. Reconcile never un-redacts an archived row, even when the repository is public again. A row that duplicates an archived row (the same `node_id`, the same `database_id`, or the same owner and name when either row has no ID) is held unchanged: it is not surveyed, merged, restricted or reported, and the repository is not added again as a newcomer. The job summary reports the archived, archived-redacted and held counts. The privacy gates do not treat it differently yet.
 
 For private repos in `pending-review`, the issue body omits the owner/repo name and identifies the subject via its GitHub `node_id`. Public-repo `pending-review` issues include the full `owner/repo`. The control-plane repo is public, so issue bodies never leak private repo names.
 
