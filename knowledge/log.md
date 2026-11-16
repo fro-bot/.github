@@ -10687,3 +10687,57 @@ Run: https://github.com/fro-bot/.github/actions/runs/43682281142
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9be739e376a0cde145b1b6d6b195e97a00b99d13
+
+## [2026-11-15 12:49] ingest | repo:marcusrbrown/extend-vscode
+
+Verified the target; no wiki page changed.
+
+Re-surveyed marcusrbrown/extend-vscode: verified, not changed. `main` moved
+`bd093f3b` → `5e644ec7` (pushed 2026-11-15) across five Renovate commits
+(#578–#582). Comparing the two SHAs shows only `package.json` and
+`pnpm-lock.yaml` changed. `@types/vscode` 1.140.0 → 1.146.0, `eslint`
+10.13.0 → 10.14.0, `@playwright/test` 1.64.0 → 1.65.0, `prettier` 3.9.0 →
+3.10.0. The README, `pnpm-workspace.yaml`, and all six workflow files are
+unchanged. The root listing and workflow set match the last survey. Repo is
+still public, default branch `main`, not archived, TypeScript, MIT, and
+`node_id` is unchanged. `engines.vscode`, `packageManager` (pnpm 10.34.5), and
+version `0.1.0` did not move. The types-vs-engine gap widened by six minors,
+which is a version bump and does not need a new note: the page already records
+that contradiction. The page already says there is no Fro Bot workflow, so no
+new note was added. Under the repeat-survey rules,
+`wiki/repos/marcusrbrown--extend-vscode.md` was left untouched, including its
+frontmatter and `updated` date. Dependency-only drift justifies no topic,
+entity, or comparison change. Reads were limited to repository metadata, the
+root and workflow listings, and the compare of the manifest diff. Corrections
+context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43715597103
+
+Sources: https://github.com/marcusrbrown/extend-vscode
+
+## [2026-11-15 12:52] ingest | repo:bfra-me/renovate-action
+
+Surveyed bfra-me/renovate-action and updated the control-plane wiki.
+
+Repeat survey of `bfra-me/renovate-action` at `main` `6b29f189`. Nothing
+material changed. The repo is still public, unarchived, MIT-licensed and on
+`main`. It is still a composite action that runs Renovate in Docker, built with
+tsup and released by semantic-release. Fro Bot and Renovate are both still set
+up, so no onboarding follow-up is needed. Only versions moved: Renovate
+44.198.0 → 44.239.1, Fro Bot agent v0.130.3 → v0.144.1, Node 24.22.3,
+pnpm 11.28.11, ESLint 10.14.0, Prettier 3.10.0 and CodeQL v4.39.3.
+
+Changes to `wiki/repos/bfra-me--renovate-action.md`: a short current-state
+line at the top, because those versions were only stated inside dated
+sections. Stale undated pins were fixed where they stand: last push, the
+app-token action v3.3.0, CodeQL v4.39.3 and Dependency Review v5.0.0. The
+`updated` date was bumped and no sources entry was added. Still true: the
+cache-guard `|| github.event_name == 'push'` precedence finding, the stale
+v9/v10 deprecation and README copy, and no `output-mode` on the Fro Bot step.
+No topic, entity or comparison page needed changes. Reads were limited to repo
+metadata, the HEAD commit, directory listings, READMEs, manifests,
+`action.yaml` and workflow files. The corrections context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43715725875
+
+Sources: https://github.com/bfra-me/renovate-action

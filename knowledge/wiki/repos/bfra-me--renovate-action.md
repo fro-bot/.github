@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/renovate-action
 created: 2026-05-20
-updated: 2026-10-31
+updated: 2026-11-15
 sources:
   - url: https://github.com/bfra-me/renovate-action
     sha: 84e87ebc21d81854708f8aabacd45e211deec6d9
@@ -73,6 +73,8 @@ node_id: R_kgDOKWu8zQ
 ---
 
 # bfra-me/renovate-action
+
+**Current state (2026-11-15, `main` at `6b29f189`):** the action manifest pins Renovate **44.239.1**. Fro Bot runs agent **v0.144.1** (`95b0fbf4`). The root manifest declares Node **24.22.3**, pnpm **11.28.11**, ESLint **10.14.0**, and Prettier **3.10.0**. Renovate and org-dispatch callers stay on `bfra-me/.github` **v4.43.0**. The dated sections below still hold apart from these versions.
 
 ## Permitted-source snapshot (2026-10-31)
 
@@ -359,7 +361,7 @@ This is the **execution surface** for the bfra-me dependency-update policy that 
 - **Primary language:** Shell (action logic) + TypeScript (scaffold + tooling)
 - **Topics:** `composite`, `github-action`, `github-actions`, `renovate`, `nodejs`, `typescript`, `action`, `self-hosted`
 - **Created:** 2023-09-22
-- **Last push:** 2026-09-17 (was 2026-08-10, 2026-07-18, 2026-07-03, 2026-06-21, 2026-06-11, 2026-05-20 at prior surveys)
+- **Last push:** 2026-11-15 (was 2026-09-17, 2026-08-10, 2026-07-18, 2026-07-03, 2026-06-21, 2026-06-11, 2026-05-20 at prior surveys)
 - **Latest release:** `10.43.0` (2026-09-17T07:27:03Z; was `10.11.0` on 2026-08-09, `9.147.0` on 2026-07-18, `9.133.0` on 2026-07-03, `9.123.0` on 2026-06-21, `9.113.0` on 2026-06-11, `9.90.0` on 2026-05-20. **v10 major crossed at `10.0.0` on 2026-07-31** — Renovate v43 → v44 engine bump. ~32 releases / 38 days since the prior survey; the self-bump cadence is unchanged and still the dominant commit source)
 - **Stars / Forks / Watchers:** 3 / 1 / 3 (steady across all seven surveys)
 - **Open issues:** **2** — was 65, 64, 66, 61, 62. This is not noise settling; it is a structural change to the Fro Bot report model (see _The Report Model Rotated, and the Backlog It Had Accumulated Was Actually Drained_ below). The two are `#3804 Daily Fro Bot Report — 2026-09-17 (UTC)` and `#530 Dependency Dashboard` (open since 2024-02-22). **Zero open PRs.**
@@ -409,7 +411,7 @@ The TypeScript layer (`src/`, `dist/`) is **not** what consumers execute — `ac
 
 ### Composite Steps (`action.yaml`)
 
-1. **`get-renovate-app`** — `actions/create-github-app-token@v3.2.0` mints a short-lived installation token from the consumer's `renovate-app-id` + `renovate-app-private-key`. Scoped to `github.repository_owner`.
+1. **`get-renovate-app`** — `actions/create-github-app-token@v3.3.0` mints a short-lived installation token from the consumer's `renovate-app-id` + `renovate-app-private-key`. Scoped to `github.repository_owner`.
 2. **`configure`** — Bash step (`bash -Eeuo pipefail`) that:
    - Pins `RENOVATE_VERSION` with a `# renovate: datasource=docker depName=renovate packageName=ghcr.io/renovatebot/renovate versioning=semver` comment so Renovate self-bumps it. Pinned at `43.186.2` on 2026-05-20; `43.220.0` on 2026-06-11; `43.233.3` on 2026-06-21; `43.251.0` on 2026-07-03; `43.269.1` on 2026-07-18; `44.17.0` on 2026-08-10 (Renovate v43 → v44 major — this is the `10.0.0` breaking change); **`44.95.0` on 2026-09-17**. Because this line lives in `action.yaml`, every bump of it also trips the `action-self-test-changed` path filter — which is why the self-test is reached on engine bumps at all.
    - Builds the `renovate_git_author` identity from the GitHub App slug.
@@ -507,7 +509,7 @@ Triggers: `issues: [edited]` and `pull_request: [edited]` (Dependency Dashboard 
 
 ### `codeql-analysis.yaml` — CodeQL security scanning
 
-Language: `typescript`. Schedule: `31 7 * * 3` (Wednesdays 07:31 UTC). Uses `github/codeql-action/init|autobuild|analyze@v4.35.5`.
+Language: `typescript`. Schedule: `31 7 * * 3` (Wednesdays 07:31 UTC). Uses `github/codeql-action/init|autobuild|analyze@v4.39.3`.
 
 ### `scorecard.yaml` — OpenSSF Scorecard
 
@@ -515,7 +517,7 @@ Schedule: `20 7 * * 2` (Tuesdays 07:20 UTC). `branch_protection_rule` + `push` t
 
 ### `dependency-review.yaml` — Dependency review on PRs
 
-`actions/dependency-review-action@v4.9.0`. Job name `Review Dependencies` (status check name).
+`actions/dependency-review-action@v5.0.0`. Job name `Review Dependencies` (status check name).
 
 ### `copilot-setup-steps.yaml` — GitHub Copilot agent bootstrap
 
