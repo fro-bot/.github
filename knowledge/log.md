@@ -10763,3 +10763,35 @@ Run: https://github.com/fro-bot/.github/actions/runs/43812012295
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@5d7803192b3bb5dc1440f19aae83a8f608d950ee
+
+## [2026-11-16 13:45] ingest | repo:bfra-me/works
+
+Surveyed bfra-me/works and updated the control-plane wiki.
+
+Repeat survey of bfra-me/works at public `main`
+`c8d6d1cb14066f1573d77b8ea19e4c706264e6a0`. Nothing material changed: it is
+still public, unarchived, MIT-licensed TypeScript on `main`, and it still uses
+pnpm with Changesets releases. Fro Bot is still set up (daily 03:30 UTC
+review/autoheal workflow with autoheal `branch-pr` output and
+`persist-credentials: false`), so no onboarding follow-up is needed. Renovate
+and org-dispatch callers are still on bfra-me/.github v4.43.0, and settings
+sync is still on v4.16.0. The nine package versions and Node engines are
+unchanged. Docs `validate` still backgrounds its checks with a bare `wait`.
+The semantic-release `|| true` test fallback, the dry-run-only Docs Sync and
+the weekly report-only benchmarks are all still there. There are still 13 YAML
+workflows plus one Markdown examples file.
+
+Only versions moved: pnpm 12.16.1 → 12.20.0, Vitest 5.0.5 → 5.1.0, ESLint
+10.13.0 → 10.14.0, Prettier 3.9.10 → 3.10.1, and Fro Bot agent v0.130.3 →
+v0.144.4.
+
+Changes to `wiki/repos/bfra-me--works.md`: one short current-state line near
+the top, because those versions were only stated inside dated sections. The
+`updated` date was bumped. No sources entry was added and no dated section was
+edited. No topic, entity or comparison page needed changes. Reads were limited
+to repo metadata, the HEAD commit, directory listings, the root README,
+manifests and workflow files. The corrections context was empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/43878395710
+
+Sources: https://github.com/bfra-me/works
