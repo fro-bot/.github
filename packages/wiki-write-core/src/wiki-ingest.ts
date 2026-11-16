@@ -22,7 +22,7 @@ import {parseFrontmatterDocument} from './frontmatter.ts'
 import {findIndexEntryLines} from './line-scanners.ts'
 import {assertReposFile} from './schemas.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
-import {collectWikilinks} from './wiki-utils.ts'
+import {collectWikilinks, hasArchiveNotice, withArchiveNotice} from './wiki-utils.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -200,6 +200,7 @@ export type WikiIngestErrorCode =
   | 'CONFLICT_EXHAUSTED'
   | 'HANDOFF_BASE_INVALID'
   | 'HANDOFF_PAGE_CHANGED'
+  | 'ARCHIVE_NOTICE_MISSING'
 
 export class WikiIngestError extends Error {
   readonly code: WikiIngestErrorCode
@@ -225,6 +226,8 @@ interface ParsedWikiPage {
   slug: string
   type: WikiPageType
   title: string
+  /** The page's `archived` date, when it carries one. */
+  archived?: string
   content: string
 }
 
@@ -234,6 +237,7 @@ interface WikiFrontmatter {
   created: string
   updated: string
   node_id?: string
+  archived?: string
   sources?: WikiSource[]
   tags?: string[]
   aliases?: string[]
@@ -278,7 +282,11 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
   const migrations: {oldSlug: string; newSlug: string}[] = []
 
   for (const inputPage of params.pages) {
-    const page = prepareWikiPage(inputPage, nextFiles, params, deletedPaths, migrations)
+    const prepared = prepareWikiPage(inputPage, nextFiles, params, deletedPaths, migrations)
+    const page = {
+      path: prepared.path,
+      content: keepArchiveMarker(prepared, params.existingFiles[prepared.path], params.operation),
+    }
     assertWikiPagePath(page.path)
     const normalized = normalizeText(validateWikiPage(page.path, page.content))
     nextFiles[page.path] = normalized
@@ -1022,16 +1030,23 @@ function buildIndexDocument(existingIndex: string | undefined, pages: ParsedWiki
     },
   ]
 
-  const body = sections
-    .map(section => {
-      const entries = pages
-        .filter(page => page.type === section.type)
-        .sort((left, right) => left.title.localeCompare(right.title))
-        .map(page => existingLines.get(page.slug) ?? `- [[${page.slug}]] — ${page.title}`)
+  const entryLines = (matching: ParsedWikiPage[]): string[] =>
+    matching
+      .sort((left, right) => left.title.localeCompare(right.title))
+      .map(page => existingLines.get(page.slug) ?? `- [[${page.slug}]] — ${page.title}`)
 
+  // A repo page that carries `archived` is listed under Archived, not Repos. The section comes after the last
+  // fixed one and exists only when such a page does, so an index with none is what it always was.
+  const isArchivedRepo = (page: ParsedWikiPage): boolean => page.type === 'repo' && page.archived !== undefined
+  const archivedEntries = entryLines(pages.filter(isArchivedRepo))
+
+  const body = [
+    ...sections.map(section => {
+      const entries = entryLines(pages.filter(page => page.type === section.type && !isArchivedRepo(page)))
       return [`## ${section.heading}`, '', ...(entries.length > 0 ? entries : [section.empty]), ''].join('\n')
-    })
-    .join('\n')
+    }),
+    ...(archivedEntries.length > 0 ? [['## Archived', '', ...archivedEntries, ''].join('\n')] : []),
+  ].join('\n')
 
   return normalizeText(`${header}${body}${footer}`)
 }
@@ -1168,6 +1183,7 @@ function parseFrontmatter(path: string, content: string): WikiFrontmatter {
     created: parsed.created,
     updated: parsed.updated,
     node_id: typeof parsed.node_id === 'string' ? parsed.node_id : undefined,
+    archived: typeof parsed.archived === 'string' && parsed.archived !== '' ? parsed.archived : undefined,
     sources: Array.isArray(parsed.sources) ? parsed.sources.filter(isWikiSource) : undefined,
     tags: Array.isArray(parsed.tags) ? parsed.tags.filter(tag => typeof tag === 'string') : undefined,
     aliases: Array.isArray(parsed.aliases) ? parsed.aliases.filter(alias => typeof alias === 'string') : undefined,
@@ -1232,6 +1248,36 @@ function prepareWikiPage(
     path: page.path,
     content: updateRepoPageFrontmatter(page.content, identity.nodeId, stamp),
   }
+}
+
+/**
+ * The archive marker is system-owned. When the page already on the branch carries `archived`, the page being
+ * written keeps the date, and keeps the notice under its top heading: a survey, repair or other write that leaves
+ * either out gets it back. A `manual-edit` write (a save of the page by a person) that leaves the notice out is
+ * refused instead, because the person asked for that text and silently overriding it would hide the edit.
+ */
+function keepArchiveMarker(page: WikiPageInput, stored: string | undefined, operation: WikiOperation): string {
+  if (stored === undefined || !isRepoPagePath(page.path)) return page.content
+  let storedDate: unknown
+  try {
+    storedDate = parseFrontmatterDocument(stored).values.archived
+  } catch {
+    return page.content
+  }
+  if (typeof storedDate !== 'string' || storedDate === '') return page.content
+
+  const document = parseFrontmatterDocument(page.content)
+  const noticePresent = hasArchiveNotice(document.body)
+  if (document.values.archived === storedDate && noticePresent) return page.content
+  if (!noticePresent && operation === 'manual-edit') {
+    throw new WikiIngestError({
+      code: 'ARCHIVE_NOTICE_MISSING',
+      message: `${page.path} is archived and the incoming page lacks the archive notice under its top heading`,
+      remediation:
+        'Keep the archive notice paragraph under the page heading, or unarchive the repository with the lifecycle workflow.',
+    })
+  }
+  return renderFrontmatterDocument({...document.values, archived: storedDate}, withArchiveNotice(document.body))
 }
 
 function resolvePageIdentity(params: {
@@ -1471,6 +1517,7 @@ function collectWikiPages(files: Record<string, string>): ParsedWikiPage[] {
         slug: basename(path, '.md'),
         type: frontmatter.type,
         title: frontmatter.title,
+        archived: frontmatter.archived,
         content,
       }
     })

@@ -11,6 +11,7 @@ import {buildPublicSlugMap, buildUnconfirmedArchivedSlugs} from '@fro-bot/privac
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {commitWikiChanges, rebuildWikiIndex, WikiIngestError} from '@fro.bot/wiki-write-core/wiki-ingest'
 import {lintWikiSnapshot} from '@fro.bot/wiki-write-core/wiki-lint'
+import {ARCHIVE_NOTICE} from '@fro.bot/wiki-write-core/wiki-utils'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 import {
   createWikiRepairTreeLoader,
@@ -274,6 +275,82 @@ describe('planWikiRepairs', () => {
     expect(plan.repairedFiles[path]).toContain('type: repo')
     expect(plan.repairedFiles[path]).toContain('title: Fro Bot Widget')
     expect(plan.counts.repaired).toBeGreaterThan(0)
+  })
+
+  it('keeps the archived key and the notice when it repairs an archived page (frontmatter repair and index regeneration)', () => {
+    // #given an archived page that lost its type and title, and an archived page the index does not list
+    const files = buildCleanFiles()
+    const damaged = 'knowledge/wiki/repos/example-org--lantern.md'
+    files[damaged] = [
+      '---',
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      'archived: 2026-11-16',
+      '---',
+      '',
+      '# Example Lantern',
+      '',
+      ARCHIVE_NOTICE,
+      '',
+      'Survey notes.',
+      '',
+    ].join('\n')
+    const listed = 'knowledge/wiki/repos/example-org--beacon.md'
+    files[listed] = [
+      '---',
+      'type: repo',
+      'title: Example Beacon',
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      'archived: 2026-11-16',
+      '---',
+      '',
+      '# Example Beacon',
+      '',
+      ARCHIVE_NOTICE,
+      '',
+      'Survey notes.',
+      '',
+    ].join('\n')
+
+    // #when the repairs are planned
+    const baseline = lintWikiSnapshot({files}).deterministicFindings
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    // #then the damaged page is fixed and still carries its key and notice
+    const repaired = plan.repairedFiles[damaged] ?? ''
+    expect(repaired).toContain('title: Example Lantern')
+    expect(repaired).toContain('archived: 2026-11-16')
+    expect(repaired).toContain(`# Example Lantern\n\n${ARCHIVE_NOTICE}\n\nSurvey notes.`)
+    // #and the untouched archived page is not rewritten
+    expect(plan.repairedFiles[listed]).toBe(files[listed])
+  })
+
+  it('regenerates the index with an Archived section for an archived page the index does not list', () => {
+    const files = buildCleanFiles()
+    const path = 'knowledge/wiki/repos/example-org--lantern.md'
+    files[path] = [
+      '---',
+      'type: repo',
+      'title: Example Lantern',
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      'archived: 2026-11-16',
+      '---',
+      '',
+      '# Example Lantern',
+      '',
+      ARCHIVE_NOTICE,
+      '',
+    ].join('\n')
+
+    const baseline = lintWikiSnapshot({files}).deterministicFindings
+    const plan = planWikiRepairs({baselineFindings: baseline, wikiFiles: files})
+
+    const index = plan.repairedFiles['knowledge/index.md'] ?? ''
+    expect(index.slice(index.indexOf('## Archived'))).toContain('- [[example-org--lantern]] — Example Lantern')
+    expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).not.toContain('example-org--lantern')
+    expect(plan.repairedFiles[path]).toBe(files[path])
   })
 
   it('counts a page with an unclosed frontmatter block as out of scope and does not rewrite it', () => {

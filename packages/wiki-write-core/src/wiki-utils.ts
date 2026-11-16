@@ -321,3 +321,57 @@ export function truncateToBytes(value: string, maxBytes: number): string {
 
   return truncated === '' ? '' : `${truncated}${ellipsis}`
 }
+
+// ─── Archive notice ────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The notice an archived repo page carries as the first paragraph under its top heading: one plain sentence under
+ * 200 characters, so it is also the page's opening sentence in the agents' index. The page's `archived` frontmatter
+ * key holds the date; this text is the same everywhere, so a writer can find it, restore it and remove it exactly.
+ */
+export const ARCHIVE_NOTICE = 'This repository is archived and no longer surveyed; its page is kept for reference.'
+
+/** The line index of the page's first top-level heading, or -1 when the body has none. */
+function topHeadingIndex(lines: readonly string[]): number {
+  return lines.findIndex(line => line.startsWith('# '))
+}
+
+/** The index of the first non-blank line after the heading at `heading` (or from the start for -1). */
+function firstParagraphIndex(lines: readonly string[], heading: number): number {
+  let index = heading + 1
+  while (index < lines.length && (lines[index] ?? '').trim() === '') index += 1
+  return index
+}
+
+/** Whether the first paragraph under the page's top heading is exactly the archive notice. */
+export function hasArchiveNotice(body: string): boolean {
+  const lines = body.replaceAll('\r\n', '\n').split('\n')
+  return lines[firstParagraphIndex(lines, topHeadingIndex(lines))] === ARCHIVE_NOTICE
+}
+
+/**
+ * The body with the notice as the first paragraph under its top heading (at the start when there is no heading).
+ * A body that already has it is returned as it is.
+ */
+export function withArchiveNotice(body: string): string {
+  if (hasArchiveNotice(body)) return body
+  const lines = body.replaceAll('\r\n', '\n').split('\n')
+  const heading = topHeadingIndex(lines)
+  const rest = lines.slice(firstParagraphIndex(lines, heading))
+  const head = lines.slice(0, heading + 1)
+  return [...head, ...(heading === -1 ? [] : ['']), ARCHIVE_NOTICE, ...(rest.length === 0 ? [] : ['', ...rest])].join(
+    '\n',
+  )
+}
+
+/** The body without the notice paragraph and the blank line that separates it. A body without it is returned as it is. */
+export function withoutArchiveNotice(body: string): string {
+  if (!hasArchiveNotice(body)) return body
+  const lines = body.replaceAll('\r\n', '\n').split('\n')
+  const heading = topHeadingIndex(lines)
+  const noticeAt = firstParagraphIndex(lines, heading)
+  const rest = lines.slice(noticeAt + 1)
+  while (rest.length > 0 && (rest[0] ?? '').trim() === '') rest.shift()
+  const head = lines.slice(0, heading + 1)
+  return [...head, ...(heading === -1 || rest.length === 0 ? [] : ['']), ...rest].join('\n')
+}
