@@ -298,7 +298,7 @@ jobs:
       # action's post phase, which the agent timeout does not cover.
       - name: Run Fro Bot survey ingest
         id: survey-agent
-        uses: fro-bot/agent@637173d4fd0e9551b1c9f10fea6787e4395db660 # v0.144.3
+        uses: fro-bot/agent@b3d5cd8de673ba285160777aa1eab3d4e5c0b03a # v0.144.4
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -357,7 +357,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 1)
         id: survey-agent-retry-1
         if: ${{ success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}
-        uses: fro-bot/agent@637173d4fd0e9551b1c9f10fea6787e4395db660 # v0.144.3
+        uses: fro-bot/agent@b3d5cd8de673ba285160777aa1eab3d4e5c0b03a # v0.144.4
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -416,7 +416,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 2)
         id: survey-agent-retry-2
         if: ${{ success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}
-        uses: fro-bot/agent@637173d4fd0e9551b1c9f10fea6787e4395db660 # v0.144.3
+        uses: fro-bot/agent@b3d5cd8de673ba285160777aa1eab3d4e5c0b03a # v0.144.4
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
