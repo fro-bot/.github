@@ -211,6 +211,12 @@ export interface HandleReconcileResult {
   wikiGuardKept: number
   /** Subset of `wikiGuardKept` kept because wiki state could not be verified. */
   wikiGuardUnverifiable: number
+  /** Rows stored `archived`. Reconcile leaves them alone; the job summary reads this top-level count. */
+  archived: number
+  /** Archived rows redacted this run because the access list explicitly reported their node private. */
+  archivedRedacted: number
+  /** Non-archived rows held unchanged because they share an identity with an archived row. */
+  archivedHeld: number
 }
 
 /**
@@ -568,6 +574,9 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     starFailures: starOutcome.starFailures,
     wikiGuardKept: wikiGuard.kept,
     wikiGuardUnverifiable: wikiGuard.unverifiable,
+    archived: plan.summary.archived ?? 0,
+    archivedRedacted: plan.summary.archivedRedacted ?? 0,
+    archivedHeld: plan.summary.archivedHeld ?? 0,
   }
 }
 
@@ -656,6 +665,7 @@ function planHasChanges(plan: ReconcileResult): boolean {
     summary.migrated > 0 ||
     summary.renamed > 0 ||
     summary.merged > 0 ||
+    (summary.archivedRedacted ?? 0) > 0 ||
     plan.dispatches.length > 0 ||
     // Rename reports are issue-only: they never change metadata, so they don't warrant a data-branch write.
     plan.issues.some(issue => issue.kind !== 'rename-pending')
@@ -673,6 +683,7 @@ export function formatCommitMessage(summary: ReconcileSummary): string {
     summary.migrated > 0 ? `+${summary.migrated} migrated` : undefined,
     summary.renamed > 0 ? `+${summary.renamed} renamed` : undefined,
     summary.merged > 0 ? `+${summary.merged} merged` : undefined,
+    (summary.archivedRedacted ?? 0) > 0 ? `+${summary.archivedRedacted} archived-redacted` : undefined,
   ].filter((suffix): suffix is string => suffix !== undefined)
   return suffixes.length > 0 ? `${base}, ${suffixes.join(', ')}` : base
 }
