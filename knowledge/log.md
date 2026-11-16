@@ -10741,3 +10741,25 @@ metadata, the HEAD commit, directory listings, READMEs, manifests,
 Run: https://github.com/fro-bot/.github/actions/runs/43715725875
 
 Sources: https://github.com/bfra-me/renovate-action
+
+## [2026-11-16 06:10] manual-edit | repo:fro-bot/agent
+
+Daily oversight pass (Observe). Added a dated section to
+`wiki/repos/fro-bot--agent.md` on how `isolate-agent` trusts the runner-owned
+checkout for git: the sandbox account's `~/.gitconfig` only at `v0.144.1`, and
+also the `GIT_CONFIG_COUNT`/`KEY`/`VALUE` environment from `v0.144.2` (#2222),
+still present at `v0.144.4`. It records the residual boundary: a git call that
+replaces the environment and sends global and system config to `/dev/null`
+loses both, as one intentional fro-bot/.github test does. Staged from the
+Remediation handoff after checking the action source at both tags and the test
+file at `5d78031`; run-log figures were left out. Remediation learnings: 1
+staged, 0 skipped.
+
+Sources: https://github.com/fro-bot/agent/pull/2222, https://github.com/fro-bot/agent/blob/v0.144.4/src/harness/phases/sandbox-lifecycle.ts, https://github.com/fro-bot/.github/blob/5d78031/packages/reports/src/improvement-metrics-detect.test.ts
+Run: https://github.com/fro-bot/.github/actions/runs/43812012295
+
+## [2026-11-16 06:08] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@5d7803192b3bb5dc1440f19aae83a8f608d950ee

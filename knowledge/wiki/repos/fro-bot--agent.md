@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-15
+updated: 2026-11-16
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: b3d5cd8de673ba285160777aa1eab3d4e5c0b03a
+    accessed: 2026-11-16
   - url: https://github.com/fro-bot/agent
     sha: eaf1e3e284d58add1695b2e131e6104030689dc1
     accessed: 2026-11-15
@@ -174,6 +177,37 @@ The workspace-agent README's `/clone` example still omits the bearer now
 required by `deploy/README.md` for the :9100 control API; following that example
 against the documented current deployment would receive 401. Treat the deploy
 README as the current operator contract and the example as documentation drift.
+
+## `isolate-agent` and git trust in a runner-owned checkout (2026-11-16 oversight note)
+
+Observed from the daily oversight pass by reading the action source at two tags
+and one consumer test, not a full survey.
+
+- **The mismatch.** Under `isolate-agent` the agent runs as its own sandbox
+  account, but the checkout it works in belongs to the runner. Git refuses a
+  repository owned by another user ("dubious ownership") unless a
+  `safe.directory` entry trusts it.
+- **`v0.144.1`: user config only.** `writeSandboxGitConfig` in
+  `src/harness/phases/sandbox-lifecycle.ts` adds `safe.directory` for the
+  workspace to the sandbox account's own `~/.gitconfig`. Any git process
+  started with a different `HOME` or `GIT_CONFIG_GLOBAL` loses that entry.
+- **`v0.144.2` and later: environment too (#2222, merged 2026-11-15).** The
+  sandbox environment now also carries `GIT_CONFIG_COUNT=1`,
+  `GIT_CONFIG_KEY_0=safe.directory` and `GIT_CONFIG_VALUE_0=<workspace>`, so a
+  test that turns off the global and system files but keeps the inherited
+  environment still trusts the checkout. The `~/.gitconfig` entry stays.
+  Still present at `v0.144.4` (`b3d5cd8d`).
+- **Residual boundary.** Neither path survives a git call whose caller builds
+  the environment from scratch and also points `GIT_CONFIG_GLOBAL` and
+  `GIT_CONFIG_SYSTEM` at `/dev/null`. fro-bot/.github has such a test on
+  purpose: `packages/reports/src/improvement-metrics-detect.test.ts` ("does not
+  pick up a GIT_DIR that only process.env has", at `5d78031`) passes only
+  `PATH` plus those two variables. Under the sandbox it fails on ownership
+  before reaching its own assertion, while CI, which runs as the checkout's
+  owner, stays green. A system-level `/etc/gitconfig` entry would not reach
+  that call either; only matching ownership between the agent and the checkout
+  does. Treat a local test failure of this shape inside an isolated step as an
+  environment signal, not a code regression.
 
 ## `isolate-agent` gets a read-only filesystem view and the runner's toolchains (2026-11-15 oversight note)
 
