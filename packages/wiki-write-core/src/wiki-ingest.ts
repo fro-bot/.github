@@ -148,8 +148,13 @@ export interface CommitWikiChangesParams {
    * survey's own registry check and before this write, and a ref-race retry reads a new head, so the check
    * repeats per attempt. Omitted for a write with no single target (an event or Observe ingest). When the
    * registry is missing, truncated out of the listing, or not valid, the write goes ahead as it would without it.
+   *
+   * The row is matched by node ID. A row with no `node_id` (a legacy row) is matched by `targetRepo`, owner and
+   * name compared exactly (as the survey's own registry check does, case included); a row that has a different
+   * `node_id` is never matched by name, whatever its name.
    */
   targetNodeId?: string
+  targetRepo?: {owner: string; name: string}
   octokit?: OctokitClient
   maxRetries?: number
   /**
@@ -448,7 +453,14 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
       // Ahead of every conflict guard: a target archived on this head is not written, whatever else moved.
       if (
         params.targetNodeId !== undefined &&
-        (await isTargetArchivedInTree(octokit, owner, repo, commit.data.tree.sha, params.targetNodeId))
+        (await isTargetArchivedInTree(
+          octokit,
+          owner,
+          repo,
+          commit.data.tree.sha,
+          params.targetNodeId,
+          params.targetRepo,
+        ))
       ) {
         return {committed: false, commitSha: commit.data.sha, attempts: attempt, archived: true}
       }
@@ -610,6 +622,7 @@ async function isTargetArchivedInTree(
   repo: string,
   treeSha: string,
   nodeId: string,
+  targetRepo: {owner: string; name: string} | undefined,
 ): Promise<boolean> {
   const entries = await readTreeEntries(octokit, owner, repo, treeSha)
   const entry = entries?.get('metadata/repos.yaml')
@@ -622,7 +635,13 @@ async function isTargetArchivedInTree(
   } catch {
     return false
   }
-  return parsed.repos.some(row => row.node_id === nodeId && row.onboarding_status === 'archived')
+  return parsed.repos.some(
+    row =>
+      row.onboarding_status === 'archived' &&
+      (row.node_id === undefined
+        ? targetRepo !== undefined && row.owner === targetRepo.owner && row.name === targetRepo.name
+        : row.node_id === nodeId),
+  )
 }
 
 async function readCommitTreeSha(octokit: OctokitClient, owner: string, repo: string, sha: string): Promise<string> {
@@ -1957,6 +1976,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
   let handoff: LoadedHandoff | undefined
   // Only a survey names its one target, through `REPO_NODE_ID`; an event or Observe ingest has none.
   let targetNodeId: string | undefined
+  let targetRepo: {owner: string; name: string} | undefined
 
   try {
     if (payloadPath !== undefined && payloadPath !== '') {
@@ -2036,6 +2056,11 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
         process.env.WIKI_COMMIT_MESSAGE ??
         `feat(knowledge): ${process.env.WIKI_OPERATION ?? 'event'} ${process.env.WIKI_TARGET ?? 'wiki update'}`
       targetNodeId = operation === 'survey' ? envValue('REPO_NODE_ID') : undefined
+      // The same trusted `repo:<owner>/<name>` target the page identity uses, set by the survey's persist job from
+      // the resolve job's outputs. Only a survey with a node ID carries it, to match a legacy row with no node ID.
+      // `WIKI_TARGET` itself, not the `repo:unknown/unknown` placeholder `target` falls back to.
+      const surveyTarget = envValue('WIKI_TARGET')
+      targetRepo = targetNodeId === undefined || surveyTarget === undefined ? undefined : repoTargetParts(surveyTarget)
       committedPagePaths = changedPaths
     }
   } catch (error: unknown) {
@@ -2061,6 +2086,7 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
     deletedPaths: built.deletedPaths,
     ...(baseCommitSha === undefined ? {} : {baseCommitSha}),
     ...(targetNodeId === undefined ? {} : {targetNodeId}),
+    ...(targetRepo === undefined ? {} : {targetRepo}),
     ...(handoff === undefined
       ? {}
       : {octokit: handoff.octokit, handoff: {agentCommitSha: handoff.agentCommitSha, paths: handoff.pagePaths}}),

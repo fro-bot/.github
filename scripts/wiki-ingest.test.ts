@@ -4288,6 +4288,81 @@ describe('commitWikiChanges (a target archived on the head it writes onto)', () 
     expect(wrote()).toBe(false)
   })
 
+  describe('a target row with no node ID (a legacy row)', () => {
+    const TARGET_REPO = {owner: 'example-owner', name: 'example-repo'}
+    const legacy = (status: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+      const base = row(TARGET_NODE, status)
+      delete base.node_id
+      return {...base, ...overrides}
+    }
+
+    it('writes nothing for an archived legacy row on the first head, matched by owner and name', async () => {
+      seed(registry(legacy('archived')))
+      const head = fake.head()
+
+      const result = await commit({targetRepo: TARGET_REPO})
+
+      expect(result).toMatchObject({committed: false, archived: true, commitSha: head})
+      expect(wrote()).toBe(false)
+    })
+
+    it('rereads on the retry head: onboarded on attempt 1, archived legacy row on attempt 2, one updateRef', async () => {
+      seed(registry(legacy('onboarded')))
+      vi.useFakeTimers()
+      fake.beforeUpdateRef(1, () => fake.advance({[REGISTRY]: registry(legacy('archived'))}))
+      try {
+        const settled = commit({targetRepo: TARGET_REPO})
+        await vi.advanceTimersByTimeAsync(30_000)
+        const result = await settled
+
+        expect(result).toMatchObject({committed: false, archived: true, attempts: 2})
+        expect(fake.calls.filter(call => call.method === 'updateRef')).toHaveLength(1)
+        expect(fake.files()[PAGE]).toBe('page 1\n')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not match an archived legacy row when no owner and name were given', async () => {
+      seed(registry(legacy('archived')))
+
+      expect(await commit()).toMatchObject({committed: true})
+    })
+
+    it('does not match a legacy row of another owner or another name', async () => {
+      seed(registry(legacy('archived', {owner: 'someone-else'}), legacy('archived', {name: 'other-repo'})))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+
+    it('compares owner and name exactly, as publicRepoEntryExists does: a case difference is no match', async () => {
+      seed(registry(legacy('archived', {name: 'Example-Repo'})))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+
+    it('never matches by name a row that has a different node ID', async () => {
+      seed(registry({...row('R_kgDODIFFERENT', 'archived'), name: 'example-repo'}))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+
+    it('matches an archived row with the same node ID under a different stored name (renamed on GitHub)', async () => {
+      seed(registry({...row(TARGET_NODE, 'archived'), name: 'old-stored-name'}))
+
+      expect(await commit({targetRepo: {owner: 'example-owner', name: 'renamed-on-github'}})).toMatchObject({
+        committed: false,
+        archived: true,
+      })
+    })
+
+    it('does not fall back to the name for an onboarded row beside an archived row with another ID', async () => {
+      seed(registry(row(TARGET_NODE, 'onboarded'), {...row('R_kgDOOTHER02', 'archived'), name: 'example-repo'}))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+  })
+
   it('ignores an archived row that belongs to another repository', async () => {
     seed(registry(row(TARGET_NODE, 'onboarded'), row('R_kgDOOTHER02', 'archived')))
 
@@ -4343,6 +4418,7 @@ describe('runWikiIngestCli (a survey target archived on the head)', () => {
     tip: process.env.WIKI_INGEST_DATA_TIP_SHA,
     handoff: process.env.WIKI_HANDOFF_DIR,
     base: process.env.WIKI_HANDOFF_BASE_SHA,
+    target: process.env.WIKI_TARGET,
   }
   const page = createWikiPage({path: 'knowledge/wiki/repos/alice--project.md', type: 'repo', title: 'alice/project'})
   let dir = ''
@@ -4359,6 +4435,7 @@ describe('runWikiIngestCli (a survey target archived on the head)', () => {
     delete process.env.WIKI_HANDOFF_DIR
     delete process.env.WIKI_HANDOFF_BASE_SHA
     delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    delete process.env.WIKI_TARGET
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
   })
 
@@ -4373,6 +4450,7 @@ describe('runWikiIngestCli (a survey target archived on the head)', () => {
       ['WIKI_INGEST_DATA_TIP_SHA', saved.tip],
       ['WIKI_HANDOFF_DIR', saved.handoff],
       ['WIKI_HANDOFF_BASE_SHA', saved.base],
+      ['WIKI_TARGET', saved.target],
     ] as const) {
       if (value === undefined) delete process.env[key]
       else process.env[key] = value
@@ -4407,6 +4485,34 @@ describe('runWikiIngestCli (a survey target archived on the head)', () => {
       const commit = await run({committed: true, commitSha: 'c', attempts: 1})
 
       expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('targetNodeId')
+    },
+  )
+
+  it('passes the survey target owner and name, read from WIKI_TARGET', async () => {
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+    process.env.WIKI_TARGET = 'repo:example-owner/example-repo'
+
+    const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({
+      targetNodeId: 'R_kgDOTARGET1',
+      targetRepo: {owner: 'example-owner', name: 'example-repo'},
+    })
+  })
+
+  it.each([undefined, 'repo:unknown', 'topic:example-owner/example-repo'])(
+    'passes no owner and name when WIKI_TARGET is %j',
+    async target => {
+      process.env.WIKI_OPERATION = 'survey'
+      process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+      if (target === undefined) delete process.env.WIKI_TARGET
+      else process.env.WIKI_TARGET = target
+
+      const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+      expect(commit.mock.calls[0]?.[0]).toMatchObject({targetNodeId: 'R_kgDOTARGET1'})
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('targetRepo')
     },
   )
 
