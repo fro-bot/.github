@@ -127,8 +127,8 @@ jobs:
             echo "| Stuck candidates | $(jq '.summary.stuckCandidates // 0' "$result") |"
             echo "| Archived rows | $(jq '.archived // 0' "$result") |"
             echo "| Archived rows redacted | $(jq '.archivedRedacted // 0' "$result") |"
-            if [[ "$(jq '.archivedHeld // 0' "$result")" != "0" ]]; then
-              echo "| Rows held by an archived row | $(jq '.archivedHeld' "$result") |"
+            if [[ "$(jq '.archivedAbsorbed // 0' "$result")" != "0" ]]; then
+              echo "| Rows absorbed into an archived row | $(jq '.archivedAbsorbed' "$result") |"
             fi
             echo "| Stars added | $(jq '.starsAdded // 0' "$result") |"
             echo "| Stars already present | $(jq '.starsAlreadyPresent // 0' "$result") |"

@@ -10,7 +10,9 @@ import {describe, expect, it, vi} from 'vitest'
 import {parse, stringify} from 'yaml'
 import {commitMetadata as commitMetadataForTest} from './commit-metadata.ts'
 import {
+  collectExplicitPrivateNodeIds,
   containsFroBotAgentReference,
+  fetchAccessListing,
   fetchFieldProbes,
   fetchPerRepoStatus,
   mergeAccessChannels,
@@ -10934,6 +10936,14 @@ function archSibling(overrides: Partial<RepoEntry> = {}): RepoEntry {
   })
 }
 
+/** An archived row with no `node_id` and no `private` key: only a hand edit can leave one. */
+function legacyArchived(): RepoEntry {
+  const row = archRow()
+  delete row.node_id
+  delete row.private
+  return row
+}
+
 function archAccess(overrides: Partial<AccessListEntry> = {}): AccessListEntry {
   return makeAccess({owner: ARCH_OWNER, name: ARCH_NAME, node_id: ARCH_NODE, ...overrides})
 }
@@ -10948,6 +10958,8 @@ function archPlan(
       currentRepos: {version: 1, repos: rows},
       accessList,
       allowlist: makeAllowlist([ARCH_OWNER]),
+      // What discovery observes: every raw listing that said `private: true`. A test overrides it.
+      explicitPrivateNodeIds: new Set(accessList.filter(access => access.private === true).map(a => a.node_id)),
       ...extra,
     }),
   )
@@ -10989,30 +11001,7 @@ function expectArchivedUntouched(result: ReturnType<typeof reconcileRepos>, rows
     visibilityTransitions: 0,
   })
   expect(result.summary.archivedRedacted).toBeUndefined()
-}
-
-function expectHeld(rows: RepoEntry[], accessList: AccessListEntry[], extra: Partial<ReconcileInput> = {}) {
-  const result = archPlan(rows, accessList, extra)
-
-  expect(serializeRows(result.nextRepos.repos)).toBe(serializeRows(rows))
-  expect(result.dispatches).toEqual([])
-  expect(result.issues).toEqual([])
-  expect(result.pendingRenames).toEqual([])
-  expect(result.summary).toMatchObject({
-    merged: 0,
-    refreshed: 0,
-    regained: 0,
-    lostAccess: 0,
-    migrated: 0,
-    skippedPrivate: 0,
-    flooredDispatches: 0,
-    visibilityTransitions: 0,
-    added: 0,
-    pendingReview: 0,
-    archived: 1,
-    archivedHeld: rows.length - 1,
-  })
-  return result
+  expect(result.summary.archivedAbsorbed).toBeUndefined()
 }
 
 describe('reconcileRepos leaves an archived row alone', () => {
@@ -11280,142 +11269,200 @@ describe('reconcileRepos leaves an archived row alone', () => {
     })
   })
 
-  describe('rows that duplicate an archived row are held', () => {
-    it('an onboarded row with the same node ID: no survey, no issue, not merged away', () => {
+  describe('a row that is the same repository as an archived row is absorbed', () => {
+    const accessCopy = () => [archAccess({name: 'attic-copy'})]
+
+    it('a same-node onboarded sibling is absorbed: gone, never surveyed, no issue, archived row byte-identical', () => {
+      const archived = archRow()
       const sibling = archSibling()
-      const accessList = [archAccess({name: 'attic-copy'})]
-      // Control: the same row without the archived twin is surveyed.
-      expect(archPlan([sibling], accessList).dispatches).toHaveLength(1)
+      // Control: the sibling alone is surveyed.
+      expect(archPlan([sibling], accessCopy()).dispatches).toHaveLength(1)
 
-      expectHeld([archRow(), sibling], accessList)
-      expectHeld([sibling, archRow()], accessList)
-    })
+      for (const rows of [
+        [archived, sibling],
+        [sibling, archived],
+      ]) {
+        const result = archPlan(rows, accessCopy())
 
-    it('an onboarded row with the same database ID: no survey, no issue, not merged away', () => {
-      const sibling = archSibling({node_id: 'R_other', database_id: ARCH_DB})
-      const accessList = [archAccess({name: 'attic-copy', node_id: 'R_other'})]
-      expect(archPlan([sibling], accessList).dispatches).toHaveLength(1)
-
-      expectHeld([archRow(), sibling], accessList)
-      expectHeld([sibling, archRow()], accessList)
-    })
-
-    it('a row that only shares an identity with another held row is held too', () => {
-      const first = archSibling({database_id: 7})
-      const second = archSibling({name: 'attic-copy-two', node_id: 'R_other', database_id: 7})
-      const accessList = [archAccess({name: 'attic-copy'}), archAccess({name: 'attic-copy-two', node_id: 'R_other'})]
-
-      const result = expectHeld([archRow(), first, second], accessList)
-
-      expect(result.summary.archivedHeld).toBe(2)
-    })
-
-    it('an onboarded row with the same owner and name, for an archived row with no IDs', () => {
-      const legacy = archRow()
-      delete legacy.node_id
-      delete legacy.database_id
-      delete legacy.private
-      const sibling = archSibling({name: ARCH_NAME})
-      delete sibling.node_id
-      const accessList = [archAccess()]
-      expect(archPlan([sibling], accessList).dispatches).toHaveLength(1)
-
-      expectHeld([legacy, sibling], accessList)
-      expectHeld([sibling, legacy], accessList)
-    })
-
-    it('a same-named row is held for an archived row with no IDs even when the access list does not show the name', () => {
-      const legacy = archRow()
-      delete legacy.node_id
-      delete legacy.database_id
-      delete legacy.private
-      const withoutIds = archSibling({name: ARCH_NAME})
-      delete withoutIds.node_id
-      const withOwnIds = archSibling({name: ARCH_NAME, node_id: 'R_other', database_id: 77})
-
-      for (const sibling of [withoutIds, withOwnIds]) {
-        expectHeld([legacy, sibling], [])
-        expectHeld([sibling, legacy], [])
+        expect(serializeRows(result.nextRepos.repos)).toBe(serializeRows([archived]))
+        expect(result.nextRepos.repos[0]).toBe(archived)
+        expect(result.nextRepos.repos).not.toBe(rows)
+        expect(result.dispatches).toEqual([])
+        expect(result.issues).toEqual([])
+        expect(result.pendingRenames).toEqual([])
+        expect(result.summary).toMatchObject({
+          archived: 1,
+          archivedAbsorbed: 1,
+          merged: 0,
+          refreshed: 0,
+          lostAccess: 0,
+          flooredDispatches: 0,
+          added: 0,
+          pendingReview: 0,
+        })
+        expect(result.summary.archivedRedacted).toBeUndefined()
       }
     })
 
-    it("a row with no node ID that the access list shows as the archived row's node is held, whatever its name", () => {
-      const sibling = archSibling({name: 'attic-copy'})
-      delete sibling.node_id
-      const accessList = [archAccess({name: 'attic-copy'})]
-      // Control: alone, its refresh would give it the archived node and survey it.
-      expect(archPlan([sibling], accessList).dispatches).toHaveLength(1)
+    it('a pending-review sibling of the same node files no issue and is gone', () => {
+      const sibling = archSibling({onboarding_status: 'pending-review', last_survey_at: null})
 
-      expectHeld([archRow(), sibling], accessList)
+      const result = archPlan([archRow(), sibling], accessCopy())
+
+      expect(result.nextRepos.repos).toEqual([archRow()])
+      expect(result.issues).toEqual([])
+      expect(result.summary.pendingReview).toBe(0)
     })
 
-    it('an onboarded row with the same owner and name and no IDs, for an archived row that has IDs', () => {
-      const sibling = archSibling({name: ARCH_NAME})
+    it('a sibling with no node ID and the same database ID is absorbed', () => {
+      const sibling = archSibling({name: 'attic-copy', database_id: ARCH_DB})
       delete sibling.node_id
-      const accessList = [archAccess()]
-      expect(archPlan([sibling], accessList).dispatches).toHaveLength(1)
+      expect(archPlan([sibling], accessCopy()).dispatches).toHaveLength(1)
 
-      expectHeld([archRow(), sibling], accessList)
+      const result = archPlan([archRow(), sibling], accessCopy())
+
+      expect(result.nextRepos.repos).toEqual([archRow()])
+      expect(result.summary).toMatchObject({archived: 1, archivedAbsorbed: 1})
+      expect(result.dispatches).toEqual([])
     })
 
-    it('a row that reuses the stored name with a different node and database ID is another repository, not held', () => {
-      // Surveyed two days ago: only the cadence gate can dispatch it, never the minimum-dispatch floor.
+    it('a sibling with a different node ID is another repository, even with the same database ID, and is classified as on its own', () => {
+      const other = archSibling({node_id: 'R_other', database_id: ARCH_DB})
+      const accessList = [archAccess({name: 'attic-copy', node_id: 'R_other'})]
+      const alone = archPlan([other], accessList)
+      expect(alone.dispatches).toHaveLength(1)
+
+      const result = archPlan([archRow(), other], accessList)
+
+      expect(result.nextRepos.repos).toEqual([archRow(), ...alone.nextRepos.repos])
+      expect(result.dispatches).toEqual(alone.dispatches)
+      expect(result.summary.archivedAbsorbed).toBeUndefined()
+    })
+
+    it('a sibling with a different node ID is not absorbed by name either', () => {
       const stranger = archSibling({
         name: ARCH_NAME,
         node_id: 'R_stranger',
         database_id: 9,
+        // Surveyed two days ago: only the cadence gate can dispatch it, never the minimum-dispatch floor.
         last_survey_at: '2026-04-15',
         next_survey_eligible_at: '2026-04-16',
       })
       const accessList = [archAccess({node_id: 'R_stranger'})]
 
-      const result = archPlan([archRow(), stranger], accessList)
+      for (const rows of [
+        [archRow(), stranger],
+        [stranger, archRow()],
+      ]) {
+        const result = archPlan(rows, accessList)
 
-      expect(result.dispatches).toEqual([{owner: ARCH_OWNER, repo: ARCH_NAME, node_id: 'R_stranger'}])
-      expect(result.nextRepos.repos[0]).toEqual(archRow())
-      expect(result.summary.archivedHeld).toBeUndefined()
+        expect(result.dispatches).toEqual([{owner: ARCH_OWNER, repo: ARCH_NAME, node_id: 'R_stranger'}])
+        expect(result.nextRepos.repos).toHaveLength(2)
+        expect(result.summary.archivedAbsorbed).toBeUndefined()
+      }
     })
 
-    it('a held duplicate is not restricted or redacted when the archived row is redacted in the same run', () => {
-      const sibling = archSibling()
-      const rows = [archRow(), sibling]
+    it('a sibling with no node ID and a different database ID is not absorbed', () => {
+      const sibling = archSibling({name: 'attic-copy', database_id: 5})
+      delete sibling.node_id
 
-      const result = archPlan(rows, [archAccess({private: true}), archAccess({name: 'attic-copy'})])
+      const result = archPlan([archRow(), sibling], [])
 
-      expect(result.nextRepos.repos[0]).toMatchObject({owner: '[REDACTED]', onboarding_status: 'archived'})
-      expect(result.nextRepos.repos[1]).toBe(sibling)
-      expect(result.summary).toMatchObject({archivedRedacted: 1, archivedHeld: 1, merged: 0})
-      expect(result.dispatches).toEqual([])
+      expect(result.summary.archivedAbsorbed).toBeUndefined()
+      expect(result.nextRepos.repos).toHaveLength(2)
     })
 
-    it('a held duplicate does not make a stuck-candidate count or a tracked count', () => {
-      const sibling = archSibling({last_survey_at: '2025-01-01', next_survey_eligible_at: '2025-02-01'})
+    it('a second archived row with the same node ID is absorbed into the first', () => {
+      const first = archRow()
+      const second = archRow({name: 'attic-older', last_survey_at: null})
 
-      const result = archPlan([archRow(), sibling], [archAccess({name: 'attic-copy'})])
+      const result = archPlan([first, second], [archAccess()])
 
-      expect(result.summary.stuckCandidates).toBe(0)
-      expect(result.summary.byChannel.collab.tracked).toBe(0)
+      expect(result.nextRepos.repos).toEqual([first])
+      expect(result.summary).toMatchObject({archived: 1, archivedAbsorbed: 1})
     })
 
-    it('a held duplicate is not picked by the minimum-dispatch floor', () => {
-      const sibling = archSibling({last_survey_at: '2025-01-01', next_survey_eligible_at: '2099-01-01'})
-      const control = archPlan([sibling], [archAccess({name: 'attic-copy'})])
-      expect(control.summary.flooredDispatches).toBe(1)
+    it('a redacted archived row absorbs a same-node sibling too', () => {
+      const redacted = archRow({owner: '[REDACTED]', name: ARCH_NODE, private: true})
 
-      const result = archPlan([archRow(), sibling], [archAccess({name: 'attic-copy'})])
+      const result = archPlan([redacted, archSibling()], accessCopy())
 
-      expect(result.summary.flooredDispatches).toBe(0)
-      expect(result.dispatches).toEqual([])
+      expect(result.nextRepos.repos).toEqual([redacted])
+      expect(result.summary.archivedAbsorbed).toBe(1)
     })
 
-    it('a duplicate group by node ID that contains an archived row keeps the archived state', () => {
-      const result = archPlan([archSibling(), archRow(), archSibling({name: 'attic-copy-two'})], [archAccess()])
+    it('redaction and absorption happen in one run: no row names the repository afterwards', () => {
+      const result = archPlan([archRow(), archSibling()], [archAccess({name: 'attic-current', private: true})])
 
-      expect(result.nextRepos.repos.map(row => row.onboarding_status)).toEqual(['onboarded', 'archived', 'onboarded'])
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        private: true,
+        onboarding_status: 'archived',
+      })
+      expect(result.summary).toMatchObject({archivedRedacted: 1, archivedAbsorbed: 1})
+      expect(JSON.stringify(result.nextRepos)).not.toContain(ARCH_OWNER)
+      expect(JSON.stringify(result.nextRepos)).not.toContain('attic')
+    })
+
+    it('an archived row renamed on GitHub to a private name leaves one redacted row and no former name', () => {
+      const archived = archRow({owner: 'moss-org', name: 'old', node_id: 'R_moss1', database_id: 11})
+      const former = archSibling({owner: 'moss-org', name: 'former', node_id: 'R_moss1', database_id: undefined})
+      const current = archAccess({owner: 'moss-org', name: 'current', node_id: 'R_moss1', private: true})
+
+      const result = archPlan([archived, former], [current])
+
+      expect(result.nextRepos.repos).toHaveLength(1)
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        name: 'R_moss1',
+        private: true,
+        node_id: 'R_moss1',
+        onboarding_status: 'archived',
+      })
+      expect(JSON.stringify(result.nextRepos)).not.toMatch(/moss-org|former|\bold\b|current/u)
+      expect(result.issues).toEqual([{kind: 'visibility-transition', node_id: 'R_moss1'}])
+    })
+
+    it('absorption alone changes the plan (so a run commits), and absorbing is not a merge', () => {
+      const current = {version: 1 as const, repos: [archRow(), archSibling()]}
+
+      const result = reconcileRepos(
+        makeInput({currentRepos: current, accessList: accessCopy(), allowlist: makeAllowlist([ARCH_OWNER])}),
+      )
+
+      expect(result.nextRepos).not.toBe(current)
       expect(result.summary.merged).toBe(0)
     })
 
-    it('an unrelated row beside an archived group is still classified normally', () => {
+    it('a row that only gains the archived node while it is classified is merged into the archived row', () => {
+      const archived = archRow({name: 'attic-old'})
+      const sibling = archSibling({name: 'attic-copy'})
+      delete sibling.node_id
+      const accessList = [archAccess({name: 'attic-copy'})]
+
+      const result = archPlan([archived, sibling], accessList)
+
+      expect(result.nextRepos.repos).toEqual([archived])
+      expect(result.nextRepos.repos[0]).toBe(archived)
+      expect(result.dispatches).toEqual([])
+      expect(result.summary.merged).toBe(1)
+    })
+
+    it('a merge into an archived row never restricts or redacts it without explicit evidence', () => {
+      const archived = archRow({name: 'attic-old'})
+      const sibling = archSibling({name: 'attic-copy'})
+      delete sibling.node_id
+      // The listing says private, but no explicit-private evidence was observed.
+      const accessList = [archAccess({name: 'attic-copy', private: true})]
+
+      const result = archPlan([archived, sibling], accessList, {explicitPrivateNodeIds: new Set()})
+
+      expect(result.nextRepos.repos).toEqual([archived])
+      expect(result.summary.archivedRedacted).toBeUndefined()
+    })
+
+    it('an unrelated row beside an absorbed one is still classified normally', () => {
       const other = makeEntry({
         owner: ARCH_OWNER,
         name: 'workshop',
@@ -11427,20 +11474,56 @@ describe('reconcileRepos leaves an archived row alone', () => {
 
       const result = archPlan(
         [archRow(), archSibling(), other],
-        [archAccess({name: 'attic-copy'}), archAccess({name: 'workshop', node_id: 'R_workshop'})],
+        [...accessCopy(), archAccess({name: 'workshop', node_id: 'R_workshop'})],
       )
 
       expect(result.dispatches).toEqual([{owner: ARCH_OWNER, repo: 'workshop', node_id: 'R_workshop'}])
-      expect(result.summary.archivedHeld).toBe(1)
+      expect(result.summary.archivedAbsorbed).toBe(1)
     })
   })
 
-  describe('no row of an archived group takes part in rename detection', () => {
-    it('detectRenames ignores an archived row and its duplicates', () => {
-      const rows = [archRow(), archSibling()]
-      const renamed = [archAccess({name: 'attic-renamed'})]
+  describe('an archived row with no node ID gets the early exit and nothing else', () => {
+    it('absorbs nothing, even a row with the same database ID, the same name or the same listing', () => {
+      const sameDb = archSibling({name: 'attic-copy', node_id: 'R_other', database_id: ARCH_DB})
+      const sameName = archSibling({name: ARCH_NAME, node_id: 'R_samename', database_id: 9})
 
-      expect(detectRenames({rows, accessList: renamed, fieldProbes: new Map()})).toEqual({pending: [], transfers: []})
+      for (const sibling of [sameDb, sameName]) {
+        const accessList = [archAccess({name: sibling.name, node_id: sibling.node_id})]
+        const result = archPlan([legacyArchived(), sibling], accessList)
+
+        expect(result.nextRepos.repos[0]).toEqual(legacyArchived())
+        expect(result.nextRepos.repos).toHaveLength(2)
+        expect(result.summary.archivedAbsorbed).toBeUndefined()
+      }
+    })
+
+    it('has no name matching: a listing at its exact name is not added (the row is tracked), a case-only one is', () => {
+      const exact = archPlan([legacyArchived()], [archAccess({node_id: 'R_reused'})])
+      expect(exact.nextRepos.repos).toHaveLength(1)
+      expect(exact.summary.added).toBe(0)
+
+      const caseOnly = archPlan([legacyArchived()], [archAccess({name: 'ATTIC', node_id: 'R_reused'})])
+      expect(caseOnly.nextRepos.repos).toHaveLength(2)
+      expect(caseOnly.summary.added).toBe(1)
+    })
+
+    it('is itself returned unchanged whatever the access list shows', () => {
+      const rows = [legacyArchived()]
+
+      for (const accessList of [[archAccess()], [archAccess({private: true})], [], [archAccess({archived: true})]]) {
+        expectArchivedUntouched(archPlan(rows, accessList), rows)
+      }
+    })
+  })
+
+  describe('rename detection', () => {
+    it('detectRenames ignores an archived row', () => {
+      const rows = [archRow()]
+
+      expect(detectRenames({rows, accessList: [archAccess({name: 'attic-renamed'})], fieldProbes: new Map()})).toEqual({
+        pending: [],
+        transfers: [],
+      })
       expect(
         detectRenames({
           rows,
@@ -11448,19 +11531,54 @@ describe('reconcileRepos leaves an archived row alone', () => {
           fieldProbes: new Map(),
         }),
       ).toEqual({pending: [], transfers: []})
-      // Control: the same sibling alone is a rename.
-      expect(detectRenames({rows: [archSibling()], accessList: renamed, fieldProbes: new Map()}).pending).toHaveLength(
-        1,
-      )
+      // Control: an onboarded row with the same facts is a rename.
+      expect(
+        detectRenames({
+          rows: [archSibling({name: ARCH_NAME})],
+          accessList: [archAccess({name: 'attic-renamed'})],
+          fieldProbes: new Map(),
+        }).pending,
+      ).toHaveLength(1)
     })
 
-    it('reports no pending rename, no excluded node and no transfer for the group', () => {
-      const result = archPlan([archRow(), archSibling()], [archAccess({name: 'attic-renamed'})])
+    it('reports no pending rename, no excluded node and no transfer for an archived row', () => {
+      const result = archPlan([archRow()], [archAccess({name: 'attic-renamed'})])
 
       expect(result.pendingRenames).toEqual([])
       expect(result.excludedNodeIds).toEqual([])
       expect(result.summary.transferBlocked).toBe(0)
       expect(result.issues).toEqual([])
+    })
+  })
+
+  describe('the evidence for redaction is its own input', () => {
+    it('a listing that says private does not redact without the evidence set', () => {
+      const rows = [archRow()]
+
+      const result = archPlan(rows, [archAccess({private: true})], {explicitPrivateNodeIds: new Set()})
+
+      expectArchivedUntouched(result, rows)
+    })
+
+    it('the set redacts although the listing the planner sees is public (precedence discarded the private one)', () => {
+      const result = archPlan([archRow()], [archAccess()], {explicitPrivateNodeIds: new Set([ARCH_NODE])})
+
+      expect(result.nextRepos.repos[0]).toMatchObject({
+        owner: '[REDACTED]',
+        private: true,
+        onboarding_status: 'archived',
+      })
+    })
+
+    it('without an evidence input nothing is redacted', () => {
+      const rows = [archRow()]
+
+      const result = reconcileRepos(
+        makeInput({currentRepos: {version: 1, repos: rows}, accessList: [archAccess({private: true})]}),
+      )
+
+      expect(result.summary.archivedRedacted).toBeUndefined()
+      expect(serializeRows(result.nextRepos.repos)).toBe(serializeRows(rows))
     })
   })
 
@@ -11500,7 +11618,7 @@ describe('reconcileRepos leaves an archived row alone', () => {
   })
 
   describe('summary', () => {
-    it('counts archived rows, redactions and held duplicates, and keeps archived rows out of the tracked count', () => {
+    it('counts archived rows, redactions and absorbed rows, and keeps archived rows out of the tracked count', () => {
       const rows = [
         archRow(),
         archSibling(),
@@ -11520,7 +11638,7 @@ describe('reconcileRepos leaves an archived row alone', () => {
         archAccess({name: 'workshop', node_id: 'R_workshop'}),
       ])
 
-      expect(result.summary).toMatchObject({archived: 2, archivedRedacted: 1, archivedHeld: 1})
+      expect(result.summary).toMatchObject({archived: 2, archivedRedacted: 1, archivedAbsorbed: 1})
       expect(result.summary.byChannel.collab.tracked).toBe(0)
       expect(result.summary.byChannel.owned.tracked).toBe(1)
     })
@@ -11530,7 +11648,7 @@ describe('reconcileRepos leaves an archived row alone', () => {
 
       expect(result.summary).not.toHaveProperty('archived')
       expect(result.summary).not.toHaveProperty('archivedRedacted')
-      expect(result.summary).not.toHaveProperty('archivedHeld')
+      expect(result.summary).not.toHaveProperty('archivedAbsorbed')
     })
   })
 
@@ -11759,10 +11877,10 @@ describe('handleReconcile with an archived row', () => {
       rows: [archRow(), sibling],
       listed: [apiRepo({private: true}), apiRepo({name: 'attic-copy'})],
     })
-    expect(held.result).toMatchObject({archived: 1, archivedRedacted: 1, archivedHeld: 1})
+    expect(held.result).toMatchObject({archived: 1, archivedRedacted: 1, archivedAbsorbed: 1})
 
     const none = await runWithRealCommit({rows: [makeEntry({node_id: 'R_x', private: false})], listed: []})
-    expect(none.result).toMatchObject({archived: 0, archivedRedacted: 0, archivedHeld: 0})
+    expect(none.result).toMatchObject({archived: 0, archivedRedacted: 0, archivedAbsorbed: 0})
     expect(none.result.summary).not.toHaveProperty('archived')
   })
 
@@ -11773,5 +11891,409 @@ describe('handleReconcile with an archived row', () => {
       `${formatCommitMessage(base)}, +2 archived-redacted`,
     )
     expect(formatCommitMessage(base)).not.toContain('archived')
+  })
+})
+
+describe('reconcile discovery and effects with an archived row', () => {
+  interface RawListing {
+    owner: {login: string}
+    name: string
+    archived: boolean
+    private?: boolean | null
+    node_id: string
+  }
+
+  const parsedRepos = (text: string | undefined): RepoEntry[] => (parse(text ?? '') as ReposFile).repos
+  const OWNED_OWNER = 'fro-bot'
+  const ownedRow = (overrides: Partial<RepoEntry> = {}) => archRow({owner: OWNED_OWNER, ...overrides})
+  const rawListing = (overrides: Partial<RawListing> = {}): RawListing => ({
+    owner: {login: OWNED_OWNER},
+    name: ARCH_NAME,
+    archived: false,
+    private: false,
+    node_id: ARCH_NODE,
+    ...overrides,
+  })
+  const ownedRepo = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    owner: {login: OWNED_OWNER},
+    name: ARCH_NAME,
+    archived: false,
+    fork: false,
+    private: false,
+    node_id: ARCH_NODE,
+    ...overrides,
+  })
+
+  /** Runs the handler with the real `commitMetadata` against a fake `data` branch holding `rows`. */
+  async function archivedRun(options: {
+    rows: RepoEntry[]
+    collab?: RawListing[]
+    owned?: Record<string, unknown>[]
+    reposGet?: OctokitMockOverrides['reposGet']
+    userGetContent?: OctokitMockOverrides['getContent']
+    openIssues?: {number: number; title: string; body: string; labels: {name: string}[]}[]
+    allowlist?: AllowlistFile
+  }) {
+    const writes: string[] = []
+    const messages: string[] = []
+    const initial = serializeRows(options.rows)
+    const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
+    const issuesUpdate = vi.fn(async (_params: unknown) => ({data: {}}))
+    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const reposGet = vi.fn(
+      options.reposGet ?? (async () => ({data: {archived: false, private: false, node_id: 'R_x'}})),
+    )
+    const userGetContent = vi.fn(
+      options.userGetContent ??
+        (async () => {
+          throw apiError(404, 'Not Found')
+        }),
+    )
+    const writerOctokit = mockOctokit({
+      issuesCreate,
+      issuesUpdate,
+      createWorkflowDispatch,
+      issuesListForRepo: async () => ({data: options.openIssues ?? []}) as never,
+      getContent: async ({path}) => {
+        if (path !== 'metadata/repos.yaml') throw apiError(404, 'Not Found')
+        return {
+          data: {type: 'file', encoding: 'base64', sha: 'sha-0', content: Buffer.from(initial).toString('base64')},
+        }
+      },
+      createOrUpdateFileContents: async params => {
+        const typed = params as {content: string; message: string}
+        writes.push(Buffer.from(typed.content, 'base64').toString('utf8'))
+        messages.push(typed.message)
+        return {data: {commit: {sha: 'sha-1'}}}
+      },
+    })
+    const result = await handleReconcile(
+      baseParams({
+        userOctokit: mockOctokit({
+          listForAuthenticatedUser: async () => ({data: (options.collab ?? []) as never}),
+          reposGet,
+          getContent: userGetContent,
+        }),
+        discoveryOctokit: mockOctokit({paginate: async () => options.owned ?? []}),
+        writerOctokit,
+        readMetadata: makeReadMetadata({
+          repos: {version: 1, repos: options.rows},
+          allowlist: options.allowlist ?? makeAllowlist([ARCH_OWNER]),
+        }),
+        commitMetadata: commitMetadataForTest,
+      }),
+    )
+    return {result, writes, messages, issuesCreate, issuesUpdate, createWorkflowDispatch, reposGet, userGetContent}
+  }
+
+  describe('redaction evidence is read from the raw listings (item C)', () => {
+    it('a collaborator listing with the private flag missing is not evidence', async () => {
+      const missing = rawListing()
+      delete missing.private
+
+      const {result, writes, issuesCreate} = await archivedRun({rows: [ownedRow()], collab: [missing]})
+
+      expect(result.committed).toBe(false)
+      expect(writes).toEqual([])
+      expect(issuesCreate).not.toHaveBeenCalled()
+      expect(result.archivedRedacted).toBe(0)
+    })
+
+    it('a collaborator listing with a null private flag is not evidence', async () => {
+      const {result, writes} = await archivedRun({rows: [ownedRow()], collab: [rawListing({private: null})]})
+
+      expect(result.committed).toBe(false)
+      expect(writes).toEqual([])
+    })
+
+    it('a collaborator listing that says private is evidence', async () => {
+      const {result, writes} = await archivedRun({rows: [ownedRow()], collab: [rawListing({private: true})]})
+
+      expect(result.committed).toBe(true)
+      expect(result.archivedRedacted).toBe(1)
+      expect(writes[0]).not.toContain(ARCH_NAME)
+    })
+
+    it('owned says public and the collaborator listing says private for the same node: redacted', async () => {
+      const {result, writes} = await archivedRun({
+        rows: [ownedRow()],
+        owned: [ownedRepo({private: false})],
+        collab: [rawListing({private: true})],
+      })
+
+      expect(result.committed).toBe(true)
+      expect(result.archivedRedacted).toBe(1)
+      expect(parsedRepos(writes[0])[0]).toMatchObject({
+        owner: '[REDACTED]',
+        private: true,
+        onboarding_status: 'archived',
+      })
+      expect(writes[0]).not.toContain(ARCH_NAME)
+    })
+
+    it('owned says private and the collaborator listing says public for the same node: redacted', async () => {
+      const {result} = await archivedRun({
+        rows: [ownedRow()],
+        owned: [ownedRepo({private: true})],
+        collab: [rawListing({private: false})],
+      })
+
+      expect(result.committed).toBe(true)
+      expect(result.archivedRedacted).toBe(1)
+    })
+
+    it('both listings public: not redacted', async () => {
+      const {result, writes} = await archivedRun({
+        rows: [ownedRow()],
+        owned: [ownedRepo({private: false})],
+        collab: [rawListing({private: false})],
+      })
+
+      expect(result.committed).toBe(false)
+      expect(writes).toEqual([])
+    })
+
+    it('an owned listing with the flag missing and a public collaborator listing: not redacted', async () => {
+      const missing = ownedRepo()
+      delete missing.private
+
+      const {result} = await archivedRun({rows: [ownedRow()], owned: [missing], collab: [rawListing()]})
+
+      expect(result.committed).toBe(false)
+    })
+
+    it('collects the set from every channel before precedence, and ignores a missing or null flag', () => {
+      const entry = (nodeId: string, flag: unknown): AccessListEntry =>
+        makeAccess({node_id: nodeId, name: nodeId, private: flag as boolean})
+
+      const ids = collectExplicitPrivateNodeIds({
+        collab: new Set(['R_collab']),
+        owned: [entry('R_owned', true), entry('R_ownedPublic', false), entry('R_ownedMissing', undefined)],
+        contrib: [entry('R_contrib', true), entry('R_contribNull', null)],
+      })
+
+      expect([...ids].sort((a, b) => a.localeCompare(b))).toEqual(['R_collab', 'R_contrib', 'R_owned'])
+    })
+
+    it('fetchAccessListing keeps the coerced listing and reports only an exact true', async () => {
+      const raw = [
+        rawListing({name: 'a', node_id: 'R_a', private: true}),
+        rawListing({name: 'b', node_id: 'R_b', private: false}),
+        rawListing({name: 'c', node_id: 'R_c', private: null}),
+        {owner: {login: OWNED_OWNER}, name: 'd', archived: false, node_id: 'R_d'},
+      ]
+
+      const listing = await fetchAccessListing(
+        mockOctokit({listForAuthenticatedUser: async () => ({data: raw as never})}),
+      )
+
+      expect([...listing.explicitPrivateNodeIds]).toEqual(['R_a'])
+      expect(listing.entries.map(entry => entry.private)).toEqual([true, false, true, true])
+    })
+  })
+
+  describe('archived rows are not probed (item D)', () => {
+    it('an archived row absent from the access list whose probe would abort the run: the run completes, no probe is made', async () => {
+      const gone = async () => {
+        throw apiError(410, 'Gone')
+      }
+      // Control: an onboarded row in the same position aborts the run.
+      await expect(
+        archivedRun({rows: [ownedRow({onboarding_status: 'onboarded'})], reposGet: gone}),
+      ).rejects.toBeInstanceOf(ReconcileError)
+
+      const {result, writes, reposGet, userGetContent} = await archivedRun({rows: [ownedRow()], reposGet: gone})
+
+      expect(result.committed).toBe(false)
+      expect(writes).toEqual([])
+      expect(result.archived).toBe(1)
+      expect(reposGet).not.toHaveBeenCalled()
+      expect(userGetContent).not.toHaveBeenCalled()
+    })
+
+    it('an archived row in the access list gets no field probe', async () => {
+      const {reposGet, userGetContent, result} = await archivedRun({rows: [ownedRow()], collab: [rawListing()]})
+
+      expect(reposGet).not.toHaveBeenCalled()
+      expect(userGetContent).not.toHaveBeenCalled()
+      expect(result.probesFailed).toBe(0)
+    })
+
+    it('fetchPerRepoStatus and fetchFieldProbes skip an archived row and still probe the others', async () => {
+      const reposGet = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const getContent = vi.fn(async () => {
+        throw apiError(404, 'Not Found')
+      })
+      const octokit = mockOctokit({reposGet, getContent})
+      const registry: ReposFile = {
+        version: 1,
+        repos: [archRow(), makeEntry({owner: ARCH_OWNER, name: 'workshop', node_id: 'R_workshop', private: false})],
+      }
+
+      const statuses = await fetchPerRepoStatus(octokit, registry, [], silentLogger())
+      expect([...statuses.keys()]).toEqual([`${ARCH_OWNER}/workshop`])
+      expect(reposGet).toHaveBeenCalledTimes(1)
+
+      reposGet.mockClear()
+      const probes = await fetchFieldProbes(
+        octokit,
+        registry,
+        [archAccess(), archAccess({name: 'workshop', node_id: 'R_workshop'})],
+        silentLogger(),
+      )
+      const touched = [...reposGet.mock.calls, ...getContent.mock.calls].map(call => JSON.stringify(call))
+      expect(touched.length).toBeGreaterThan(0)
+      expect(touched.some(call => call.includes(`"${ARCH_NAME}"`) || call.includes('"attic"'))).toBe(false)
+      expect(probes.probes.has(ARCH_KEY)).toBe(false)
+    })
+  })
+
+  describe('handler effects skip archived rows (item E)', () => {
+    const nodeMarker = (node: string) => `<!-- reconcile:subject:node_id=${node} -->\nbody`
+    const reviewIssue = (number: number, body: string, label = 'reconcile:pending-review') => ({
+      number,
+      title: 'Unsolicited collaborator grant',
+      body,
+      labels: [{name: label}],
+    })
+
+    it('an open pending-review issue for a row that is later archived is closed by the existing stale logic', async () => {
+      const {result, issuesUpdate} = await archivedRun({
+        rows: [archRow()],
+        collab: [rawListing({owner: {login: ARCH_OWNER}})],
+        openIssues: [reviewIssue(42, nodeMarker(ARCH_NODE))],
+      })
+
+      expect(result.closedStaleIssues).toBe(1)
+      expect(issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 42, state: 'closed'}))
+    })
+
+    it('an open roll-up counts the owner’s pending-review rows only: an archived row does not keep it open', async () => {
+      const pending = makeEntry({
+        owner: ARCH_OWNER,
+        name: 'workshop',
+        node_id: 'R_workshop',
+        private: false,
+        onboarding_status: 'pending-review',
+      })
+
+      const {result, issuesUpdate} = await archivedRun({
+        rows: [archRow(), pending],
+        collab: [
+          rawListing({owner: {login: ARCH_OWNER}}),
+          rawListing({owner: {login: ARCH_OWNER}, name: 'workshop', node_id: 'R_workshop'}),
+        ],
+        openIssues: [
+          reviewIssue(7, `<!-- reconcile:subject:rollup-owner=${ARCH_OWNER} -->`, 'reconcile:rollup-pending-review'),
+        ],
+        allowlist: makeAllowlist([]),
+      })
+
+      expect(result.closedStaleIssues).toBe(1)
+      expect(issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 7, state: 'closed'}))
+    })
+
+    it('an archived row and one pending-review row of the same owner create no roll-up and no issue', async () => {
+      const pending = makeEntry({
+        owner: ARCH_OWNER,
+        name: 'workshop',
+        node_id: 'R_workshop',
+        private: false,
+        onboarding_status: 'pending-review',
+      })
+
+      const {result, issuesCreate} = await archivedRun({
+        rows: [archRow(), pending],
+        collab: [
+          rawListing({owner: {login: ARCH_OWNER}}),
+          rawListing({owner: {login: ARCH_OWNER}, name: 'workshop', node_id: 'R_workshop'}),
+        ],
+        allowlist: makeAllowlist([]),
+      })
+
+      expect(issuesCreate).not.toHaveBeenCalled()
+      expect(result.rollupIssues).toBe(0)
+      expect(result.perRepoIssues).toBe(0)
+    })
+
+    it('an absorbed pending-review sibling leaves no issue open', async () => {
+      const sibling = archSibling({onboarding_status: 'pending-review', last_survey_at: null})
+
+      const {result, issuesUpdate, writes} = await archivedRun({
+        rows: [archRow(), sibling],
+        collab: [rawListing({owner: {login: ARCH_OWNER}, name: 'attic-copy'})],
+        openIssues: [reviewIssue(9, nodeMarker(ARCH_NODE))],
+        allowlist: makeAllowlist([]),
+      })
+
+      expect(result.archivedAbsorbed).toBe(1)
+      expect(parsedRepos(writes[0])).toEqual([archRow()])
+      expect(issuesUpdate).toHaveBeenCalledWith(expect.objectContaining({issue_number: 9, state: 'closed'}))
+    })
+
+    it('an archived row is never dispatched, and a same-named row resolves to its own entry, whatever the order', async () => {
+      const stranger = makeEntry({
+        owner: ARCH_OWNER,
+        name: ARCH_NAME,
+        node_id: 'R_stranger',
+        private: false,
+        discovery_channel: 'owned',
+        last_survey_at: '2026-04-15',
+        next_survey_eligible_at: '2026-04-16',
+      })
+      const collab = [rawListing({owner: {login: ARCH_OWNER}, node_id: 'R_stranger'})]
+
+      for (const rows of [
+        [archRow(), stranger],
+        [stranger, archRow()],
+      ]) {
+        const {result, createWorkflowDispatch} = await archivedRun({rows, collab})
+
+        expect(createWorkflowDispatch).toHaveBeenCalledTimes(1)
+        expect(result.summary.byChannel.owned.dispatched).toBe(1)
+        expect(result.summary.byChannel.collab.dispatched).toBe(0)
+      }
+    })
+  })
+
+  describe('through the real serializer', () => {
+    it('an unchanged archived row is byte-identical in a run that also commits another change', async () => {
+      const archived = archRow()
+
+      const {result, writes} = await archivedRun({
+        rows: [archived],
+        collab: [
+          rawListing({owner: {login: ARCH_OWNER}}),
+          rawListing({owner: {login: ARCH_OWNER}, name: 'workshop', node_id: 'R_workshop'}),
+        ],
+      })
+
+      expect(result.committed).toBe(true)
+      expect(result.summary.added).toBe(1)
+      const archivedBlock = serializeRows([archived]).split('repos:\n')[1]
+      expect(archivedBlock).toBeDefined()
+      expect(writes[0]).toContain(archivedBlock)
+      expect(parsedRepos(writes[0])[0]).toEqual(archived)
+    })
+
+    it('an absorbed sibling is removed, the archived row is byte-identical, and the commit message names the count', async () => {
+      const archived = archRow()
+
+      const {result, writes, messages} = await archivedRun({
+        rows: [archived, archSibling()],
+        collab: [
+          rawListing({owner: {login: ARCH_OWNER}}),
+          rawListing({owner: {login: ARCH_OWNER}, name: 'attic-copy'}),
+        ],
+      })
+
+      expect(result.committed).toBe(true)
+      expect(result.archivedAbsorbed).toBe(1)
+      expect(writes[0]).toBe(serializeRows([archived]))
+      expect(messages[0]).toContain('+1 archived-absorbed')
+      expect(messages[0]).not.toContain(ARCH_NAME)
+    })
   })
 })

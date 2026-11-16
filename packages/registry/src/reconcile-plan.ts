@@ -143,6 +143,13 @@ export interface ReconcileInput {
    * apply. Private/unknown results bypass protection, so a public name is never resurrected.
    */
   protectedPublicAssociations?: ReadonlySet<string>
+  /**
+   * Node IDs for which some raw listing, in any channel, said `private === true` (see
+   * `collectExplicitPrivateNodeIds`). The only evidence that redacts an archived row. It is separate from
+   * `accessList[].private`, which is fail-closed (a missing flag reads as private) and keeps one entry per
+   * name. Absent means no evidence.
+   */
+  explicitPrivateNodeIds?: ReadonlySet<string>
   now: Date
 }
 
@@ -203,8 +210,8 @@ export type IssueQueueEntry = PerRepoIssue | PerOwnerRollupIssue | VisibilityTra
  * Per-channel breakdown of reconcile activity for one run. Operators read these to
  * answer "how much did each channel contribute today?" without aggregating manually.
  *
- * - `tracked`: entries on `nextRepos` carrying this channel after the run, except archived rows and the
- *   duplicates held beside them, which `ReconcileSummary.archived` and `archivedHeld` report instead.
+ * - `tracked`: entries on `nextRepos` carrying this channel after the run, except archived rows, which
+ *   `ReconcileSummary.archived` reports instead.
  * - `dispatched`: dispatches actually fired this run (post-cap, post-rotation).
  * - `deferred`: dispatch candidates excluded by the per-run cap. Sums to
  *   `dispatchesDeferred` across all channels.
@@ -333,11 +340,12 @@ export interface ReconcileSummary {
    */
   archivedRedacted?: number
   /**
-   * Number of non-archived rows held unchanged because they share an identity with an archived
-   * row (see {@link findArchivedIdentityGroup}). They are not classified, surveyed, merged or
-   * reported, and are not counted in {@link ChannelStats.tracked} or `stuckCandidates`. Absent when zero.
+   * Number of rows removed this run because they are the same repository as an archived row (see
+   * {@link absorbArchivedDuplicates}). They are never classified, surveyed or reported, so the registry
+   * is left with one row for the repository. A merge into an archived row during classification is
+   * counted in `merged`, not here. Absent when zero.
    */
-  archivedHeld?: number
+  archivedAbsorbed?: number
 }
 
 export interface ReconcileResult {
@@ -466,15 +474,14 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   const accessNodePrivacy = indexAccessNodePrivacy(accessList)
   const allowlistedOwners = new Set(allowlist.approved_inviters.map(i => i.username))
 
-  // Archived rows and every row that shares their identity are decided here, before any row is classified.
-  const archivedGroup = findArchivedIdentityGroup(currentRepos.repos, accessList)
-  const explicitPrivateNodeIds = new Set(accessList.filter(access => access.private === true).map(a => a.node_id))
-  // The rows (by reference, as they appear in the plan) that no later pass may touch.
-  const heldRows = new Set<RepoEntry>()
+  // A row that is the same repository as an archived row is removed before anything classifies it.
+  const absorbed = absorbArchivedDuplicates(currentRepos.repos)
+  const rows = absorbed.rows
+  const explicitPrivateNodeIds = input.explicitPrivateNodeIds ?? new Set<string>()
 
   // Renames and transfers are detected, never applied. One exclusion set (pending rename or blocked
   // transfer) is computed here and filters every dispatch path below plus the floor.
-  const detection = detectRenames({rows: currentRepos.repos, accessList, fieldProbes})
+  const detection = detectRenames({rows, accessList, fieldProbes})
   const transferKeys = new Set(detection.transfers.map(change => change.key))
   const pendingRenames = [...new Set(detection.pending.map(change => change.node_id))]
   const excludedNodeIds = new Set([...pendingRenames, ...detection.transfers.map(change => change.node_id)])
@@ -503,6 +510,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
     },
   }
+  if (absorbed.count > 0) summary.archivedAbsorbed = absorbed.count
   const dispatches: DispatchRequest[] = []
   const rawIssues: RawIssue[] = []
   const transitionIssues: VisibilityTransitionIssue[] = []
@@ -510,15 +518,9 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   // Pass 1 — classify every tracked entry against the access list and probes.
   const trackedKeys = new Set<string>()
   const protectedAssociations = input.protectedPublicAssociations
-  let nextEntries: RepoEntry[] = currentRepos.repos.map((entry, index) => {
+  let nextEntries: RepoEntry[] = rows.map(entry => {
     const key = repoKey(entry.owner, entry.name)
     trackedKeys.add(key)
-    if (archivedGroup.has(index) && entry.onboarding_status !== 'archived') {
-      // A row that duplicates an archived row: left exactly as stored, and counted.
-      summary.archivedHeld = (summary.archivedHeld ?? 0) + 1
-      heldRows.add(entry)
-      return entry
-    }
     const before = {renamed: summary.renamed, refreshed: summary.refreshed}
     const classified = classifyTracked({
       entry,
@@ -538,18 +540,13 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       explicitPrivateNodeIds,
       now,
     })
-    if (entry.onboarding_status === 'archived') {
-      // The archived exit is final: a protected public name never overrides a redaction.
-      heldRows.add(classified)
-      return classified
-    }
     return keepProtectedName({entry, classified, protectedAssociations, summary, before})
   })
 
-  nextEntries = mergeDuplicateEntries(nextEntries, accessList, summary, protectedAssociations, archivedGroup)
+  nextEntries = mergeDuplicateEntries(nextEntries, accessList, summary, protectedAssociations)
   const postMergeDispatches = filterDispatchesAfterMerge({
     dispatches,
-    nextEntries: nextEntries.filter(candidate => !heldRows.has(candidate)),
+    nextEntries,
     accessByNodeId,
     accessNodePrivacy,
     now,
@@ -658,7 +655,6 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       // `next_survey_eligible_at` check — the floor's whole job is to fire when the
       // threshold has held repos back.
       if (entry.onboarding_status !== 'onboarded' && entry.onboarding_status !== 'pending') continue
-      if (heldRows.has(entry)) continue // a duplicate of an archived row is never surveyed.
       if (entry.onboarding_status === 'pending' && entry.last_survey_status === 'success') {
         // Mirrors the threshold gate's `pending` branch: a successful pending repo
         // waits for its eligibility timestamp; the floor doesn't override that.
@@ -741,8 +737,8 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   // boundary is stable regardless of the time-of-day component of `now`.
   const nowMs = now.getTime()
   for (const entry of next.repos) {
-    // Archived rows and their held duplicates are reported by their own counters, not as tracked or stuck.
-    if (heldRows.has(entry)) continue
+    // Archived rows are reported by their own counter, not as tracked.
+    if (entry.onboarding_status === 'archived') continue
     summary.byChannel[entry.discovery_channel ?? 'collab'].tracked += 1
 
     if (entry.onboarding_status === 'onboarded') {
@@ -799,8 +795,7 @@ export interface RenameDetection {
  * Evidence is the access-list entry for the row's node (when it is public and unambiguous) and the
  * identity probe of the stored name (when it returned the same node). A missing probe value is no
  * information, never a rename. An archived access entry can evidence a transfer but not a rename.
- * Owners compare case-insensitively (logins are); names compare exactly. An archived row and every row
- * of its identity group (see {@link findArchivedIdentityGroup}) are skipped.
+ * Owners compare case-insensitively (logins are); names compare exactly. An archived row is skipped.
  */
 export function detectRenames(input: {
   rows: readonly RepoEntry[]
@@ -810,11 +805,10 @@ export function detectRenames(input: {
   const accessByNodeId = indexAccessListByNodeId([...input.accessList])
   const accessNodePrivacy = indexAccessNodePrivacy([...input.accessList])
   const detection: RenameDetection = {pending: [], transfers: []}
-  // An archived row and every row that shares its identity never report a rename or a transfer.
-  const archivedGroup = findArchivedIdentityGroup(input.rows, input.accessList)
 
-  for (const [index, row] of input.rows.entries()) {
-    if (archivedGroup.has(index)) continue
+  for (const row of input.rows) {
+    // An archived row never reports a rename or a transfer.
+    if (row.onboarding_status === 'archived') continue
     if (row.owner === REDACTED_OWNER || row.private !== false || row.node_id === undefined) continue
     const nodeId = row.node_id
     const access = accessByNodeId.get(nodeId)
@@ -910,6 +904,11 @@ function surveyDateRank(value: string | null): number {
 }
 
 function mergeRepoEntries(left: RepoEntry, right: RepoEntry): boolean {
+  if (left.onboarding_status === 'archived' || right.onboarding_status === 'archived') {
+    // An archived row's identity is its node ID alone: a shared database ID names another repository.
+    const leftNode = left.node_id
+    return leftNode !== undefined && leftNode === right.node_id
+  }
   return identityKeys(left).some(key => identityKeys(right).includes(key))
 }
 
@@ -924,7 +923,8 @@ function restrictGroupVisibility(entries: RepoEntry[], group: number[]): void {
   const groupNodeId = rows.map(row => storedRepoNodeId(row)).find(nodeId => nodeId !== undefined)
   for (const index of group) {
     const row = entries[index]
-    if (row === undefined || row.private !== false) continue
+    // An archived row is redacted only on explicit evidence (see classifyArchived), never by a sibling.
+    if (row === undefined || row.private !== false || row.onboarding_status === 'archived') continue
     const nodeId = storedRepoNodeId(row) ?? groupNodeId
     if (nodeId === undefined) {
       // No node ID to redact with: drop the flag so visibility is unknown (never admitted as public).
@@ -1008,21 +1008,15 @@ function mergeDuplicateEntries(
   accessList: AccessListEntry[],
   summary: ReconcileSummary,
   protectedAssociations?: ReadonlySet<string>,
-  heldIndexes: ReadonlySet<number> = new Set(),
 ): RepoEntry[] {
   const currentNameByNodeId = new Map(accessList.map(access => [access.node_id, repoKey(access.owner, access.name)]))
   const groups: number[][] = []
 
   entries.forEach((entry, index) => {
-    // An archived row and its duplicates stand alone: nothing merges into them or out of them.
-    if (heldIndexes.has(index)) {
-      groups.push([index])
-      return
-    }
     const matchingGroups = groups.filter(group =>
       group.some(member => {
         const candidate = entries[member]
-        return !heldIndexes.has(member) && candidate !== undefined && mergeRepoEntries(entry, candidate)
+        return candidate !== undefined && mergeRepoEntries(entry, candidate)
       }),
     )
     if (matchingGroups.length === 0) {
@@ -1049,6 +1043,16 @@ function mergeDuplicateEntries(
   const removed = new Set<number>()
   for (const group of groups) {
     if (group.length < 2) continue
+
+    // An archived row is the forced survivor of its group and takes nothing from the rows merged into it.
+    const archivedIndex = group.find(index => working[index]?.onboarding_status === 'archived')
+    if (archivedIndex !== undefined) {
+      for (const index of group) {
+        if (index !== archivedIndex) removed.add(index)
+      }
+      summary.merged += group.length - 1
+      continue
+    }
 
     const currentNameMatch = group
       .map(index => ({index, entry: working[index]}))
@@ -1118,10 +1122,12 @@ function filterDispatchesAfterMerge(params: {
   const seenNodeIds = new Set<string>()
   return params.dispatches.filter(dispatch => {
     if (seenNodeIds.has(dispatch.node_id)) return false
+    // An archived row never answers for a dispatch: a different repository may hold its stored name.
     const entry = params.nextEntries.find(
       candidate =>
-        repoKey(candidate.owner, candidate.name) === repoKey(dispatch.owner, dispatch.repo) ||
-        storedRepoNodeId(candidate) === dispatch.node_id,
+        candidate.onboarding_status !== 'archived' &&
+        (repoKey(candidate.owner, candidate.name) === repoKey(dispatch.owner, dispatch.repo) ||
+          storedRepoNodeId(candidate) === dispatch.node_id),
     )
     const access = params.accessByNodeId.get(dispatch.node_id)
     if (entry === undefined || access === undefined) return false
@@ -1139,54 +1145,36 @@ function filterDispatchesAfterMerge(params: {
 }
 
 /**
- * Rows that must stay exactly as stored because they are, or duplicate, an archived row. Returns their
- * indexes in `rows`; empty when no row is archived.
+ * Removes every row that is the same repository as an archived row, before any row is classified, so an
+ * absorbed row is never surveyed, merged, restricted or reported and no row keeps naming the repository.
+ * The archived row is unchanged and takes nothing from them.
  *
- * The group is every archived row plus every row that shares an identity key with one, closed over the
- * rows that join (a row that shares a key only with a held row is held too). An identity key is a node ID
- * or a database ID, and a row with no stored node ID is also keyed by the node the access list shows
- * under its exact owner and name, because a refresh would otherwise give it that node. Separately, rows
- * with the same exact owner and name are in one group when either has no stored ID at all, which is the
- * only identity such a row has. A row that reuses the stored name with IDs of its own is another
- * repository and is not held.
+ * "Same repository" is exactly: the same `node_id`, or no `node_id` and the same `database_id` as an
+ * archived row that has both IDs. There is no name rule and no closure: a row with a different `node_id`
+ * is another repository even when its name or `database_id` matches. Only an archived row with a
+ * `node_id` absorbs; one without (a hand edit) gets the early exit alone. Of two archived rows that
+ * share a node ID the first is kept. Returns the rows unchanged, by reference, when nothing is absorbed.
  */
-function findArchivedIdentityGroup(rows: readonly RepoEntry[], accessList: readonly AccessListEntry[]): Set<number> {
-  const group = new Set<number>()
-  const archived = rows.flatMap((row, index) => (row.onboarding_status === 'archived' ? [index] : []))
-  if (archived.length === 0) return group
-
-  const liveNodeByKey = new Map(accessList.map(access => [repoKey(access.owner, access.name), access.node_id]))
-  const storedKeys = rows.map(identityKeys)
-  const keys = rows.map((row, index) => {
-    const live = storedRepoNodeId(row) === undefined ? liveNodeByKey.get(repoKey(row.owner, row.name)) : undefined
-    return live === undefined ? (storedKeys[index] ?? []) : [...(storedKeys[index] ?? []), `node_id:${live}`]
-  })
-  const sharesName = (index: number): boolean =>
-    archived.some(
-      other =>
-        rows[other] !== undefined &&
-        repoKey(rows[other].owner, rows[other].name) === repoKey(rows[index]?.owner ?? '', rows[index]?.name ?? '') &&
-        ((storedKeys[other] ?? []).length === 0 || (storedKeys[index] ?? []).length === 0),
-    )
-
-  const groupKeys = new Set<string>()
-  const join = (index: number): void => {
-    group.add(index)
-    for (const key of keys[index] ?? []) groupKeys.add(key)
-  }
-  for (const index of archived) join(index)
-
-  for (let grew = true; grew;) {
-    grew = false
-    for (let index = 0; index < rows.length; index += 1) {
-      if (group.has(index)) continue
-      if ((keys[index] ?? []).some(key => groupKeys.has(key)) || sharesName(index)) {
-        join(index)
-        grew = true
-      }
+function absorbArchivedDuplicates(rows: readonly RepoEntry[]): {rows: readonly RepoEntry[]; count: number} {
+  const survivorByNode = new Map<string, number>()
+  const survivorByDatabaseId = new Map<number, number>()
+  rows.forEach((row, index) => {
+    if (row.onboarding_status !== 'archived' || row.node_id === undefined) return
+    if (!survivorByNode.has(row.node_id)) survivorByNode.set(row.node_id, index)
+    if (row.database_id !== undefined && !survivorByDatabaseId.has(row.database_id)) {
+      survivorByDatabaseId.set(row.database_id, index)
     }
-  }
-  return group
+  })
+  if (survivorByNode.size === 0) return {rows, count: 0}
+
+  const kept = rows.filter((row, index) => {
+    if (row.node_id !== undefined) {
+      const survivor = survivorByNode.get(row.node_id)
+      return survivor === undefined || survivor === index
+    }
+    return row.database_id === undefined || !survivorByDatabaseId.has(row.database_id)
+  })
+  return kept.length === rows.length ? {rows, count: 0} : {rows: kept, count: rows.length - kept.length}
 }
 
 /**
@@ -1735,6 +1723,7 @@ function isNoOp(summary: ReconcileSummary, dispatches: DispatchRequest[], issues
     summary.merged === 0 &&
     summary.transferBlocked === 0 &&
     (summary.archivedRedacted ?? 0) === 0 &&
+    (summary.archivedAbsorbed ?? 0) === 0 &&
     dispatches.length === 0 &&
     issues.length === 0
   )
