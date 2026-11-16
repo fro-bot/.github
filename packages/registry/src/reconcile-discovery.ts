@@ -46,8 +46,9 @@ export async function fetchAccessListing(userOctokit: OctokitClient): Promise<Ac
     const entries: AccessListEntry[] = []
     const explicitPrivateNodeIds = new Set<string>()
     for (const r of repos) {
-      if (r.owner == null) continue // GitHub nulls owner for deleted-user repos; skip.
+      // Evidence comes before the owner guard: an entry that cannot be listed is still private.
       if (r.private === true) explicitPrivateNodeIds.add(r.node_id)
+      if (r.owner == null) continue // GitHub nulls owner for deleted-user repos; skip.
       entries.push({
         owner: r.owner.login,
         name: r.name,

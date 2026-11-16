@@ -726,8 +726,11 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   // boundary is stable regardless of the time-of-day component of `now`.
   const nowMs = now.getTime()
   for (const entry of next.repos) {
-    // Archived rows are reported by their own counter, not as tracked.
-    if (entry.onboarding_status === 'archived') continue
+    // Archived rows are counted from the final rows (after the duplicate merge), not as tracked.
+    if (entry.onboarding_status === 'archived') {
+      summary.archived = (summary.archived ?? 0) + 1
+      continue
+    }
     summary.byChannel[entry.discovery_channel ?? 'collab'].tracked += 1
 
     if (entry.onboarding_status === 'onboarded') {
@@ -1139,7 +1142,6 @@ function filterDispatchesAfterMerge(params: {
  */
 function classifyArchived(params: ClassifyTrackedParams): RepoEntry {
   const {entry, summary, transitionIssues} = params
-  summary.archived = (summary.archived ?? 0) + 1
   if (entry.owner === REDACTED_OWNER) return entry
 
   const nodeId = storedRepoNodeId(entry)

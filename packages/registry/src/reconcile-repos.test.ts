@@ -11362,9 +11362,12 @@ describe('reconcileRepos leaves an archived row alone', () => {
 
       expect(result.nextRepos.repos).toEqual([first])
       expect(result.nextRepos.repos[0]).toBe(first)
-      expect(result.summary).toMatchObject({archived: 2, merged: 1})
+      // Counted from the final rows: one archived row remains, in this run and in the next.
+      expect(result.summary).toMatchObject({archived: 1, merged: 1})
       expect(archPlan([second, first], [archAccess()]).nextRepos.repos).toEqual([second])
-      expectArchivedUntouched(archPlan(result.nextRepos.repos, [archAccess()]), result.nextRepos.repos)
+      const next = archPlan(result.nextRepos.repos, [archAccess()])
+      expectArchivedUntouched(next, result.nextRepos.repos)
+      expect(next.summary.archived).toBe(1)
     })
 
     it('the archived survivor takes no field from a fresher duplicate', () => {
@@ -11874,7 +11877,7 @@ describe('handleReconcile with an archived row', () => {
 
 describe('reconcile discovery and effects with an archived row', () => {
   interface RawListing {
-    owner: {login: string}
+    owner: {login: string} | null
     name: string
     archived: boolean
     private?: boolean | null
@@ -11997,6 +12000,36 @@ describe('reconcile discovery and effects with an archived row', () => {
       expect(result.committed).toBe(true)
       expect(result.archivedRedacted).toBe(1)
       expect(writes[0]).not.toContain(ARCH_NAME)
+    })
+
+    it('a collaborator entry with a null owner is excluded from the listing but is still evidence', async () => {
+      const orphan = rawListing({owner: null, private: true})
+
+      const listing = await fetchAccessListing(
+        mockOctokit({listForAuthenticatedUser: async () => ({data: [orphan] as never})}),
+      )
+      expect(listing.entries).toEqual([])
+      expect([...listing.explicitPrivateNodeIds]).toEqual([ARCH_NODE])
+
+      const {result, writes} = await archivedRun({rows: [ownedRow()], collab: [orphan]})
+
+      expect(result.committed).toBe(true)
+      expect(result.archivedRedacted).toBe(1)
+      expect(parsedRepos(writes[0])[0]).toMatchObject({
+        owner: '[REDACTED]',
+        private: true,
+        onboarding_status: 'archived',
+      })
+      expect(writes[0]).not.toContain(ARCH_NAME)
+    })
+
+    it('a collaborator entry with a null owner and no private flag is not evidence', async () => {
+      const orphan = rawListing({owner: null})
+      delete orphan.private
+
+      const {result} = await archivedRun({rows: [ownedRow()], collab: [orphan]})
+
+      expect(result.committed).toBe(false)
     })
 
     it('owned says public and the collaborator listing says private for the same node: redacted', async () => {
