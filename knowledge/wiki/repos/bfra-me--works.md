@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/works
 created: 2026-05-20
-updated: 2026-10-31
+updated: 2026-11-16
 sources:
   - url: https://github.com/bfra-me/works
     sha: c4513522011cf0cc0adaef695381b4761157ce43
@@ -76,6 +76,10 @@ node_id: MDEwOlJlcG9zaXRvcnkzMDc1NzM1OTE=
 ---
 
 # bfra-me/works
+
+Current state (2026-11-16, `c8d6d1c`): root pins **pnpm 12.20.0**, **Vitest
+5.1.0**, **ESLint 10.14.0** and **Prettier 3.10.1**, and Fro Bot is pinned at
+**v0.144.4**. Everything else in the 2026-10-31 section below still holds.
 
 ## 2026-10-31 — manifest contracts and validation boundaries
 
