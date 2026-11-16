@@ -268,16 +268,16 @@ describe('reconcile-repos (bun, reconcile-repos.yaml: no argv)', () => {
   })
 
   describe('a run that tracks a new collaborator repo', () => {
-    // The 31 `jq` expressions the "Write step summary" step reads, taken from the workflow itself.
+    // The 30 `jq` expressions the "Write step summary" step reads, taken from the workflow itself.
     const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'reconcile-repos.yaml'), 'utf8')
     const expressions = [...workflow.matchAll(/jq '\.([A-Za-z][\w.]*) \/\/ (0|false)'/gu)].map(match => ({
       path: match[1] ?? '',
       fallback: match[2] === 'false' ? false : 0,
     }))
 
-    it('reads 31 distinct step-summary expressions from the workflow', () => {
-      expect(expressions).toHaveLength(31)
-      expect(new Set(expressions.map(expression => expression.path)).size).toBe(31)
+    it('reads 30 distinct step-summary expressions from the workflow', () => {
+      expect(expressions).toHaveLength(30)
+      expect(new Set(expressions.map(expression => expression.path)).size).toBe(30)
     })
 
     it('prints one JSON object on stdout whose every summary path is present with the type its fallback has', async () => {

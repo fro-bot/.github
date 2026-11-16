@@ -216,8 +216,6 @@ export interface HandleReconcileResult {
   archived: number
   /** Archived rows redacted this run because the access list explicitly reported their node private. */
   archivedRedacted: number
-  /** Rows removed because they are the same repository as an archived row. */
-  archivedAbsorbed: number
 }
 
 /**
@@ -282,11 +280,11 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
   })
 
   // The only evidence that redacts an archived row: every channel's raw `private === true`, read before
-  // the collab flag is made fail-closed and before channel precedence keeps one entry per name.
+  // the collab flag is made fail-closed, before any eligibility filter and before channel precedence.
   const explicitPrivateNodeIds = collectExplicitPrivateNodeIds({
     collab: collabListing.explicitPrivateNodeIds,
-    owned: owned.entries,
-    contrib: contrib.entries,
+    owned: owned.explicitPrivateNodeIds,
+    contrib: contrib.explicitPrivateNodeIds,
   })
 
   // 4. For each tracked entry missing from the access list, probe `GET /repos/{o}/{r}`.
@@ -598,7 +596,6 @@ export async function handleReconcile(params: HandleReconcileParams = {}): Promi
     wikiGuardUnverifiable: wikiGuard.unverifiable,
     archived: plan.summary.archived ?? 0,
     archivedRedacted: plan.summary.archivedRedacted ?? 0,
-    archivedAbsorbed: plan.summary.archivedAbsorbed ?? 0,
   }
 }
 
@@ -688,7 +685,6 @@ function planHasChanges(plan: ReconcileResult): boolean {
     summary.renamed > 0 ||
     summary.merged > 0 ||
     (summary.archivedRedacted ?? 0) > 0 ||
-    (summary.archivedAbsorbed ?? 0) > 0 ||
     plan.dispatches.length > 0 ||
     // Rename reports are issue-only: they never change metadata, so they don't warrant a data-branch write.
     plan.issues.some(issue => issue.kind !== 'rename-pending')
@@ -707,7 +703,6 @@ export function formatCommitMessage(summary: ReconcileSummary): string {
     summary.renamed > 0 ? `+${summary.renamed} renamed` : undefined,
     summary.merged > 0 ? `+${summary.merged} merged` : undefined,
     (summary.archivedRedacted ?? 0) > 0 ? `+${summary.archivedRedacted} archived-redacted` : undefined,
-    (summary.archivedAbsorbed ?? 0) > 0 ? `+${summary.archivedAbsorbed} archived-absorbed` : undefined,
   ].filter((suffix): suffix is string => suffix !== undefined)
   return suffixes.length > 0 ? `${base}, ${suffixes.join(', ')}` : base
 }

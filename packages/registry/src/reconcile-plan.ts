@@ -339,13 +339,6 @@ export interface ReconcileSummary {
    * change. Absent when zero.
    */
   archivedRedacted?: number
-  /**
-   * Number of rows removed this run because they are the same repository as an archived row (see
-   * {@link absorbArchivedDuplicates}). They are never classified, surveyed or reported, so the registry
-   * is left with one row for the repository. A merge into an archived row during classification is
-   * counted in `merged`, not here. Absent when zero.
-   */
-  archivedAbsorbed?: number
 }
 
 export interface ReconcileResult {
@@ -474,14 +467,11 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   const accessNodePrivacy = indexAccessNodePrivacy(accessList)
   const allowlistedOwners = new Set(allowlist.approved_inviters.map(i => i.username))
 
-  // A row that is the same repository as an archived row is removed before anything classifies it.
-  const absorbed = absorbArchivedDuplicates(currentRepos.repos)
-  const rows = absorbed.rows
   const explicitPrivateNodeIds = input.explicitPrivateNodeIds ?? new Set<string>()
 
   // Renames and transfers are detected, never applied. One exclusion set (pending rename or blocked
   // transfer) is computed here and filters every dispatch path below plus the floor.
-  const detection = detectRenames({rows, accessList, fieldProbes})
+  const detection = detectRenames({rows: currentRepos.repos, accessList, fieldProbes})
   const transferKeys = new Set(detection.transfers.map(change => change.key))
   const pendingRenames = [...new Set(detection.pending.map(change => change.node_id))]
   const excludedNodeIds = new Set([...pendingRenames, ...detection.transfers.map(change => change.node_id)])
@@ -510,7 +500,6 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
       contrib: {tracked: 0, dispatched: 0, deferred: 0, lostAccess: 0},
     },
   }
-  if (absorbed.count > 0) summary.archivedAbsorbed = absorbed.count
   const dispatches: DispatchRequest[] = []
   const rawIssues: RawIssue[] = []
   const transitionIssues: VisibilityTransitionIssue[] = []
@@ -518,7 +507,7 @@ export function reconcileRepos(input: ReconcileInput): ReconcileResult {
   // Pass 1 — classify every tracked entry against the access list and probes.
   const trackedKeys = new Set<string>()
   const protectedAssociations = input.protectedPublicAssociations
-  let nextEntries: RepoEntry[] = rows.map(entry => {
+  let nextEntries: RepoEntry[] = currentRepos.repos.map(entry => {
     const key = repoKey(entry.owner, entry.name)
     trackedKeys.add(key)
     const before = {renamed: summary.renamed, refreshed: summary.refreshed}
@@ -904,11 +893,6 @@ function surveyDateRank(value: string | null): number {
 }
 
 function mergeRepoEntries(left: RepoEntry, right: RepoEntry): boolean {
-  if (left.onboarding_status === 'archived' || right.onboarding_status === 'archived') {
-    // An archived row's identity is its node ID alone: a shared database ID names another repository.
-    const leftNode = left.node_id
-    return leftNode !== undefined && leftNode === right.node_id
-  }
   return identityKeys(left).some(key => identityKeys(right).includes(key))
 }
 
@@ -1044,16 +1028,6 @@ function mergeDuplicateEntries(
   for (const group of groups) {
     if (group.length < 2) continue
 
-    // An archived row is the forced survivor of its group and takes nothing from the rows merged into it.
-    const archivedIndex = group.find(index => working[index]?.onboarding_status === 'archived')
-    if (archivedIndex !== undefined) {
-      for (const index of group) {
-        if (index !== archivedIndex) removed.add(index)
-      }
-      summary.merged += group.length - 1
-      continue
-    }
-
     const currentNameMatch = group
       .map(index => ({index, entry: working[index]}))
       .filter((item): item is {index: number; entry: RepoEntry} => item.entry !== undefined)
@@ -1075,7 +1049,13 @@ function mergeDuplicateEntries(
     const freshestSurvey = freshest.entry
     const firstIndex = group[0]
     if (firstIndex === undefined) throw new Error('reconcile: duplicate group is empty')
-    const merged: RepoEntry = {
+    // The first archived row of a group is its survivor and is returned exactly as stored: it takes no
+    // field from the rows merged into it. Groups are formed, guarded and counted as for any duplicate.
+    const archivedSurvivor = group
+      .toSorted((left, right) => left - right)
+      .map(index => working[index])
+      .find(row => row?.onboarding_status === 'archived')
+    const merged: RepoEntry = archivedSurvivor ?? {
       ...survivor.entry,
       added:
         group
@@ -1142,39 +1122,6 @@ function filterDispatchesAfterMerge(params: {
     seenNodeIds.add(dispatch.node_id)
     return true
   })
-}
-
-/**
- * Removes every row that is the same repository as an archived row, before any row is classified, so an
- * absorbed row is never surveyed, merged, restricted or reported and no row keeps naming the repository.
- * The archived row is unchanged and takes nothing from them.
- *
- * "Same repository" is exactly: the same `node_id`, or no `node_id` and the same `database_id` as an
- * archived row that has both IDs. There is no name rule and no closure: a row with a different `node_id`
- * is another repository even when its name or `database_id` matches. Only an archived row with a
- * `node_id` absorbs; one without (a hand edit) gets the early exit alone. Of two archived rows that
- * share a node ID the first is kept. Returns the rows unchanged, by reference, when nothing is absorbed.
- */
-function absorbArchivedDuplicates(rows: readonly RepoEntry[]): {rows: readonly RepoEntry[]; count: number} {
-  const survivorByNode = new Map<string, number>()
-  const survivorByDatabaseId = new Map<number, number>()
-  rows.forEach((row, index) => {
-    if (row.onboarding_status !== 'archived' || row.node_id === undefined) return
-    if (!survivorByNode.has(row.node_id)) survivorByNode.set(row.node_id, index)
-    if (row.database_id !== undefined && !survivorByDatabaseId.has(row.database_id)) {
-      survivorByDatabaseId.set(row.database_id, index)
-    }
-  })
-  if (survivorByNode.size === 0) return {rows, count: 0}
-
-  const kept = rows.filter((row, index) => {
-    if (row.node_id !== undefined) {
-      const survivor = survivorByNode.get(row.node_id)
-      return survivor === undefined || survivor === index
-    }
-    return row.database_id === undefined || !survivorByDatabaseId.has(row.database_id)
-  })
-  return kept.length === rows.length ? {rows, count: 0} : {rows: kept, count: rows.length - kept.length}
 }
 
 /**
@@ -1724,7 +1671,6 @@ function isNoOp(summary: ReconcileSummary, dispatches: DispatchRequest[], issues
     summary.merged === 0 &&
     summary.transferBlocked === 0 &&
     (summary.archivedRedacted ?? 0) === 0 &&
-    (summary.archivedAbsorbed ?? 0) === 0 &&
     dispatches.length === 0 &&
     issues.length === 0
   )
