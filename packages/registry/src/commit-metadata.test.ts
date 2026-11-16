@@ -1,6 +1,7 @@
 import type {OctokitClient} from './commit-metadata.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
+import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
 import {stringify} from 'yaml'
 import {commitMetadata, CommitMetadataError, deepEquals} from './commit-metadata.ts'
@@ -394,6 +395,54 @@ describe('commitMetadata API', () => {
     })
     expect(result.committed).toBe(false)
     expect(result.attempts).toBe(1)
+  })
+
+  it('round-trips an archived row through the serializer byte for byte', async () => {
+    const fixture = [
+      'version: 1',
+      'repos:',
+      '  - owner: example-owner',
+      '    name: example-archived-repo',
+      '    added: 2026-04-17',
+      '    onboarding_status: archived',
+      '    last_survey_at: null',
+      '    last_survey_status: null',
+      '    has_fro_bot_workflow: false',
+      '    has_renovate: false',
+      '    discovery_channel: collab',
+      '    next_survey_eligible_at: null',
+      '    private: false',
+      '    node_id: R_kgDOArchived1',
+      '    database_id: 424242',
+      '',
+    ].join('\n')
+    const createSpy = vi.fn<NonNullable<MockOverrides['createOrUpdateFileContents']>>(async () => ({
+      data: {commit: {sha: 'commit-sha-789'}},
+    }))
+    const octokit = mockOctokit({
+      getContent: async () => ({
+        data: {
+          type: 'file' as const,
+          sha: 'abc123',
+          content: Buffer.from(fixture, 'utf8').toString('base64'),
+          encoding: 'base64',
+        },
+      }),
+      createOrUpdateFileContents: createSpy,
+    })
+
+    const result = await commitMetadata({
+      path: 'metadata/repos.yaml',
+      message: 'archived round trip',
+      mutator: current => {
+        assertReposFile(current, 'repos')
+        return current
+      },
+      octokit,
+    })
+
+    expect(result.committed).toBe(false)
+    expect(createSpy).not.toHaveBeenCalled()
   })
 
   it('detects in-place mutation returning same reference as unchanged', async () => {

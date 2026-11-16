@@ -71,6 +71,7 @@ Onboarding status values:
 - `failed` — the most recent survey attempt failed.
 - `lost-access` — fro-bot no longer has collaborator access (revoked, archived, or deleted). The entry is preserved for audit; other fields stay at their last-known values.
 - `pending-review` — repo was discovered via collaborator access from an owner not listed in `allowlist.yaml`. A GitHub issue labeled `reconcile:pending-review` tracks each one; the entry stays in this state until an operator promotes it (approve and change status to `pending`) or removes it.
+- `archived` — the operator archived the repository; the row keeps its owner and name. Nothing writes this state yet, and no job treats it differently yet.
 
 For private repos in `pending-review`, the issue body omits the owner/repo name and identifies the subject via its GitHub `node_id`. Public-repo `pending-review` issues include the full `owner/repo`. The control-plane repo is public, so issue bodies never leak private repo names.
 

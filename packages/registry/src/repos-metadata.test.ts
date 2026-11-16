@@ -161,7 +161,7 @@ describe('addRepoEntry', () => {
 
   // Extended behavior: accepts any valid OnboardingStatus
   it('accepts any valid OnboardingStatus value', () => {
-    for (const status of ['pending', 'onboarded', 'failed', 'lost-access', 'pending-review'] as const) {
+    for (const status of ['pending', 'onboarded', 'failed', 'lost-access', 'pending-review', 'archived'] as const) {
       const result = addRepoEntry(EMPTY_REPOS, {
         owner: 'carol',
         repo: `proj-${status}`,
@@ -368,6 +368,67 @@ describe('addRepoEntry', () => {
     expect(result.repos[0]?.name).toBe('first')
     expect(result.repos[1]?.name).toBe('second')
     expect(result.repos[2]?.name).toBe('third')
+  })
+})
+
+describe('applySurveyResult on an archived row', () => {
+  // Pins today's behaviour only: applySurveyResult has no archived special case, so a survey result
+  // written against an archived row is recorded like any other non-pending row and the row stays
+  // archived. A later unit adds an outcome that writes nothing for an archived row and changes this.
+  it('records the survey outcome and keeps the row archived (no special case yet)', () => {
+    const archived = repoEntry({
+      owner: 'example-owner',
+      name: 'example-archived-repo',
+      onboarding_status: 'archived',
+      private: false,
+      node_id: PUBLIC_NODE_ID,
+      database_id: 424242,
+    })
+    const current: ReposFile = {version: 1, repos: [archived]}
+    const at = new Date('2026-04-18T05:34:00Z')
+
+    const result = applySurveyResult(current, {
+      owner: 'example-owner',
+      repo: 'example-archived-repo',
+      node_id: PUBLIC_NODE_ID,
+      private: false,
+      at,
+      status: 'success',
+    })
+
+    expect(result.outcome).toBe('recorded')
+    expect(result.written).toBe('success')
+    expect(result.file.repos).toEqual([
+      {
+        ...archived,
+        onboarding_status: 'archived',
+        last_survey_at: '2026-04-18',
+        last_survey_status: 'success',
+        next_survey_eligible_at: computeNextEligibleAt({
+          owner: 'example-owner',
+          repo: 'example-archived-repo',
+          channel: 'collab',
+          baseDate: at,
+        }),
+      },
+    ])
+  })
+
+  it('counts an archived row as an existing public entry today (no archived special case yet)', () => {
+    const current: ReposFile = {
+      version: 1,
+      repos: [
+        repoEntry({
+          owner: 'example-owner',
+          name: 'example-archived-repo',
+          onboarding_status: 'archived',
+          private: false,
+          node_id: PUBLIC_NODE_ID,
+        }),
+      ],
+    }
+
+    expect(publicRepoEntryExists(current, 'example-owner', 'example-archived-repo')).toBe(true)
   })
 })
 
