@@ -46,7 +46,8 @@ jobs:
           if-absent: fail
 
       # Intersects metadata/renovate.yaml with the installation's repos, minus archived rows; a discovery
-      # failure fails the step, and a registry that cannot be read plans no repositories.
+      # failure fails the step. A registry that cannot be read plans no repositories, writes an empty list and fails
+      # the step too, so the run is red and no later step runs (each later step has only the implicit success()).
       - id: plan
         name: 🗺 Plan Renovate targets
         env:

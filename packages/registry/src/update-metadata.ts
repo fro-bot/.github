@@ -25,7 +25,8 @@
  * Registry filter: `metadata/repos.yaml` (restored from `data` by the workflow) is read once, before any
  * discovery call. A repository an archived row identifies is skipped, so a declared archive stops the list
  * even when GitHub does not report the repository archived. An unreadable or invalid registry discovers no
- * repositories and commits nothing (the committed list is left as it was), with one fixed log line.
+ * repositories and commits nothing (the committed list is left as it was) and fails the run with one fixed
+ * message, so a scheduled run is red.
  *
  * Uses `apps.listReposAccessibleToInstallation` so the call works whether the
  * Fro Bot account is a User (current) or an Organization (future migration).
@@ -37,7 +38,6 @@ import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 import type {RegistryIo} from './registry-io.ts'
 
 import {readFile} from 'node:fs/promises'
-import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
 import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {parse} from 'yaml'
@@ -222,16 +222,13 @@ export interface RunUpdateMetadataParams {
   /** The registry read, made before this run: its archived rows filter discovery. */
   registry: RegistryRead
   commit?: (params: CommitMetadataParams) => Promise<CommitMetadataResult>
-  /** Where the fixed registry-unreadable line goes. Defaults to the process's stderr. */
-  log?: (text: string) => void
 }
 
 export async function runUpdateMetadata(params: RunUpdateMetadataParams): Promise<UpdateMetadataSummary> {
-  // Fail closed: with no registry to filter by, nothing is discovered and the committed list stays as it was.
+  // Fail closed and loudly: with no registry to filter by, nothing is discovered and nothing is committed (the
+  // committed list stays as it was), and the run fails with one fixed message so the scheduled run is red.
   if (!params.registry.readable) {
-    const log = params.log ?? ((text: string) => process.stderr.write(text))
-    log('update-metadata: registry unreadable; discovering no repositories\n')
-    return {owner: params.owner, detected: 0, committed: false, attempts: 0}
+    throw new Error('update-metadata: registry unreadable; discovering no repositories')
   }
 
   const commit = params.commit ?? commitMetadata
@@ -271,7 +268,7 @@ export async function runFromEnv(
   env: Record<string, string | undefined>,
   createClient: (token: string) => Promise<OctokitClient>,
   commit?: RunUpdateMetadataParams['commit'],
-  options: {registryPath?: string; log?: (text: string) => void} = {},
+  options: {registryPath?: string} = {},
 ): Promise<UpdateMetadataSummary> {
   const discoveryToken = requireToken(env, 'UPDATE_METADATA_DISCOVERY_TOKEN')
   const writerToken = requireToken(env, 'UPDATE_METADATA_WRITER_TOKEN')
@@ -281,7 +278,7 @@ export async function runFromEnv(
   const owner = env.UPDATE_METADATA_OWNER ?? DEFAULT_OWNER
   const registry = await readRegistry(options.registryPath ?? REGISTRY_PATH)
 
-  return runUpdateMetadata({discovery, writer, owner, registry, commit, log: options.log})
+  return runUpdateMetadata({discovery, writer, owner, registry, commit})
 }
 
 /** The CLI body: discovers the Renovate repos, commits the result and prints the summary as one JSON line. */
@@ -296,7 +293,6 @@ export async function runUpdateMetadataCli(
 ): Promise<void> {
   const summary = await runFromEnv(env, deps.createClient ?? (async token => createOctokit(token)), deps.commit, {
     registryPath: deps.registryPath,
-    log: io.stderr,
   })
   io.stdout(`${JSON.stringify(summary)}\n`)
 }

@@ -9,7 +9,8 @@
  *   - `plan`: with the read-only discovery token, intersect metadata/renovate.yaml with the
  *     repositories the installation can access, drop every repository whose registry row on `data` is
  *     archived, clean the result, and write it to GITHUB_OUTPUT. A failed discovery fails the step; it
- *     never falls back to an unfiltered list. A registry that cannot be read plans no repositories.
+ *     never falls back to an unfiltered list. A registry that cannot be read plans no repositories and fails the
+ *     step with one fixed message.
  *   - default: dispatch to the planned list (DISPATCH_REPOSITORIES) with the dispatch token.
  *
  * Architecture: pure buildDispatchPlan()/cleanRepoNames() + async planDispatchRepositories() /
@@ -111,8 +112,6 @@ export interface RunPlanParams {
   registryPath: string
   outputPath: string
   owner?: string
-  /** Where the fixed registry-unreadable line goes. Defaults to the process's stderr. */
-  stderr?: (text: string) => void
 }
 
 // ─── Pure engine ────────────────────────────────────────────────────────────
@@ -206,16 +205,15 @@ async function readArchivedRows(path: string): Promise<ArchivedRow[] | undefined
 
 /**
  * Plan mode: read the registry and renovate.yaml, plan, and append `repositories=<csv>` to the output file.
- * A registry that cannot be read fails closed: nothing is planned, no discovery call is made, and one fixed
- * line says why.
+ * A registry that cannot be read fails closed and loudly: nothing is planned, no discovery call is made, an empty
+ * `repositories=` is written (so no later step can read a stale value), and the step then fails with one fixed
+ * message that carries no path, name or parser text, so the scheduled run is red.
  */
 export async function runPlanMode(params: RunPlanParams): Promise<string[]> {
   const archivedRows = await readArchivedRows(params.registryPath)
   if (archivedRows === undefined) {
-    const stderr = params.stderr ?? ((text: string) => process.stderr.write(text))
-    stderr('dispatch-renovate: registry unreadable; planning no repositories\n')
     await appendFile(params.outputPath, 'repositories=\n')
-    return []
+    throw new Error('dispatch-renovate: registry unreadable; planning no repositories')
   }
 
   const requested = await readRequestedRepos(params.renovatePath)
@@ -309,7 +307,6 @@ export type CliClient = PlanClient & DispatchClient
 export interface CliDeps {
   createOctokit?: (token: string) => CliClient | Promise<CliClient>
   stdout?: (text: string) => void
-  stderr?: (text: string) => void
   renovatePath?: string
   registryPath?: string
 }
@@ -340,7 +337,6 @@ export async function runRenovatePlanCli(env: Record<string, string | undefined>
     renovatePath: deps.renovatePath ?? 'metadata/renovate.yaml',
     registryPath: deps.registryPath ?? 'metadata/repos.yaml',
     outputPath,
-    ...(deps.stderr === undefined ? {} : {stderr: deps.stderr}),
   })
   stdout(`dispatch-renovate: planned ${plan.length} repositories\n`)
 }

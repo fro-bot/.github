@@ -759,11 +759,11 @@ repos:
     expect(result.githubOutput).toBe('repositories=agent\n')
   })
 
-  it('`plan` with no readable registry plans nothing, lists nothing and says so once', async () => {
+  it('`plan` with no readable registry writes an empty output, lists nothing and exits 1 with the fixed line', async () => {
     const cwd = checkout({'metadata/renovate.yaml': RENOVATE})
     const result = await run('dispatch-renovate', ['plan'], [installation], {cwd, env: {GITHUB_TOKEN: 'tok-discovery'}})
 
-    expect(result.exitCode).toBe(0)
+    expect(result.exitCode).toBe(1)
     expect(result.githubOutput).toBe('repositories=\n')
     expect(result.stderr).toBe('dispatch-renovate: registry unreadable; planning no repositories\n')
     expect(requests()).toStrictEqual([])

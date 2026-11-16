@@ -537,7 +537,7 @@ describe('runPlanMode', () => {
 
 describe('runPlanMode (archived rows and the registry)', () => {
   let dir = ''
-  const FIXED_LINE = 'dispatch-renovate: registry unreadable; planning no repositories\n'
+  const FIXED_LINE = 'dispatch-renovate: registry unreadable; planning no repositories'
 
   beforeEach(async () => {
     vi.resetAllMocks()
@@ -597,43 +597,57 @@ ${ids}`
     ['malformed YAML', async () => registryText(': : [[[')],
     ['an invalid registry', async () => registryText('version: 1\nrepos: nope\n')],
     ['an empty file', async () => registryText('')],
-  ])('plans no repositories and logs one fixed line for %s, with no discovery call', async (_label, makePath) => {
+  ])(
+    'plans no repositories, writes an empty output and then fails with the fixed line for %s, with no discovery call',
+    async (_label, makePath) => {
+      const {runPlanMode} = await import('./dispatch-renovate.ts')
+      const outputPath = join(dir, 'output')
+
+      const failure = await runPlanMode({
+        octokit: planClient,
+        renovatePath: await renovateFile(['agent']),
+        registryPath: await makePath(),
+        outputPath,
+      }).catch((error: unknown) => error)
+
+      expect(failure).toBeInstanceOf(Error)
+      expect((failure as Error).message).toBe(FIXED_LINE)
+      expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
+      expect(mocks.paginate).not.toHaveBeenCalled()
+    },
+  )
+
+  it('carries no file name, parser message or path in the failure', async () => {
     const {runPlanMode} = await import('./dispatch-renovate.ts')
+    const path = await registryText(': : [[[ secret-name')
+
+    const failure = await runPlanMode({
+      octokit: planClient,
+      renovatePath: await renovateFile(['agent']),
+      registryPath: path,
+      outputPath: join(dir, 'output'),
+    }).catch((error: unknown) => error)
+
+    expect((failure as Error).message).toBe(FIXED_LINE)
+    expect((failure as Error).message).not.toContain('secret-name')
+    expect((failure as Error).message).not.toContain(path)
+    expect((failure as Error).cause).toBeUndefined()
+  })
+
+  it('a readable registry with no archived rows plans as before and does not fail', async () => {
+    const {runPlanMode} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce(installation('agent'))
     const outputPath = join(dir, 'output')
-    const lines: string[] = []
 
     const plan = await runPlanMode({
       octokit: planClient,
       renovatePath: await renovateFile(['agent']),
-      registryPath: await makePath(),
-      outputPath,
-      stderr: text => {
-        lines.push(text)
-      },
-    })
-
-    expect(plan).toEqual([])
-    expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
-    expect(lines).toEqual([FIXED_LINE])
-    expect(mocks.paginate).not.toHaveBeenCalled()
-  })
-
-  it('logs nothing for a readable registry', async () => {
-    const {runPlanMode} = await import('./dispatch-renovate.ts')
-    mocks.paginate.mockResolvedValueOnce(installation('agent'))
-    const lines: string[] = []
-
-    await runPlanMode({
-      octokit: planClient,
-      renovatePath: await renovateFile(['agent']),
       registryPath: await registryText('version: 1\nrepos: []\n'),
-      outputPath: join(dir, 'output'),
-      stderr: text => {
-        lines.push(text)
-      },
+      outputPath,
     })
 
-    expect(lines).toEqual([])
+    expect(plan).toEqual(['agent'])
+    expect(await readFile(outputPath, 'utf8')).toBe('repositories=agent\n')
   })
 })
 
@@ -681,23 +695,15 @@ describe('runRenovatePlanCli and runRenovateDispatchCli (inputs)', () => {
     expect(mocks.createWorkflowDispatch).not.toHaveBeenCalled()
   })
 
-  it('plan mode with an unreadable registry plans nothing, says so once on stderr and never lists the installation', async () => {
+  it('plan mode with an unreadable registry writes an empty output, never lists the installation and then fails', async () => {
     const {runRenovatePlanCli} = await import('./dispatch-renovate.ts')
-    const lines: string[] = []
 
-    await runRenovatePlanCli(planEnv(), {
-      createOctokit,
-      stdout,
-      renovatePath,
-      registryPath: join(dir, 'absent.yaml'),
-      stderr: text => {
-        lines.push(text)
-      },
-    })
+    await expect(
+      runRenovatePlanCli(planEnv(), {createOctokit, stdout, renovatePath, registryPath: join(dir, 'absent.yaml')}),
+    ).rejects.toThrow('dispatch-renovate: registry unreadable; planning no repositories')
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
-    expect(lines).toEqual(['dispatch-renovate: registry unreadable; planning no repositories\n'])
-    expect(out.join('')).toBe('dispatch-renovate: planned 0 repositories\n')
+    expect(out).toEqual([])
     expect(mocks.paginate).not.toHaveBeenCalled()
   })
 
@@ -821,6 +827,18 @@ describe('dispatch-renovate.yaml workflow contract', () => {
     expect(syncIndex).toBeGreaterThan(checkoutIndex)
     expect(syncIndex).toBeLessThan(planIndex)
     expect(JSON.stringify(sync)).not.toContain('token')
+  })
+
+  it('runs no later step after a failed plan: none uses a status function that would let it run on failure', async () => {
+    const steps = await loadWorkflowSteps()
+    const planIndex = steps.findIndex(step => step.id === 'plan')
+    const later = steps.slice(planIndex + 1)
+
+    expect(later.length).toBeGreaterThan(0)
+    for (const step of later) {
+      expect(String(step.if ?? '')).not.toMatch(/\b(always|failure|cancelled)\s*\(/u)
+    }
+    expect(steps[planIndex]).not.toHaveProperty('continue-on-error')
   })
 
   it('mints the dispatch token for the planned list only, guarded on a non-empty list', async () => {

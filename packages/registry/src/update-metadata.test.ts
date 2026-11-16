@@ -656,29 +656,28 @@ describe('discoverRenovateRepos (archived registry rows)', () => {
 })
 
 describe('runUpdateMetadata (an unreadable registry)', () => {
-  it('discovers nothing, commits nothing and logs one fixed line', async () => {
+  const FIXED = 'update-metadata: registry unreadable; discovering no repositories'
+
+  it('discovers nothing, commits nothing and fails with the fixed line', async () => {
     const {runUpdateMetadata} = await import('./update-metadata.ts')
     const calls: SplitCall[] = []
     const discovery = makeDiscoveryClient(calls, [repo('agent')])
     const writer = makeWriterClient(calls)
     const commit = vi.fn(async () => ({committed: true, sha: 'new-sha', attempts: 1}))
-    const lines: string[] = []
 
-    const summary = await runUpdateMetadata({
+    const failure = await runUpdateMetadata({
       discovery,
       writer,
       owner: 'fro-bot',
       commit,
       registry: {readable: false},
-      log: text => {
-        lines.push(text)
-      },
-    })
+    }).catch((error: unknown) => error)
 
-    expect(summary).toEqual({owner: 'fro-bot', detected: 0, committed: false, attempts: 0})
+    expect(failure).toBeInstanceOf(Error)
+    expect((failure as Error).message).toBe(FIXED)
+    expect((failure as Error).cause).toBeUndefined()
     expect(commit).not.toHaveBeenCalled()
     expect(calls).toEqual([])
-    expect(lines).toEqual(['update-metadata: registry unreadable; discovering no repositories\n'])
   })
 })
 
@@ -730,26 +729,55 @@ describe('runFromEnv and runUpdateMetadataCli (the registry)', () => {
     ['a missing file', async () => join(tmpdir(), 'update-metadata-absent', 'repos.yaml')],
     ['malformed YAML', async () => writeRegistry(': : [[[')],
     ['an invalid registry', async () => writeRegistry('version: 1\nrepos: nope\n')],
-  ])('with %s it makes no discovery call, commits nothing and says so on stderr', async (_label, makePath) => {
+    ['an empty file', async () => writeRegistry('')],
+  ])(
+    'with %s it makes no discovery call, commits nothing, prints nothing and fails with the fixed line',
+    async (_label, makePath) => {
+      const {runUpdateMetadataCli} = await import('./update-metadata.ts')
+      const out: string[] = []
+      const err: string[] = []
+      const discovery = {
+        paginate: vi.fn().mockResolvedValue([repo('agent')]),
+        rest: {apps: {listReposAccessibleToInstallation: vi.fn()}, repos: {getContent: vi.fn()}},
+      }
+      const createClient = vi.fn(async (token: string) => (token === 'disc' ? discovery : {tag: 'writer'}) as never)
+      const commit = vi.fn<NonNullable<RunUpdateMetadataParams['commit']>>()
+
+      await expect(
+        runUpdateMetadataCli(
+          env,
+          {stdout: text => out.push(text), stderr: text => err.push(text)},
+          {createClient, commit, registryPath: await makePath()},
+        ),
+      ).rejects.toThrow('update-metadata: registry unreadable; discovering no repositories')
+
+      expect(discovery.paginate).not.toHaveBeenCalled()
+      expect(commit).not.toHaveBeenCalled()
+      expect(out).toEqual([])
+      expect(err).toEqual([])
+    },
+  )
+
+  it('a readable registry with no archived rows discovers and commits as before', async () => {
     const {runUpdateMetadataCli} = await import('./update-metadata.ts')
     const out: string[] = []
-    const err: string[] = []
     const discovery = {
       paginate: vi.fn().mockResolvedValue([repo('agent')]),
-      rest: {apps: {listReposAccessibleToInstallation: vi.fn()}, repos: {getContent: vi.fn()}},
+      rest: {apps: {listReposAccessibleToInstallation: vi.fn()}, repos: {getContent: vi.fn().mockResolvedValue({})}},
     }
     const createClient = vi.fn(async (token: string) => (token === 'disc' ? discovery : {tag: 'writer'}) as never)
-    const commit = vi.fn<NonNullable<RunUpdateMetadataParams['commit']>>()
+    const commit = vi.fn<NonNullable<RunUpdateMetadataParams['commit']>>().mockResolvedValue({
+      committed: true,
+      sha: 'a'.repeat(40),
+      attempts: 1,
+    })
 
     await runUpdateMetadataCli(
       env,
-      {stdout: text => out.push(text), stderr: text => err.push(text)},
-      {createClient, commit, registryPath: await makePath()},
+      {stdout: text => out.push(text), stderr: () => {}},
+      {createClient, commit, registryPath: await writeRegistry('version: 1\nrepos: []\n')},
     )
 
-    expect(discovery.paginate).not.toHaveBeenCalled()
-    expect(commit).not.toHaveBeenCalled()
-    expect(err).toEqual(['update-metadata: registry unreadable; discovering no repositories\n'])
-    expect(out).toEqual(['{"owner":"fro-bot","detected":0,"committed":false,"attempts":0}\n'])
+    expect(out).toEqual(['{"owner":"fro-bot","detected":1,"committed":true,"attempts":1}\n'])
   })
 })
