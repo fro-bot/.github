@@ -1,4 +1,5 @@
 import type {Dirent} from 'node:fs'
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {createHash} from 'node:crypto'
 import {readdir, readFile} from 'node:fs/promises'
 import {join, resolve} from 'node:path'
@@ -7,6 +8,7 @@ import {parseFrontmatterDocument} from '@fro.bot/wiki-write-core/frontmatter'
 import {assertReposFile, type RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
 import YAML from 'yaml'
+import {confirmArchivedPublic} from './check-private-leak.ts'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -285,7 +287,16 @@ export async function findStructuralViolations(dir: string): Promise<PrivateWiki
 // ---------------------------------------------------------------------------
 
 /**
- * Build a map from slug → RepoEntry[] for all entries with explicit `private === false`.
+ * Build a map from slug → RepoEntry[] for all entries admitted as public: an entry with explicit
+ * `private === false` that is not archived, and an archived entry only when its node is in
+ * `confirmedPublicNodeIds`.
+ *
+ * Reconcile keeps an archived row named, `private: false`, when it cannot see the repository, so for
+ * an archived row the stored value is not evidence. `confirmArchivedPublic` collects the nodes GitHub
+ * reports `PUBLIC` at check time, and only those are admitted. An archived row with no node ID, a
+ * redacted one and an unconfirmed one are left out, so a page for it passes only when it is
+ * unchanged from `main` (the grandfather rule in `detectPrivateWikiLeaks`). The set is typed to
+ * accept `undefined` so a row with no node ID is "not in the set" without a branch of its own.
  *
  * A stem with 2+ entries signals a slug collision (two repos sanitize to the same
  * string). Callers must flag ambiguous stems rather than silently admitting them.
@@ -295,10 +306,16 @@ export async function findStructuralViolations(dir: string): Promise<PrivateWiki
  *
  * Exported for testing.
  */
-export function buildPublicSlugMap(repos: readonly RepoEntry[]): Map<string, RepoEntry[]> {
+export function buildPublicSlugMap(
+  repos: readonly RepoEntry[],
+  confirmedPublicNodeIds: ReadonlySet<string | undefined> = new Set<string>(),
+): Map<string, RepoEntry[]> {
   const map = new Map<string, RepoEntry[]>()
   for (const entry of repos) {
-    if (entry.private === false) {
+    if (
+      entry.private === false &&
+      (entry.onboarding_status !== 'archived' || confirmedPublicNodeIds.has(entry.node_id))
+    ) {
       const slug = computeRepoSlug(entry.owner, entry.name)
       const existing = map.get(slug)
       if (existing === undefined) {
@@ -315,14 +332,18 @@ export function buildPublicSlugMap(repos: readonly RepoEntry[]): Map<string, Rep
  * Build the set of public repo slugs from a repos.yaml entry list.
  *
  * Only entries with explicit `private === false` are admitted — absent/undefined
- * private is treated as private (fail-safe). Uses `computeRepoSlug` (not a raw
+ * private is treated as private (fail-safe) — and an archived entry only when its node is in
+ * `confirmedPublicNodeIds` (see `buildPublicSlugMap`). Uses `computeRepoSlug` (not a raw
  * `owner--name` join) so leading-dot sanitization matches actual wiki filenames.
  *
  * Exported as a pure helper so tests can exercise the predicate directly without
  * standing up the full CLI entry-point.
  */
-export function buildPublicSlugs(repos: readonly RepoEntry[]): Set<string> {
-  return new Set(buildPublicSlugMap(repos).keys())
+export function buildPublicSlugs(
+  repos: readonly RepoEntry[],
+  confirmedPublicNodeIds: ReadonlySet<string | undefined> = new Set<string>(),
+): Set<string> {
+  return new Set(buildPublicSlugMap(repos, confirmedPublicNodeIds).keys())
 }
 
 /**
@@ -419,8 +440,14 @@ export function formatOperatorReport(leaks: readonly PrivateWikiLeak[]): string 
  *
  * Extracted as a shared helper so the normal (redacted) path and the operator
  * (unredacted) path use ONE detection implementation with no drift risk.
+ *
+ * `resolver` looks up archived rows (see `buildPublicSlugMap`); with none, an archived row is
+ * unconfirmed. A registry with no archived row makes no lookup at all.
  */
-async function collectLeaks(env: Record<string, string | undefined>): Promise<PrivateWikiLeak[]> {
+async function collectLeaks(
+  env: Record<string, string | undefined>,
+  resolver: NodeIdResolver | undefined,
+): Promise<PrivateWikiLeak[]> {
   const dataWikiDir = resolve('knowledge/wiki/repos')
   const grandfatherDir = resolve(requireGrandfatherDir(env.GRANDFATHER_WIKI_REPOS_DIR))
   if (dataWikiDir === grandfatherDir) {
@@ -439,7 +466,9 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
   // 2. Build publicSlugMap from entries with explicit private === false.
   //    IMPORTANT: absent/undefined private is NOT admitted — fail-safe default is "private".
   //    Uses computeRepoSlug (not raw owner--name) so sanitization matches actual wiki filenames.
-  const publicSlugMap = buildPublicSlugMap(reposParsed.repos)
+  //    An archived entry is admitted only when GitHub confirms its node public right now.
+  const confirmedPublic = await confirmArchivedPublic(reposParsed.repos, resolver)
+  const publicSlugMap = buildPublicSlugMap(reposParsed.repos, confirmedPublic)
 
   // 3. Check for structural violations (subdirs, symlinks) in the wiki repos dir.
   //    Any non-regular entry is blocked immediately — nesting is always illegal.
@@ -474,6 +503,7 @@ async function collectLeaks(env: Record<string, string | undefined>): Promise<Pr
 export async function runCli(
   argv: string[],
   env: Record<string, string | undefined>,
+  resolver?: NodeIdResolver,
 ): Promise<{exitCode: number; stdout: string; stderr: string}> {
   const operatorMode = argv.includes('--operator-report')
 
@@ -489,7 +519,7 @@ export async function runCli(
     }
 
     // Local operator path — run detection and emit unredacted report.
-    const leaks = await collectLeaks(env)
+    const leaks = await collectLeaks(env, resolver)
     if (leaks.length > 0) {
       return {exitCode: 1, stdout: formatOperatorReport(leaks), stderr: ''}
     }
@@ -497,7 +527,7 @@ export async function runCli(
   }
 
   // Normal (redacted) path — used in CI and locally without the flag.
-  const leaks = await collectLeaks(env)
+  const leaks = await collectLeaks(env, resolver)
   if (leaks.length > 0) {
     return {exitCode: 1, stdout: '', stderr: formatLeakReport(leaks)}
   }

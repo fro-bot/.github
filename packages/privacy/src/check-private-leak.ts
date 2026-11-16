@@ -523,13 +523,24 @@ function hasNonEmptyNodeId<T extends Pick<RepoEntry, 'node_id'>>(r: T): r is T &
 }
 
 /**
- * Parse a repos.yaml YAML string and extract its `private: true` rows. A row without a node_id is
- * kept: `resolvePrivateRows` counts it as a failure, in PR mode as in promotion mode.
+ * The one selector for the rows both leak scans resolve: every `private: true` row, and every
+ * archived row whatever its `private` value. An archived row is stored `private: false` with its real
+ * name, and reconcile keeps it unchanged when it cannot see the repository, so the stored value is
+ * not trusted: `resolveScanRow` asks GitHub. File order is kept, which is the order lookups run in.
+ */
+export function selectScanRows(rows: readonly RepoEntry[]): RepoEntry[] {
+  return rows.filter(r => r.private === true || r.onboarding_status === 'archived')
+}
+
+/**
+ * Parse a repos.yaml YAML string and extract the rows to scan (`selectScanRows`). A private row
+ * without a node_id is kept: `resolvePrivateRows` counts it as a failure, in PR mode as in
+ * promotion mode.
  */
 function extractPrivateRows(yamlText: string): RepoEntry[] {
   const parsed: unknown = parseYaml(yamlText)
   assertReposFile(parsed)
-  return parsed.repos.filter(r => r.private === true)
+  return selectScanRows(parsed.repos)
 }
 
 /**
@@ -765,16 +776,19 @@ function redactPathTokens(filePath: string, privateTokens: readonly string[]): s
 }
 
 /**
- * What resolving the private rows of one repos.yaml yields, shared by the PR scan and the
+ * What resolving the selected rows of one repos.yaml yields, shared by the PR scan and the
  * promotion scan so both apply the same visibility rule.
  *
- * - `privateTokens`: tokens for every node that resolved and is not exactly `PUBLIC`.
- * - `scanned`: how many nodes contributed tokens.
- * - `publicSkipped`: how many nodes GitHub reported as exactly `PUBLIC`: they contribute none.
- * - `failures`: every node that did not resolve, with its class. Callers decide what a failure
- *   costs (both block); a public skip never removes or hides one.
- * - `missingNodeIdCount`: how many rows have no node_id to resolve. We cannot scan what we cannot
- *   identify, so each is a failure too (`unresolvedNodeIds`); a count, never a name.
+ * - `privateTokens`: tokens for every row that contributes names (see `resolveScanRow`).
+ * - `scanned`: how many rows contributed tokens.
+ * - `publicSkipped`: how many `private: true` rows GitHub reported as exactly `PUBLIC`: they
+ *   contribute none. An archived named row that resolves `PUBLIC` is not counted: the count's
+ *   text speaks of private rows. An integer only, never a name.
+ * - `failures`: every `private: true` node that did not resolve, with its class. Callers decide
+ *   what a failure costs (both block); a public skip never removes or hides one. An archived named
+ *   row never appears here: it falls back to its stored name instead.
+ * - `missingNodeIdCount`: how many `private: true` rows have no node_id to resolve. We cannot scan
+ *   what we cannot identify, so each is a failure too (`unresolvedNodeIds`); a count, never a name.
  */
 interface PrivateRowResolution {
   readonly privateTokens: readonly string[]
@@ -797,40 +811,110 @@ function unresolvedNodeIds(resolution: PrivateRowResolution): string[] {
   ]
 }
 
+type ScanRow = Pick<RepoEntry, 'node_id' | 'owner' | 'name' | 'private'>
+
 /**
- * Resolve each private node_id, one at a time, and sort the answers.
+ * What GitHub's live answer means for one selected row.
+ *
+ * - `public`: GitHub reports exactly `PUBLIC`; the row contributes no name.
+ * - `names`: the row contributes these `owner/name` strings to the token set.
+ * - `failed`: a `private: true` row whose node did not resolve; it blocks.
+ * - `no-node-id`: a `private: true` row with no node ID to resolve; it blocks.
+ */
+export type ScanRowOutcome =
+  | {readonly kind: 'public'; readonly nodeId: string}
+  | {readonly kind: 'names'; readonly names: readonly string[]}
+  | {readonly kind: 'failed'; readonly nodeId: string; readonly error: 'access-lost' | 'error'}
+  | {readonly kind: 'no-node-id'}
+
+/**
+ * Resolve one row `selectScanRows` picked.
  *
  * Reconcile stores `private: true` for every repository it cannot vouch for, an archived public
  * repository included, so a stored `private: true` is not proof the repository is private. GitHub's
  * live `visibility` decides: only the exact string `PUBLIC` skips a row. `PRIVATE`, `INTERNAL`, a
- * missing field, `null`, a wrong type and any unexpected value keep their tokens (fail-closed).
+ * missing field, `null`, a wrong type and any unexpected value keep their tokens (fail-closed). This
+ * is the only place that tests for `PUBLIC`; the wiki-presence gate asks it too.
+ *
+ * A `private: true` row contributes the live name only, and a failed lookup or a missing node ID
+ * blocks. An archived named row (`private` is not `true`) is the other way round: a stored
+ * `private: false` is not trusted, a failed lookup or a missing node ID does not block, and a row
+ * GitHub does not confirm public contributes the stored owner and name as well as the live ones,
+ * because an archived row keeps its stored name through a rename or a transfer on GitHub.
  */
-async function resolvePrivateRows(
-  privateRows: readonly Pick<RepoEntry, 'node_id'>[],
-  resolver: NodeIdResolver,
-): Promise<PrivateRowResolution> {
-  const nodeIds = privateRows.filter(hasNonEmptyNodeId).map(r => r.node_id)
-  // Computed by subtraction against the same `hasNonEmptyNodeId` filter, not a second predicate
-  // that would have to re-derive the identical partition.
-  const missingNodeIdCount = privateRows.length - nodeIds.length
+export async function resolveScanRow(row: ScanRow, resolver: NodeIdResolver): Promise<ScanRowOutcome> {
+  const archivedNamed = row.private !== true
+  const storedName = `${row.owner}/${row.name}`
+
+  if (!hasNonEmptyNodeId(row)) {
+    return archivedNamed ? {kind: 'names', names: [storedName]} : {kind: 'no-node-id'}
+  }
+
+  const result = await resolver(row.node_id)
+  if ('nameWithOwner' in result) {
+    if (result.visibility === 'PUBLIC') return {kind: 'public', nodeId: row.node_id}
+    return {kind: 'names', names: archivedNamed ? [storedName, result.nameWithOwner] : [result.nameWithOwner]}
+  }
+
+  // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
+  // Treating it as skip would make a mis-scoped PAT silently pass everything: for a private row it
+  // is a failure. An archived row is scanned by its stored name instead.
+  return archivedNamed
+    ? {kind: 'names', names: [storedName]}
+    : {kind: 'failed', nodeId: row.node_id, error: result.error}
+}
+
+/**
+ * The node IDs of the archived named rows GitHub reports `PUBLIC` right now. With no resolver
+ * nothing is confirmed. Only an archived named row with a node ID is looked up: a row stored
+ * private (a redacted archived row included), a row that is not archived and a row with no node ID
+ * cost no call. The wiki-presence gate admits an archived row's page only when its node is in the
+ * returned set.
+ */
+export async function confirmArchivedPublic(
+  rows: readonly RepoEntry[],
+  resolver: NodeIdResolver | undefined,
+): Promise<ReadonlySet<string>> {
+  const confirmed = new Set<string>()
+  if (resolver === undefined) return confirmed
+  for (const row of rows) {
+    if (row.onboarding_status !== 'archived' || row.private === true) continue
+    const outcome = await resolveScanRow(row, resolver)
+    if (outcome.kind === 'public') confirmed.add(outcome.nodeId)
+  }
+  return confirmed
+}
+
+/**
+ * Resolve each selected row, one at a time, and sort the answers (see `resolveScanRow`).
+ */
+async function resolvePrivateRows(rows: readonly ScanRow[], resolver: NodeIdResolver): Promise<PrivateRowResolution> {
   const privateTokens: string[] = []
   const failures: {nodeId: string; error: 'access-lost' | 'error'}[] = []
   let scanned = 0
   let publicSkipped = 0
+  let missingNodeIdCount = 0
 
-  for (const nodeId of nodeIds) {
-    const result = await resolver(nodeId)
-    if ('nameWithOwner' in result) {
-      if (result.visibility === 'PUBLIC') {
-        publicSkipped += 1
-      } else {
-        scanned += 1
-        privateTokens.push(...buildTokensForName(result.nameWithOwner))
+  for (const row of rows) {
+    const outcome = await resolveScanRow(row, resolver)
+    switch (outcome.kind) {
+      case 'public': {
+        if (row.private === true) publicSkipped += 1
+        break
       }
-    } else {
-      // access-lost is indistinguishable between "deleted" and "no-access/mis-scoped-token".
-      // Treating it as skip would make a mis-scoped PAT silently pass everything: it is a failure.
-      failures.push({nodeId, error: result.error})
+      case 'names': {
+        scanned += 1
+        for (const name of outcome.names) privateTokens.push(...buildTokensForName(name))
+        break
+      }
+      case 'failed': {
+        failures.push({nodeId: outcome.nodeId, error: outcome.error})
+        break
+      }
+      case 'no-node-id': {
+        missingNodeIdCount += 1
+        break
+      }
     }
   }
 
@@ -876,7 +960,7 @@ export async function runPromotionScan(inputs: PromotionScanInputs): Promise<Pro
   // Parse repos.yaml and extract private entries.
   const parsed: unknown = parseYaml(reposYaml)
   assertReposFile(parsed)
-  const privateEntries = parsed.repos.filter(r => r.private === true)
+  const privateEntries = selectScanRows(parsed.repos)
 
   // No early return for privateEntries.length === 0: zero private entries yields
   // missingNodeIdCount === 0, an empty privateNodeIds/privateTokens, and
@@ -1045,11 +1129,20 @@ export async function runPromotionCli(
   }
 
   // Wrap resolver to emit redacted stderr for access-lost and error cases.
-  // Fix A: access-lost now BLOCKS — log it as a blocking condition, not a skip.
+  // Fix A: access-lost now BLOCKS — log it as a blocking condition, not a skip. A node that no
+  // `private: true` row owns belongs to an archived row, whose failed lookup does not block: it is
+  // scanned by its stored name, and the log line says so rather than "BLOCKING".
+  // A row with no node_id adds `undefined`, which no lookup asks about.
+  const privateNodeIds = new Set(allPrivateEntries.map(r => r.node_id))
   const loggingResolver: NodeIdResolver = async (nodeId: string) => {
     const result = await resolver(nodeId)
     if ('nameWithOwner' in result) {
       // Success — no logging (name is private; never log it)
+    } else if (!privateNodeIds.has(nodeId)) {
+      const outcome = result.error === 'access-lost' ? 'access-lost' : 'could not be resolved (error)'
+      process.stderr.write(
+        `check-private-leak [promotion]: archived row node_id=${nodeId} ${outcome} — scanned by its stored name, not blocking\n`,
+      )
     } else if (result.error === 'access-lost') {
       process.stderr.write(
         `check-private-leak [promotion]: node_id=${nodeId} access-lost (deleted or token cannot see it) — BLOCKING\n`,

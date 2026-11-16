@@ -160,6 +160,8 @@ if (failedNodeIds.length > 0) {
 }
 ```
 
+An archived row is selected as well as every `private: true` row, because a stored `private: false` for it cannot be trusted. The same lookup applies: exactly `PUBLIC` contributes no name, and anything else (or a failed lookup, or no node ID) scans by the stored owner and name and by the live ones, without blocking the scan. The wiki-presence gate admits an archived row's page only when the same lookup reports `PUBLIC`.
+
 ### Least privilege: confine the broad credential, split the workflow
 
 ```yaml

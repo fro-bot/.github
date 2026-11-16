@@ -1,3 +1,4 @@
+import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import type {
   DataBranchChecker,
   GitDiffRunner,
@@ -10,15 +11,19 @@ import type {
 import type {NodeIdResolver} from './private-repo-resolution.ts'
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
+import {assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {describe, expect, it, vi} from 'vitest'
+import {parse as parseYaml} from 'yaml'
 import {
   assertCompareNotTruncated,
   checkPrivateLeak,
+  confirmArchivedPublic,
   isGh404Error,
   largeOutputMaxBufferBytes,
   main,
   runPromotionCli,
   runPromotionScan,
+  selectScanRows,
 } from './check-private-leak.ts'
 
 // ---------------------------------------------------------------------------
@@ -6783,5 +6788,644 @@ describe('PR mode and promotion mode agree on a private row without a node_id', 
     expect(pr.scanResult).toBe('error')
     expect(pr.stderr).toContain(`could not resolve private node_id(s): ${expected.join(', ')}\n`)
     expect(pr.stderr).not.toContain('secret-widget')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An archived row is scanned unless GitHub confirms it public at scan time
+// ---------------------------------------------------------------------------
+
+interface RegistryRowSpec {
+  readonly owner: string
+  readonly name: string
+  readonly nodeId?: string
+  /** Omitted means the row has no `private` key at all. */
+  readonly isPrivate?: boolean
+  readonly status?: string
+}
+
+/** A repos.yaml with exactly these rows; the status defaults to `archived`. */
+function registryYaml(rows: readonly RegistryRowSpec[]): string {
+  const entries = rows.map(
+    row =>
+      `  - owner: ${JSON.stringify(row.owner)}\n    name: ${JSON.stringify(row.name)}${
+        row.isPrivate === undefined ? '' : `\n    private: ${row.isPrivate}`
+      }${
+        row.nodeId === undefined ? '' : `\n    node_id: ${JSON.stringify(row.nodeId)}`
+      }\n    added: "2024-01-01"\n    onboarding_status: ${row.status ?? 'archived'}\n    last_survey_at: null\n    last_survey_status: null\n    has_fro_bot_workflow: false\n    has_renovate: false`,
+  )
+  return entries.length === 0 ? 'version: 1\nrepos: []\n' : `version: 1\nrepos:\n${entries.join('\n')}\n`
+}
+
+const storedArchivedName = 'acme-labs/archived-widget'
+const liveRenamedName = 'other-org/renamed-widget'
+const storedArchivedPage = 'knowledge/wiki/repos/acme-labs--archived-widget.md'
+const livePage = 'knowledge/wiki/repos/other-org--renamed-widget.md'
+const archivedNamedRow: RegistryRowSpec = {
+  owner: 'acme-labs',
+  name: 'archived-widget',
+  nodeId: 'R_arch',
+  isPrivate: false,
+}
+const archivedNoIdRow: RegistryRowSpec = {owner: 'acme-labs', name: 'archived-widget', isPrivate: false}
+const archivedRedactedRow: RegistryRowSpec = {owner: '[REDACTED]', name: 'R_red', nodeId: 'R_red', isPrivate: true}
+const privateFailRow: RegistryRowSpec = {
+  owner: '[REDACTED]',
+  name: 'R_bad',
+  nodeId: 'R_bad',
+  isPrivate: true,
+  status: 'onboarded',
+}
+const archivedPublicAnswer = {R_arch: {nameWithOwner: storedArchivedName, visibility: 'PUBLIC'}} as const
+
+/** Every non-public answer for an archived row, plus the two lookup failures. */
+const archivedNotConfirmed: readonly (readonly [string, Readonly<Record<string, PrRowAnswer>>])[] = [
+  ['PRIVATE', {R_arch: {nameWithOwner: storedArchivedName, visibility: 'PRIVATE'}}],
+  ...nonPublicVisibilities.map(
+    ([label, extra]) => [label, {R_arch: {nameWithOwner: storedArchivedName, ...extra}}] as const,
+  ),
+  ['a failed lookup', {R_arch: {error: 'error'}}],
+  ['an access-lost lookup', {R_arch: {error: 'access-lost'}}],
+]
+
+describe('runPromotionScan — an archived named row', () => {
+  const reposYaml = registryYaml([archivedNamedRow])
+  const pageDiff = diffNaming([storedArchivedName], storedArchivedPage)
+
+  it('passes when the row resolves PUBLIC and an added line names it, and counts no private skip', async () => {
+    const result = await runPromotionScan({reposYaml, resolver: tableResolver(archivedPublicAnswer), diff: pageDiff})
+
+    expect(result).toEqual({ok: true, publicSkipped: 0})
+  })
+
+  it.each(archivedNotConfirmed)(
+    'fails the scan on the line naming it, with the path redacted, when the lookup says %s',
+    async (_label, answers) => {
+      const result = await runPromotionScan({reposYaml, resolver: tableResolver(answers), diff: pageDiff})
+
+      expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+    },
+  )
+
+  it('fails the scan on a row with no node_id, which is not a resolution failure', async () => {
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      return {error: 'error'}
+    }
+
+    const result = await runPromotionScan({reposYaml: registryYaml([archivedNoIdRow]), resolver, diff: pageDiff})
+
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+    expect(calls).toEqual([])
+  })
+
+  it('passes a diff that does not name it when the lookup failed', async () => {
+    const result = await runPromotionScan({
+      reposYaml,
+      resolver: tableResolver({R_arch: {error: 'error'}}),
+      diff: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 0})
+  })
+
+  it('treats a row without a private key as named', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([{owner: 'acme-labs', name: 'archived-widget', nodeId: 'R_arch'}]),
+      resolver: tableResolver({R_arch: {error: 'error'}}),
+      diff: pageDiff,
+    })
+
+    expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+  })
+
+  it('scans both the stored and the live name when the live identity is a different non-public owner and name', async () => {
+    const resolver = tableResolver({R_arch: {nameWithOwner: liveRenamedName, visibility: 'PRIVATE'}})
+
+    const byLiveName = await runPromotionScan({reposYaml, resolver, diff: diffNaming([liveRenamedName], livePage)})
+    const byStoredName = await runPromotionScan({reposYaml, resolver, diff: pageDiff})
+
+    expect(byLiveName).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+    expect(byStoredName).toEqual({ok: false, matchedFiles: ['knowledge/wiki/repos/[REDACTED].md'], publicSkipped: 0})
+  })
+
+  it('adds no live name when the live identity is public under another name', async () => {
+    const resolver = tableResolver({R_arch: {nameWithOwner: liveRenamedName, visibility: 'PUBLIC'}})
+
+    const result = await runPromotionScan({
+      reposYaml,
+      resolver,
+      diff: [diffNaming([liveRenamedName], livePage), pageDiff].join('\n'),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 0})
+  })
+
+  it('does not block beside an unresolvable private row that is not archived: it blocks only on that row', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([archivedNamedRow, privateFailRow]),
+      resolver: tableResolver({R_arch: {error: 'error'}}),
+      diff: pageDiff,
+    })
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_bad']})
+  })
+
+  it('lists an archived row that cannot be resolved nowhere in the failed node IDs, beside a missing node_id private row', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([
+        archivedNamedRow,
+        {owner: 'acme-labs', name: 'secret-widget', isPrivate: true, status: 'onboarded'},
+      ]),
+      resolver: tableResolver({R_arch: {error: 'access-lost'}}),
+      diff: pageDiff,
+    })
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['<missing-node-id>']})
+  })
+
+  it('never puts a stored or live name in the result', async () => {
+    const resolver = tableResolver({R_arch: {nameWithOwner: liveRenamedName, visibility: 'PRIVATE'}})
+
+    const result = await runPromotionScan({reposYaml, resolver, diff: pageDiff})
+
+    expect(JSON.stringify(result)).not.toContain('archived-widget')
+    expect(JSON.stringify(result)).not.toContain('renamed-widget')
+  })
+})
+
+describe('runPromotionScan — which rows are selected', () => {
+  it('does not look up a row that is neither private nor archived', async () => {
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      return {error: 'error'}
+    }
+
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([{...archivedNamedRow, status: 'onboarded'}]),
+      resolver,
+      diff: diffNaming([storedArchivedName]),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 0})
+    expect(calls).toEqual([])
+  })
+
+  it('looks up an archived row and a private row in file order', async () => {
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      return {nameWithOwner: 'acme-labs/unrelated', visibility: 'PUBLIC'}
+    }
+
+    await runPromotionScan({
+      reposYaml: registryYaml([archivedNamedRow, {...privateFailRow, nodeId: 'R_priv'}, archivedRedactedRow]),
+      resolver,
+      diff: '',
+    })
+
+    expect(calls).toEqual(['R_arch', 'R_priv', 'R_red'])
+  })
+
+  it('treats a redacted archived row as a private row: PUBLIC is a counted skip', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([archivedRedactedRow]),
+      resolver: tableResolver({R_red: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}}),
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 1})
+  })
+
+  it('treats a redacted archived row as a private row: not public scans the live name only', async () => {
+    const resolver = tableResolver({R_red: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'}})
+
+    const live = await runPromotionScan({
+      reposYaml: registryYaml([archivedRedactedRow]),
+      resolver,
+      diff: diffNaming([hiddenPrivateName]),
+    })
+    const stored = await runPromotionScan({
+      reposYaml: registryYaml([archivedRedactedRow]),
+      resolver,
+      diff: diffNaming(['[REDACTED]/R_red']),
+    })
+
+    expect(live.ok).toBe(false)
+    expect(stored).toEqual({ok: true, publicSkipped: 0})
+  })
+
+  it.each([
+    ['a failed lookup', {R_red: {error: 'error'}}],
+    ['an access-lost lookup', {R_red: {error: 'access-lost'}}],
+  ] as const)('treats a redacted archived row as a private row: %s blocks', async (_label, answers) => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([archivedRedactedRow]),
+      resolver: tableResolver(answers),
+      diff: '',
+    })
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['R_red']})
+  })
+
+  it('treats a redacted archived row with no node_id as a private row: it blocks', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([{owner: '[REDACTED]', name: 'R_red', isPrivate: true}]),
+      resolver: tableResolver({}),
+      diff: '',
+    })
+
+    expect(result).toEqual({ok: false, resolutionFailed: true, failedNodeIds: ['<missing-node-id>']})
+  })
+
+  it('does not use the stored name of a private row that is not archived', async () => {
+    const result = await runPromotionScan({
+      reposYaml: registryYaml([
+        {owner: 'acme-labs', name: 'archived-widget', nodeId: 'R_p', isPrivate: true, status: 'onboarded'},
+      ]),
+      resolver: tableResolver({R_p: {nameWithOwner: liveRenamedName, visibility: 'PRIVATE'}}),
+      diff: diffNaming([storedArchivedName]),
+    })
+
+    expect(result).toEqual({ok: true, publicSkipped: 0})
+  })
+})
+
+describe('main() — an archived named row (PR mode)', () => {
+  const reposYaml = registryYaml([archivedNamedRow])
+  const pageDiff = diffNaming([storedArchivedName], storedArchivedPage)
+
+  it('succeeds when the row resolves PUBLIC and an added line names it, without a private skip line', async () => {
+    const run = await runPrMode({rows: archivedPublicAnswer, reposYaml, diff: pageDiff})
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe('check-private-leak: ok (scanned 0 private name(s))\n')
+    expect(run.stderr).toBe('')
+    expect(run.resolvedNodeIds).toEqual(['R_arch'])
+  })
+
+  it.each(archivedNotConfirmed)(
+    'detects, with the path redacted and no resolution failure, when the lookup says %s',
+    async (_label, rows) => {
+      const run = await runPrMode({rows, reposYaml, diff: pageDiff})
+
+      expect(run.exitCode).toBe(1)
+      expect(run.scanResult).toBe('detection')
+      expect(run.stdout).toBe('')
+      expect(run.stderr).toContain('FAILED — private repository name(s) detected in PR diff')
+      expect(run.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+      expect(run.stderr).not.toContain('could not resolve')
+      expect(run.stderr).not.toContain('BLOCKING')
+      expect(run.stderr).not.toContain('archived-widget')
+    },
+  )
+
+  it('detects a row with no node_id by its stored name, with no lookup and no resolution failure', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: registryYaml([archivedNoIdRow]),
+      diff: pageDiff,
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('detection')
+    expect(run.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+    expect(run.stderr).not.toContain('no node_id')
+    expect(run.resolvedNodeIds).toEqual([])
+  })
+
+  it('passes a diff that does not name the row when its lookup failed, and prints no resolution failure', async () => {
+    const run = await runPrMode({
+      rows: {R_arch: {error: 'error'}},
+      reposYaml,
+      diff: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stderr).toBe('')
+  })
+
+  it('scans both the stored and the live name when the live identity is a different non-public owner and name', async () => {
+    const rows = {R_arch: {nameWithOwner: liveRenamedName, visibility: 'PRIVATE'}} as const
+
+    const byLiveName = await runPrMode({rows, reposYaml, diff: diffNaming([liveRenamedName], livePage)})
+    const byStoredName = await runPrMode({rows, reposYaml, diff: pageDiff})
+
+    expect(byLiveName.scanResult).toBe('detection')
+    expect(byLiveName.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+    expect(byStoredName.scanResult).toBe('detection')
+    expect(byStoredName.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+  })
+
+  it('still blocks as a resolution failure for an unresolvable private row beside an archived row', async () => {
+    const run = await runPrMode({
+      rows: {R_arch: {error: 'error'}, R_bad: {error: 'error'}},
+      reposYaml: registryYaml([archivedNamedRow, privateFailRow]),
+      diff: pageDiff,
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.scanResult).toBe('error')
+    expect(run.stderr).toBe(
+      `check-private-leak: could not resolve node_id=R_bad (error)\ncheck-private-leak: FAILED — could not resolve private node_id(s): R_bad\n${
+        refusalLine
+      }`,
+    )
+  })
+
+  it('does not count an archived row in the override path: it logs no failure and proceeds under the override only for private rows', async () => {
+    const run = await runPrMode({
+      rows: {R_arch: {error: 'error'}},
+      reposYaml,
+      diff: diffNaming(['acme-labs/unrelated']),
+      title: overrideTitle,
+      author: 'marcusrbrown',
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stderr).not.toContain('operator override active')
+    expect(run.stdout).toBe('check-private-leak: ok (scanned 1 private name(s))\n')
+  })
+
+  it('does not look up a row that is neither private nor archived, and skips the scan when no row is selected', async () => {
+    const run = await runPrMode({
+      rows: {},
+      reposYaml: registryYaml([{...archivedNamedRow, status: 'onboarded'}]),
+      diff: diffNaming([storedArchivedName]),
+    })
+
+    expect(run.exitCode).toBeUndefined()
+    expect(run.scanResult).toBe('success')
+    expect(run.stdout).toBe('check-private-leak: no private entries found in metadata/repos.yaml — skipping scan\n')
+    expect(run.resolvedNodeIds).toEqual([])
+  })
+
+  it('treats a redacted archived row as a private row: PUBLIC is a counted skip, a failed lookup is an error', async () => {
+    const skipped = await runPrMode({
+      rows: {R_red: {nameWithOwner: archivedPublicName, visibility: 'PUBLIC'}},
+      reposYaml: registryYaml([archivedRedactedRow]),
+      diff: diffNaming([archivedPublicName]),
+    })
+    const failed = await runPrMode({
+      rows: {R_red: {error: 'error'}},
+      reposYaml: registryYaml([archivedRedactedRow]),
+      diff: diffNaming([archivedPublicName]),
+    })
+
+    expect(skipped.scanResult).toBe('success')
+    expect(skipped.stdout).toBe(`${prSkippedLine}check-private-leak: ok (scanned 0 private name(s))\n`)
+    expect(failed.scanResult).toBe('error')
+    expect(failed.stderr).toContain('could not resolve private node_id(s): R_red')
+  })
+})
+
+describe('runPromotionCli — an archived named row', () => {
+  const reposYamlContent = registryYaml([archivedNamedRow])
+
+  it('prints a non-blocking line for a failed archived lookup and fails only on the diff', async () => {
+    const clean = await runWith({
+      resolverResult: tableResolver({R_arch: {error: 'error'}}),
+      reposYamlContent,
+      diffOutput: diffNaming(['acme-labs/unrelated']),
+    })
+    const named = await runWith({
+      resolverResult: tableResolver({R_arch: {error: 'error'}}),
+      reposYamlContent,
+      diffOutput: diffNaming([storedArchivedName], storedArchivedPage),
+    })
+
+    expect(clean.exitCode).toBe(0)
+    expect(clean.stderr).toBe(
+      'check-private-leak [promotion]: archived row node_id=R_arch could not be resolved (error) — scanned by its stored name, not blocking\n',
+    )
+    expect(named.exitCode).toBe(1)
+    expect(named.stderr).toContain('FAILED — private repository name(s) detected in promotion diff')
+    expect(named.stderr).toContain('  - knowledge/wiki/repos/[REDACTED].md\n')
+    expect(named.stderr).not.toContain('BLOCKING')
+    expect(named.stderr).not.toContain('archived-widget')
+  })
+
+  it('prints the access-lost variant without the blocking word', async () => {
+    const run = await runWith({
+      resolverResult: tableResolver({R_arch: {error: 'access-lost'}}),
+      reposYamlContent,
+      diffOutput: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(run.exitCode).toBe(0)
+    expect(run.stderr).toBe(
+      'check-private-leak [promotion]: archived row node_id=R_arch access-lost — scanned by its stored name, not blocking\n',
+    )
+  })
+
+  it('prints nothing for an archived row that resolves, public or not, and leaves the private counts alone', async () => {
+    const run = await runWith({
+      resolverResult: tableResolver({
+        R_arch: {nameWithOwner: storedArchivedName, visibility: 'PUBLIC'},
+        R_priv: {nameWithOwner: hiddenPrivateName, visibility: 'PRIVATE'},
+      }),
+      reposYamlContent: registryYaml([archivedNamedRow, {...privateFailRow, nodeId: 'R_priv'}]),
+      diffOutput: diffNaming(['acme-labs/unrelated']),
+    })
+
+    expect(run.exitCode).toBe(0)
+    expect(run.stderr).toBe('')
+    expect(run.stdout).toBe('check-private-leak [promotion]: ok (scanned 1 private node_id(s))\n')
+  })
+
+  it('keeps the blocking log for a private row, and counts a private row with no node_id only', async () => {
+    const run = await runWith({
+      resolverResult: tableResolver({R_arch: {error: 'error'}, R_bad: {error: 'access-lost'}}),
+      reposYamlContent: registryYaml([archivedNamedRow, privateFailRow, archivedNoIdRow]),
+      diffOutput: '',
+    })
+
+    expect(run.exitCode).toBe(1)
+    expect(run.stderr).toContain('node_id=R_bad access-lost (deleted or token cannot see it) — BLOCKING\n')
+    expect(run.stderr).toContain('archived row node_id=R_arch could not be resolved (error)')
+    expect(run.stderr).toContain('FAILED — could not resolve 1 private node_id(s)\n')
+    expect(run.stderr).not.toContain('have no node_id')
+  })
+})
+
+describe('both scan modes and the decision table agree on every row', () => {
+  type RowKind = 'private' | 'private-no-id' | 'archived-named' | 'archived-named-no-id' | 'archived-redacted'
+  type Expected = 'blocks-by-resolution' | 'passes' | 'blocks-stored' | 'blocks-live' | 'blocks-both'
+
+  const answerOf = (visibility: unknown): PrRowAnswer => ({nameWithOwner: liveRenamedName, visibility})
+  const failed: PrRowAnswer = {error: 'error'}
+
+  const rowOf = (kind: RowKind): RegistryRowSpec => {
+    switch (kind) {
+      case 'private': {
+        return {owner: 'acme-labs', name: 'archived-widget', nodeId: 'R_x', isPrivate: true, status: 'onboarded'}
+      }
+      case 'private-no-id': {
+        return {owner: 'acme-labs', name: 'archived-widget', isPrivate: true, status: 'onboarded'}
+      }
+      case 'archived-named': {
+        return {owner: 'acme-labs', name: 'archived-widget', nodeId: 'R_x', isPrivate: false}
+      }
+      case 'archived-named-no-id': {
+        return {owner: 'acme-labs', name: 'archived-widget', isPrivate: false}
+      }
+      case 'archived-redacted': {
+        return {owner: 'acme-labs', name: 'archived-widget', nodeId: 'R_x', isPrivate: true}
+      }
+    }
+  }
+
+  const table: readonly (readonly [string, RowKind, PrRowAnswer | undefined, Expected])[] = [
+    ['private row, PUBLIC', 'private', answerOf('PUBLIC'), 'passes'],
+    ['private row, PRIVATE', 'private', answerOf('PRIVATE'), 'blocks-live'],
+    ['private row, a missing visibility', 'private', {nameWithOwner: liveRenamedName}, 'blocks-live'],
+    ['private row, a failed lookup', 'private', failed, 'blocks-by-resolution'],
+    ['private row, an access-lost lookup', 'private', {error: 'access-lost'}, 'blocks-by-resolution'],
+    ['private row, no node ID', 'private-no-id', undefined, 'blocks-by-resolution'],
+    ['archived named, PUBLIC', 'archived-named', answerOf('PUBLIC'), 'passes'],
+    ['archived named, PRIVATE', 'archived-named', answerOf('PRIVATE'), 'blocks-both'],
+    ['archived named, INTERNAL', 'archived-named', answerOf('INTERNAL'), 'blocks-both'],
+    ['archived named, a missing visibility', 'archived-named', {nameWithOwner: liveRenamedName}, 'blocks-both'],
+    ['archived named, a failed lookup', 'archived-named', failed, 'blocks-stored'],
+    ['archived named, an access-lost lookup', 'archived-named', {error: 'access-lost'}, 'blocks-stored'],
+    ['archived named, no node ID', 'archived-named-no-id', undefined, 'blocks-stored'],
+    ['archived redacted, PUBLIC', 'archived-redacted', answerOf('PUBLIC'), 'passes'],
+    ['archived redacted, PRIVATE', 'archived-redacted', answerOf('PRIVATE'), 'blocks-live'],
+    ['archived redacted, a failed lookup', 'archived-redacted', failed, 'blocks-by-resolution'],
+  ]
+
+  const probes = [
+    ['stored', diffNaming([storedArchivedName], storedArchivedPage)],
+    ['live', diffNaming([liveRenamedName], livePage)],
+  ] as const
+
+  async function bothModes(
+    kind: RowKind,
+    answer: PrRowAnswer | undefined,
+    diff: string,
+  ): Promise<{promotion: string; pr: string}> {
+    const reposYaml = registryYaml([rowOf(kind)])
+    const answers: Record<string, PrRowAnswer> = answer === undefined ? {} : {R_x: answer}
+    const promotion = await runPromotionScan({reposYaml, resolver: tableResolver(answers), diff})
+    const pr = await runPrMode({rows: answers, reposYaml, diff})
+    const promotionKind = 'resolutionFailed' in promotion ? 'resolution' : promotion.ok ? 'pass' : 'detection'
+    const prKind = pr.scanResult === 'error' ? 'resolution' : pr.scanResult === 'success' ? 'pass' : 'detection'
+    return {promotion: promotionKind, pr: prKind}
+  }
+
+  it.each(table)('%s', async (_label, kind, answer, expected) => {
+    const outcomes: Record<string, string> = {}
+    for (const [probe, diff] of probes) {
+      const modes = await bothModes(kind, answer, diff)
+      expect(modes.pr).toBe(modes.promotion)
+      outcomes[probe] = modes.promotion
+    }
+
+    const expectedOutcomes: Record<Expected, Record<string, string>> = {
+      'blocks-by-resolution': {stored: 'resolution', live: 'resolution'},
+      passes: {stored: 'pass', live: 'pass'},
+      'blocks-stored': {stored: 'detection', live: 'pass'},
+      'blocks-live': {stored: 'pass', live: 'detection'},
+      'blocks-both': {stored: 'detection', live: 'detection'},
+    }
+    expect(outcomes).toEqual(expectedOutcomes[expected])
+  })
+})
+
+describe('selectScanRows', () => {
+  const entry = (spec: RegistryRowSpec): RepoEntry => {
+    const parsed: unknown = parseYaml(registryYaml([spec]))
+    assertReposFile(parsed)
+    return parsed.repos[0] as RepoEntry
+  }
+
+  it.each([
+    ['a private row', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: true, status: 'onboarded'}, true],
+    ['a private row that is archived', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: true}, true],
+    ['an archived named row', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: false}, true],
+    ['an archived row with no private key', {owner: 'a', name: 'b', nodeId: 'R_1'}, true],
+    ['a public onboarded row', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: false, status: 'onboarded'}, false],
+    ['an onboarded row with no private key', {owner: 'a', name: 'b', nodeId: 'R_1', status: 'onboarded'}, false],
+    ['a lost-access row with no private key', {owner: 'a', name: 'b', status: 'lost-access'}, false],
+    ['a pending public row', {owner: 'a', name: 'b', isPrivate: false, status: 'pending'}, false],
+  ] as const)('%s: selected is %s', (_label, spec, selected) => {
+    expect(selectScanRows([entry(spec)])).toHaveLength(selected ? 1 : 0)
+  })
+
+  it('keeps the file order of the selected rows', () => {
+    const rows = [
+      entry({owner: 'a', name: 'one', nodeId: 'R_1', isPrivate: true, status: 'onboarded'}),
+      entry({owner: 'a', name: 'skip', nodeId: 'R_2', isPrivate: false, status: 'onboarded'}),
+      entry({owner: 'a', name: 'two', nodeId: 'R_3', isPrivate: false}),
+    ]
+
+    expect(selectScanRows(rows).map(row => row.name)).toEqual(['one', 'two'])
+  })
+})
+
+describe('confirmArchivedPublic', () => {
+  const entries = (specs: readonly RegistryRowSpec[]): RepoEntry[] => {
+    const parsed: unknown = parseYaml(registryYaml(specs))
+    assertReposFile(parsed)
+    return parsed.repos
+  }
+  const recording = (table: Readonly<Record<string, PrRowAnswer>>): {resolver: NodeIdResolver; calls: string[]} => {
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      return table[nodeId] ?? {error: 'error'}
+    }
+    return {resolver, calls}
+  }
+
+  it('returns the node ID of an archived named row that resolves PUBLIC, and only that', async () => {
+    const {resolver, calls} = recording({
+      R_pub: {nameWithOwner: storedArchivedName, visibility: 'PUBLIC'},
+      R_priv: {nameWithOwner: storedArchivedName, visibility: 'PRIVATE'},
+      R_odd: {nameWithOwner: storedArchivedName},
+    })
+    const rows = entries([
+      {owner: 'a', name: 'pub', nodeId: 'R_pub', isPrivate: false},
+      {owner: 'a', name: 'priv', nodeId: 'R_priv', isPrivate: false},
+      {owner: 'a', name: 'odd', nodeId: 'R_odd', isPrivate: false},
+      {owner: 'a', name: 'gone', nodeId: 'R_gone', isPrivate: false},
+    ])
+
+    const confirmed = await confirmArchivedPublic(rows, resolver)
+
+    expect([...confirmed]).toEqual(['R_pub'])
+    expect(calls).toEqual(['R_pub', 'R_priv', 'R_odd', 'R_gone'])
+  })
+
+  it.each([
+    ['a row that is not archived', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: false, status: 'onboarded'}],
+    ['a private row', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: true, status: 'onboarded'}],
+    ['a redacted archived row', {owner: 'a', name: 'b', nodeId: 'R_1', isPrivate: true}],
+    ['an archived row with no node_id', {owner: 'a', name: 'b', isPrivate: false}],
+  ] as const)('makes no lookup for %s', async (_label, spec) => {
+    const {resolver, calls} = recording({R_1: {nameWithOwner: storedArchivedName, visibility: 'PUBLIC'}})
+
+    const confirmed = await confirmArchivedPublic(entries([spec]), resolver)
+
+    expect(confirmed.size).toBe(0)
+    expect(calls).toEqual([])
+  })
+
+  it('confirms nothing, and looks nothing up, with no resolver', async () => {
+    const confirmed = await confirmArchivedPublic(entries([archivedNamedRow]), undefined)
+
+    expect(confirmed.size).toBe(0)
+  })
+
+  it('makes no lookup for an empty registry', async () => {
+    const {resolver, calls} = recording({})
+
+    expect((await confirmArchivedPublic([], resolver)).size).toBe(0)
+    expect(calls).toEqual([])
   })
 })

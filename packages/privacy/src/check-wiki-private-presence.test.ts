@@ -1,4 +1,5 @@
 import type {RepoEntry} from '@fro.bot/wiki-write-core/schemas'
+import type {NodeIdResolver} from './private-repo-resolution.ts'
 
 import {resolve} from 'node:path'
 import process from 'node:process'
@@ -2398,5 +2399,197 @@ describe('runCli — normal mode (no --operator-report flag)', () => {
     expect(result.stdout).toContain('no private wiki leaks detected')
     // stderr must be exactly empty on the clean normal-mode path
     expect(result.stderr).toBe('')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// An archived row is attributed a page only when GitHub confirms it public now
+// ---------------------------------------------------------------------------
+
+describe('buildPublicSlugMap — an archived row', () => {
+  const archived = (extra: Partial<RepoEntry>): RepoEntry =>
+    ({
+      owner: 'acme',
+      name: 'widget',
+      private: false,
+      onboarding_status: 'archived',
+      node_id: 'R_arch',
+      ...extra,
+    }) as RepoEntry
+
+  it('is left out unless its node ID is confirmed public', () => {
+    expect(buildPublicSlugMap([archived({})]).size).toBe(0)
+    expect(buildPublicSlugMap([archived({})], new Set()).size).toBe(0)
+    expect(buildPublicSlugMap([archived({})], new Set(['R_other'])).size).toBe(0)
+  })
+
+  it('is admitted when its node ID is confirmed public', () => {
+    expect([...buildPublicSlugMap([archived({})], new Set(['R_arch'])).keys()]).toEqual(['acme--widget'])
+  })
+
+  it('is never admitted with no node ID, even beside a confirmed set', () => {
+    expect(buildPublicSlugMap([archived({node_id: undefined})], new Set(['R_arch'])).size).toBe(0)
+  })
+
+  it('is never admitted when it is stored private or has no private key, even when confirmed', () => {
+    expect(buildPublicSlugMap([archived({private: true})], new Set(['R_arch'])).size).toBe(0)
+    expect(buildPublicSlugMap([archived({private: undefined})], new Set(['R_arch'])).size).toBe(0)
+  })
+
+  it('leaves a row that is not archived unchanged, confirmed set or not', () => {
+    const onboarded = archived({onboarding_status: 'onboarded', node_id: undefined})
+
+    expect([...buildPublicSlugMap([onboarded]).keys()]).toEqual(['acme--widget'])
+    expect([...buildPublicSlugMap([onboarded], new Set(['R_arch'])).keys()]).toEqual(['acme--widget'])
+  })
+
+  it('passes the confirmed set through buildPublicSlugs', () => {
+    expect(buildPublicSlugs([archived({})]).size).toBe(0)
+    expect([...buildPublicSlugs([archived({})], new Set(['R_arch']))]).toEqual(['acme--widget'])
+  })
+})
+
+function resolverFor(answer: Awaited<ReturnType<NodeIdResolver>>): {resolver: NodeIdResolver; calls: string[]} {
+  const calls: string[] = []
+  return {
+    calls,
+    resolver: async nodeId => {
+      calls.push(nodeId)
+      return answer
+    },
+  }
+}
+
+describe('runCli — an archived row and the data → main gate', () => {
+  const grandfatherDir = '/tmp/grandfather-archived'
+  const pageName = 'acme-labs--archived-widget.md'
+  const sourcedPage = (body: string): string => sourced('https://github.com/acme-labs/archived-widget', body)
+
+  interface RowSpec {
+    readonly nodeId?: string
+    readonly isPrivate: boolean
+    readonly status: string
+  }
+
+  const reposYaml = (rows: readonly RowSpec[]): string =>
+    rows.length === 0
+      ? 'version: 1\nrepos: []\n'
+      : `version: 1\nrepos:\n${rows
+          .map(
+            row =>
+              `  - owner: acme-labs\n    name: archived-widget\n    private: ${row.isPrivate}${
+                row.nodeId === undefined ? '' : `\n    node_id: ${row.nodeId}`
+              }\n    added: "2024-01-01"\n    onboarding_status: ${row.status}\n    last_survey_at: null\n    last_survey_status: null\n    has_fro_bot_workflow: false\n    has_renovate: false`,
+          )
+          .join('\n')}\n`
+
+  function arrange(yaml: string, dataPage: string, mainPage: string | undefined): void {
+    mockReaddir.mockImplementation(async (dir: string) => {
+      if (dir === grandfatherDir) {
+        if (mainPage === undefined) throw Object.assign(new Error('ENOENT'), {code: 'ENOENT'})
+        return [dirent(pageName)]
+      }
+      return [dirent(pageName)]
+    })
+    mockReadFile.mockImplementation(async (path: string) => {
+      if (path === 'metadata/repos.yaml') return yaml
+      if (path.startsWith(grandfatherDir)) return mainPage
+      return dataPage
+    })
+  }
+
+  const archivedRow: RowSpec = {nodeId: 'R_arch', isPrivate: false, status: 'archived'}
+  const published = sourcedPage('Published body.')
+  const edited = sourcedPage('Body with an addition that names no repository.')
+
+  it('attributes an edited page to a named archived row that resolves PUBLIC', async () => {
+    arrange(reposYaml([archivedRow]), edited, published)
+    const {resolver, calls} = resolverFor({nameWithOwner: 'acme-labs/archived-widget', visibility: 'PUBLIC'})
+
+    const result = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(result).toEqual({exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''})
+    expect(calls).toEqual(['R_arch'])
+  })
+
+  it.each([
+    ['PRIVATE', {nameWithOwner: 'acme-labs/archived-widget', visibility: 'PRIVATE'}],
+    ['INTERNAL', {nameWithOwner: 'acme-labs/archived-widget', visibility: 'INTERNAL'}],
+    ['a missing visibility', {nameWithOwner: 'acme-labs/archived-widget'}],
+    ['a null visibility', {nameWithOwner: 'acme-labs/archived-widget', visibility: null}],
+    ['a lowercase public', {nameWithOwner: 'acme-labs/archived-widget', visibility: 'public'}],
+    ['a failed lookup', {error: 'error'}],
+    ['an access-lost lookup', {error: 'access-lost'}],
+  ] as const)('blocks an edited page, and passes an unchanged one, when the lookup says %s', async (_label, answer) => {
+    const {resolver, calls} = resolverFor(answer)
+
+    arrange(reposYaml([archivedRow]), edited, published)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+    arrange(reposYaml([archivedRow]), published, published)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(blocked.exitCode).toBe(1)
+    expect(blocked.stderr).toContain('leak-1: unattributable-page')
+    expect(blocked.stderr).not.toContain('archived-widget')
+    expect(unchanged).toEqual({exitCode: 0, stdout: 'no private wiki leaks detected\n', stderr: ''})
+    expect(calls).toEqual(['R_arch', 'R_arch'])
+  })
+
+  it('blocks an edited page and passes an unchanged one with no resolver at all: no token fails closed', async () => {
+    arrange(reposYaml([archivedRow]), edited, published)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+    arrange(reposYaml([archivedRow]), published, published)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir})
+
+    expect(blocked.exitCode).toBe(1)
+    expect(blocked.stderr).toContain('leak-1: unattributable-page')
+    expect(unchanged.exitCode).toBe(0)
+  })
+
+  it.each([
+    ['an archived row with no node ID', {isPrivate: false, status: 'archived'}],
+    ['a redacted archived row', {nodeId: 'R_arch', isPrivate: true, status: 'archived'}],
+  ] as const)('blocks an edited page for %s without a lookup, and passes an unchanged one', async (_label, row) => {
+    const {resolver, calls} = resolverFor({nameWithOwner: 'acme-labs/archived-widget', visibility: 'PUBLIC'})
+
+    arrange(reposYaml([row]), edited, published)
+    const blocked = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+    arrange(reposYaml([row]), published, published)
+    const unchanged = await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(blocked.exitCode).toBe(1)
+    expect(unchanged.exitCode).toBe(0)
+    expect(calls).toEqual([])
+  })
+
+  it('makes no lookup, and gives the same result as a run with no resolver, when no row is archived', async () => {
+    const calls: string[] = []
+    const resolver: NodeIdResolver = async nodeId => {
+      calls.push(nodeId)
+      throw new Error('a lookup must not happen')
+    }
+    const onboarded: RowSpec = {nodeId: 'R_arch', isPrivate: false, status: 'onboarded'}
+    const withoutResolver: unknown[] = []
+    const withResolver: unknown[] = []
+
+    for (const rows of [[], [onboarded], [{...onboarded, isPrivate: true}]] as const) {
+      arrange(reposYaml(rows), edited, published)
+      withoutResolver.push(await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}))
+      arrange(reposYaml(rows), edited, published)
+      withResolver.push(await runCli([], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver))
+    }
+
+    expect(withResolver).toEqual(withoutResolver)
+    expect(calls).toEqual([])
+  })
+
+  it('treats the operator report the same way', async () => {
+    arrange(reposYaml([archivedRow]), edited, published)
+    const {resolver} = resolverFor({nameWithOwner: 'acme-labs/archived-widget', visibility: 'PRIVATE'})
+
+    const result = await runCli(['--operator-report'], {GRANDFATHER_WIKI_REPOS_DIR: grandfatherDir}, resolver)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toContain(`knowledge/wiki/repos/${pageName}  (unattributable-page)`)
   })
 })
