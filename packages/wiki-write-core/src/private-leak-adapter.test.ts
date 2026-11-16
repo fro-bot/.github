@@ -284,6 +284,48 @@ describe('GitHub private-leak adapter — an archived named row', () => {
     expect(await scan(client, 'See acme/unrelated for details.')).toEqual({ok: true})
   })
 
+  it.each([
+    ['an empty name', ''],
+    ['a whitespace-only name', ' \t '],
+    ['a missing name', undefined],
+    ['a number', 5],
+    ['null', null],
+  ])('scans by the stored name when GitHub says PUBLIC with %s', async (_label, name) => {
+    const client = mockClient({
+      metadata: metadataResponse([archived]),
+      nodes: [{nameWithOwner: name, isPrivate: false, visibility: 'PUBLIC'}],
+    })
+
+    expect(await scan(client, `See ${storedName} for details.`)).toEqual({
+      ok: false,
+      matchedFiles: ['knowledge/wiki/topics/security.md'],
+    })
+    expect(await scan(client, 'See acme/unrelated for details.')).toEqual({ok: true})
+  })
+
+  it.each([
+    ['an empty name', ''],
+    ['a number', 5],
+    ['null', null],
+    ['a missing name', undefined],
+  ])('adds no live token, and does not throw, when %s comes with a non-public node', async (_label, name) => {
+    const client = mockClient({
+      metadata: metadataResponse([archived]),
+      nodes: [{nameWithOwner: name, isPrivate: true, visibility: 'PRIVATE'}],
+    })
+
+    expect(await scan(client, `See ${storedName} for details.`)).toMatchObject({ok: false})
+  })
+
+  it('still throws for a row stored private whose PUBLIC answer has an empty name: unchanged for private rows', async () => {
+    const client = mockClient({
+      metadata: metadataResponse([privateRow]),
+      nodes: [{nameWithOwner: '', isPrivate: false, visibility: 'PUBLIC'}],
+    })
+
+    await expect(scan(client, 'Public documentation.')).rejects.toMatchObject({code: 'RESOLUTION_FAILED'})
+  })
+
   it('scans by the stored name and asks GitHub nothing for a row with no node_id', async () => {
     const client = mockClient({metadata: metadataResponse([{...archived, node_id: undefined}])})
 

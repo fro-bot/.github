@@ -297,14 +297,18 @@ function privateRowTokens(node: unknown): readonly string[] {
 }
 
 /**
- * The tokens for an archived named row. Exactly `PUBLIC` contributes none. Anything else (any other
- * visibility, a missing or wrong-typed field, a node that did not resolve, a failed lookup) gives the
- * stored owner and name, and the live owner and name too when GitHub returned one: an archived row
- * keeps its stored name through a rename or a transfer on GitHub.
+ * The tokens for an archived named row. A node cleared as public contributes none, and it is cleared
+ * only when its `visibility` is exactly `PUBLIC` and it carries a live `nameWithOwner` that is a
+ * non-blank string: a malformed answer confirms nothing. Anything else (any other visibility, a
+ * missing or wrong-typed field, a node that did not resolve, a failed lookup) gives the stored owner
+ * and name, and the live owner and name too when the live name is usable: an archived row keeps its
+ * stored name through a rename or a transfer on GitHub.
  */
 function archivedRowTokens(row: ScanRow, node: unknown): readonly string[] {
-  const liveName = isRecord(node) && typeof node.nameWithOwner === 'string' ? node.nameWithOwner : undefined
-  if (liveName !== undefined && isRecord(node) && node.visibility === 'PUBLIC') return []
+  if (!isRecord(node)) return buildPrivateNameTokens(row.storedName)
+  const liveName =
+    typeof node.nameWithOwner === 'string' && node.nameWithOwner.trim() !== '' ? node.nameWithOwner : undefined
+  if (liveName !== undefined && node.visibility === 'PUBLIC') return []
   return [
     ...buildPrivateNameTokens(row.storedName),
     ...(liveName === undefined ? [] : buildPrivateNameTokens(liveName)),
