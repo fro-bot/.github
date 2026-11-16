@@ -82,30 +82,49 @@ export async function createGitHubPrivateLeakAdapter(
   const owner = params.owner ?? DEFAULT_OWNER
   const repo = params.repo ?? DEFAULT_REPO
   const branch = params.branch ?? DEFAULT_BRANCH
+  // Only the rows stored private are cached, by metadata blob SHA: their names do not depend on a
+  // visibility that can change under an unchanged blob.
   const resolutionCache = new Map<string, Promise<readonly string[]>>()
+
+  async function resolveStoredPrivateNames(metadata: {
+    readonly sha: string
+    readonly rows: readonly ScanRow[]
+  }): Promise<readonly string[]> {
+    const cached = resolutionCache.get(metadata.sha)
+    if (cached !== undefined) return cached
+
+    const resolution = resolvePrivateRepositoryNames(
+      octokit,
+      metadata.rows.filter(row => !row.archivedNamed),
+    )
+    resolutionCache.set(metadata.sha, resolution)
+    try {
+      return await resolution
+    } catch (error: unknown) {
+      resolutionCache.delete(metadata.sha)
+      throw error
+    }
+  }
 
   return {
     resolvePrivateRepositoryNames: async () => {
       const metadata = await readPrivateMetadata(octokit, owner, repo, branch)
-      const cached = resolutionCache.get(metadata.sha)
-      if (cached !== undefined) return cached
-
-      const resolution = resolvePrivateRepositoryNames(octokit, metadata.rows)
-      resolutionCache.set(metadata.sha, resolution)
-      try {
-        return await resolution
-      } catch (error: unknown) {
-        resolutionCache.delete(metadata.sha)
-        throw error
-      }
+      const privateNames = await resolveStoredPrivateNames(metadata)
+      // An archived named row is resolved on every scan, never from the cache: its result is GitHub's
+      // current visibility (and live name), which changes without the metadata blob changing.
+      const archivedNames = await resolveArchivedRepositoryNames(
+        octokit,
+        metadata.rows.filter(row => row.archivedNamed),
+      )
+      return [...privateNames, ...archivedNames]
     },
   }
 }
 
 /**
  * Scan candidate content with the GitHub-backed privacy adapter. Callers may
- * reuse an adapter to cache resolution by the metadata blob SHA, or provide
- * only a token and the request content.
+ * reuse an adapter to cache the names of rows stored private by the metadata blob SHA (an archived
+ * named row is re-resolved on every scan), or provide only a token and the request content.
  */
 export async function checkPrivateLeakWithGitHub(request: GitHubPrivateLeakScanRequest): Promise<GuardResult> {
   const adapter =
@@ -222,28 +241,43 @@ interface ScanRow {
   readonly storedName: string
 }
 
+/** The tokens for rows stored private, in one batched lookup. Every failure is an error. */
 async function resolvePrivateRepositoryNames(
+  octokit: GitHubPrivateLeakClient,
+  rows: readonly ScanRow[],
+): Promise<readonly string[]> {
+  const nodeIds = rows.flatMap(row => (row.nodeId === undefined ? [] : [row.nodeId]))
+  if (nodeIds.length === 0) return []
+
+  const lookup = await lookUpNodes(octokit, nodeIds)
+  if ('error' in lookup) throw lookup.error
+
+  return lookup.nodes.flatMap(node => privateRowTokens(node))
+}
+
+/**
+ * The tokens for archived named rows, in one batched lookup per call. A failed lookup is not an
+ * error: each row falls back to its stored name. Called on every scan, never cached.
+ */
+async function resolveArchivedRepositoryNames(
   octokit: GitHubPrivateLeakClient,
   rows: readonly ScanRow[],
 ): Promise<readonly string[]> {
   const nodeIds = rows.flatMap(row => (row.nodeId === undefined ? [] : [row.nodeId]))
   const lookup = nodeIds.length === 0 ? {nodes: []} : await lookUpNodes(octokit, nodeIds)
 
-  // A failed lookup is an error for a row stored private, and only for such a row.
-  if ('error' in lookup && rows.some(row => !row.archivedNamed)) throw lookup.error
-
   const names: string[] = []
   let position = 0
   for (const row of rows) {
     const node = row.nodeId === undefined || 'error' in lookup ? undefined : lookup.nodes[position]
     if (row.nodeId !== undefined) position += 1
-    names.push(...(row.archivedNamed ? archivedRowTokens(row, node) : privateRowTokens(node)))
+    names.push(...archivedRowTokens(row, node))
   }
 
   return names
 }
 
-/** One batched lookup. A failure is returned, not thrown: only a row stored private makes it fatal. */
+/** One batched lookup. A failure is returned, not thrown: only the rows stored private make it fatal. */
 async function lookUpNodes(
   octokit: GitHubPrivateLeakClient,
   nodeIds: readonly string[],

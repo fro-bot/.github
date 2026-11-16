@@ -59,6 +59,8 @@ function mockClient(params: {
   nodes?: readonly unknown[]
   onGraphql?: () => void
   graphqlError?: Error
+  /** Answers each lookup by the node IDs it asks about; overrides `nodes` and `graphqlError`. */
+  respond?: (ids: readonly string[]) => unknown
 }): GitHubPrivateLeakClient {
   return {
     rest: {
@@ -69,8 +71,9 @@ function mockClient(params: {
         }),
       },
     },
-    graphql: vi.fn(async () => {
+    graphql: vi.fn(async (_query: string, variables?: {ids: readonly string[]}) => {
       params.onGraphql?.()
+      if (params.respond !== undefined) return params.respond(variables?.ids ?? [])
       if (params.graphqlError !== undefined) throw params.graphqlError
       return {nodes: params.nodes ?? []}
     }),
@@ -342,19 +345,22 @@ describe('GitHub private-leak adapter — an archived named row', () => {
     expect(await scan(client, `See ${storedName} for details.`)).toMatchObject({ok: false})
   })
 
-  it('asks for the visibility of the archived row and of every private row in one batch, in file order', async () => {
+  it('asks for the visibility of the archived row, and looks the private rows up in a batch of their own', async () => {
+    const nodes: Record<string, unknown> = {
+      R_arch: {nameWithOwner: storedName, isPrivate: false, visibility: 'PUBLIC'},
+      R_private: privateNode,
+    }
     const client = mockClient({
       metadata: metadataResponse([archived, privateRow]),
-      nodes: [{nameWithOwner: storedName, isPrivate: false, visibility: 'PUBLIC'}, privateNode],
+      respond: ids => ({nodes: ids.map(id => nodes[id])}),
     })
 
     const result = await scan(client, 'See acme/private-repo for details.')
 
     expect(result).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/security.md']})
-    expect(client.graphql).toHaveBeenCalledTimes(1)
-    const [query, variables] = vi.mocked(client.graphql).mock.calls[0] as unknown as [string, {ids: string[]}]
-    expect(query).toContain('visibility')
-    expect(variables).toEqual({ids: ['R_arch', 'R_private']})
+    const calls = vi.mocked(client.graphql).mock.calls as unknown as [string, {ids: string[]}][]
+    expect(calls.map(([, variables]) => variables.ids)).toEqual([['R_private'], ['R_arch']])
+    expect(calls.every(([query]) => query.includes('visibility'))).toBe(true)
   })
 
   it('still throws for an unresolved private row beside an archived row', async () => {
@@ -407,5 +413,141 @@ describe('GitHub private-leak adapter — an archived named row', () => {
 
     expect(await scan(client, `See ${storedName} for details.`)).toEqual({ok: true})
     expect(client.graphql).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// A reused adapter: an archived row is resolved on every scan, a private row once per metadata SHA
+// ---------------------------------------------------------------------------
+
+const reusedPrivateNode = {nameWithOwner: 'acme/private-repo', isPrivate: true}
+
+/** A client whose answers per node ID can change between scans while the metadata blob stays the same. */
+function reusedClient(rows: readonly Record<string, unknown>[]) {
+  const answers: Record<string, unknown> = {R_private: reusedPrivateNode}
+  const asked: string[][] = []
+  const client = mockClient({
+    metadata: metadataResponse(rows),
+    respond: ids => {
+      asked.push([...ids])
+      const answer = ids.map(id => answers[id])
+      if (answer.some(item => item instanceof Error)) throw new Error('lookup failed')
+      return {nodes: answer}
+    },
+  })
+  return {client, answers, asked}
+}
+
+async function scanWith(adapter: Awaited<ReturnType<typeof createGitHubPrivateLeakAdapter>>, line: string) {
+  return checkPrivateLeakWithGitHub({
+    ...requestDefaults,
+    content: line,
+    diff: diffFor(line),
+    adapter,
+  })
+}
+
+describe('GitHub private-leak adapter — reuse with an unchanged metadata SHA', () => {
+  const storedName = 'acme/archived-widget'
+  const liveName = 'other-org/renamed-widget'
+  const archived = {
+    owner: 'acme',
+    name: 'archived-widget',
+    private: false,
+    node_id: 'R_arch',
+    onboarding_status: 'archived',
+  }
+  const privateRow = {private: true, node_id: 'R_private', owner: 'redacted-owner', name: 'redacted-name'}
+  const publicNode = {nameWithOwner: storedName, isPrivate: false, visibility: 'PUBLIC'}
+  const privateNode = {nameWithOwner: 'acme/private-repo', isPrivate: true}
+
+  it('re-resolves an archived row on every scan: PUBLIC then PRIVATE blocks the second scan', async () => {
+    const {client, answers, asked} = reusedClient([archived])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+    answers.R_arch = publicNode
+
+    const first = await scanWith(adapter, `See ${storedName} for details.`)
+    answers.R_arch = {nameWithOwner: storedName, isPrivate: true, visibility: 'PRIVATE'}
+    const second = await scanWith(adapter, `See ${storedName} for details.`)
+
+    expect(first).toEqual({ok: true})
+    expect(second).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/security.md']})
+    expect(asked).toEqual([['R_arch'], ['R_arch']])
+  })
+
+  it('picks up the live name on recovery: a failed lookup first, then a non-public answer under a new name', async () => {
+    const {client, answers, asked} = reusedClient([archived])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+    answers.R_arch = new Error('lookup failed')
+
+    const first = await scanWith(adapter, `See ${liveName} for details.`)
+    answers.R_arch = {nameWithOwner: liveName, isPrivate: true, visibility: 'PRIVATE'}
+    const second = await scanWith(adapter, `See ${liveName} for details.`)
+    const secondByStoredName = await scanWith(adapter, `See ${storedName} for details.`)
+
+    expect(first).toEqual({ok: true})
+    expect(second).toEqual({ok: false, matchedFiles: ['knowledge/wiki/topics/security.md']})
+    expect(secondByStoredName).toMatchObject({ok: false})
+    expect(asked).toHaveLength(3)
+  })
+
+  it('clears the row on the second scan when it turns PUBLIC after a PRIVATE first scan', async () => {
+    const {client, answers} = reusedClient([archived])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+    answers.R_arch = {nameWithOwner: storedName, isPrivate: true, visibility: 'PRIVATE'}
+
+    const first = await scanWith(adapter, `See ${storedName} for details.`)
+    answers.R_arch = publicNode
+    const second = await scanWith(adapter, `See ${storedName} for details.`)
+
+    expect(first).toMatchObject({ok: false})
+    expect(second).toEqual({ok: true})
+  })
+
+  it('looks a private row up once per metadata SHA, and the archived row on every scan, beside each other', async () => {
+    const {client, answers, asked} = reusedClient([archived, privateRow])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+    answers.R_arch = publicNode
+
+    await scanWith(adapter, 'See acme/private-repo for details.')
+    await scanWith(adapter, 'See acme/private-repo for details.')
+    const third = await scanWith(adapter, 'See acme/private-repo for details.')
+
+    expect(third).toMatchObject({ok: false})
+    expect(asked.filter(ids => ids.includes('R_private'))).toEqual([['R_private']])
+    expect(asked.filter(ids => ids.includes('R_arch'))).toEqual([['R_arch'], ['R_arch'], ['R_arch']])
+  })
+
+  it('makes a private-row lookup failure fatal once and retries it on the next scan, as before', async () => {
+    const {client, answers, asked} = reusedClient([archived, privateRow])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+    answers.R_arch = publicNode
+    answers.R_private = new Error('lookup failed')
+
+    await expect(scanWith(adapter, 'x')).rejects.toMatchObject({code: 'RESOLUTION_FAILED'})
+    answers.R_private = privateNode
+    expect(await scanWith(adapter, 'See acme/private-repo for details.')).toMatchObject({ok: false})
+    expect(asked.filter(ids => ids.includes('R_private'))).toEqual([['R_private'], ['R_private']])
+  })
+
+  it('makes the same number of GitHub calls as before when no row is archived: one lookup per SHA', async () => {
+    const {client, asked} = reusedClient([privateRow])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+
+    await scanWith(adapter, 'Public documentation.')
+    await scanWith(adapter, 'Public documentation.')
+
+    expect(asked).toEqual([['R_private']])
+    expect(client.rest.repos.getContent).toHaveBeenCalledTimes(2)
+  })
+
+  it('makes no lookup at all for a registry with neither a private nor an archived row', async () => {
+    const {client, asked} = reusedClient([])
+    const adapter = await createGitHubPrivateLeakAdapter({octokit: client})
+
+    await scanWith(adapter, 'Public documentation.')
+    await scanWith(adapter, 'Public documentation.')
+
+    expect(asked).toEqual([])
   })
 })
