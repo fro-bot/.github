@@ -97,12 +97,13 @@ Declared rename (phase 2):
 - Reconcile exits early for an archived row, before `migrateRepoEntry`. The exit has one write: redaction when an access-list entry for the row's node says `private === true`. A duplicate, a missing flag, conflicting entries with no explicit private, and a failed or missing lookup write nothing. `accessPrivateForStorage` is not used here, because it treats any duplicate as private.
 - Archived rows form an identity group before classification: every row that shares the archived row's node ID, database ID or, for a row with no ID, its owner and name. No row in the group is classified, surveyed, merged, restricted or reported, and the archived row is the group's survivor. Rename detection skips the group.
 - "Unchanged" means the serialized row is identical, not only that the same object is returned.
-- The leak scans select `private: true` rows and archived rows. For an archived row, a live `PUBLIC` contributes no private name; any other result, a failed lookup or a missing node ID builds the private name from the stored owner and name and does not block the scan. A private row's failed lookup still blocks, as today.
+- The leak scans select `private: true` rows and archived rows. For an archived row, a live `PUBLIC` contributes no private name. A live result that is not public contributes both the stored owner and name and the live owner and name, because an archived row keeps its stored name through a rename or transfer on GitHub. A failed lookup or a missing node ID contributes the stored name. None of these blocks the scan. A private row's failed lookup still blocks, as today.
+- The wiki-presence gate attributes a changed page to an archived row only when GitHub confirms that row's node public at check time. Without that confirmation the row is left out of the public slug map, so its page passes only when it is unchanged from `main`. A stored `private: false` alone is not enough for an archived row, because reconcile keeps the row named when it cannot see the repository.
 - The lifecycle module stays `packages/registry/src/rename-tracked-repo.ts` and the workflow file stays `rename-tracked-repo.yaml`, with a new `action` input: no new CLI, shim or token mint. The default action is today's apply, so existing dispatches keep working.
 - The workflow's concurrency group is keyed by node ID, so dispatches for different repositories do not replace each other while pending.
 - A survey is refused at one predicate: `publicRepoEntryExists` requires a non-archived row. That gates the survey's start and its persist recheck. The survey-result writer gains an outcome that writes nothing for an archived row.
 - The recheck alone can race an archive. The trusted wiki writer therefore also reads the target's row from the same `data` commit it writes onto, on every retry, and writes nothing when that row is archived. The re-dispatch job and the gateway announce skip an archived target.
-- Jobs that read the registry read `data`'s copy at the moment they act. Renovate dispatch and `update-metadata` read no registry row and skip repositories GitHub reports archived; they are unchanged. Until the operator archives on GitHub they still see the repository, which is accepted: the declaration precedes the GitHub archive by minutes.
+- Jobs that read the registry read `data`'s copy at the moment they act. Renovate dispatch and `update-metadata` read no registry row today: the Renovate list is built by discovery, which skips repositories GitHub reports archived, and the dispatch planner filters only by access and owner. Both gain a filter against `data`'s archived rows, so a declared archive stops them even when the GitHub archive never follows. When the registry cannot be read, they act on no repository.
 - The archive notice is a plain first paragraph under the page's H1, under 200 characters. It then also becomes the page's sentence in the agents' daily index.
 - The marker is enforced in the trusted writer: when the stored page carries `archived` and an incoming page omits it, a survey or repair write restores it, and a dashboard save keeps it through the dashboard's own frontmatter round-trip. No new lint kind is added, because the dashboard matches lint kinds exhaustively.
 - A redirect alias is the page's full site path, `wiki/repos/<old-slug>`. Both writers of a rename use it: the page-move planner and the ingest's node-ID migration. When old and new slugs are equal, no alias is written.
@@ -160,7 +161,8 @@ Leak-scan decision for one selected row:
 | `private: true` | other value | live name | no |
 | `private: true` | lookup failed or no node ID | none available | yes |
 | archived, named | `PUBLIC` | none | no |
-| archived, named | other value, failure or no node ID | stored owner and name | no |
+| archived, named | not public | stored owner and name, and live owner and name | no |
+| archived, named | failure or no node ID | stored owner and name | no |
 | archived, redacted | as `private: true` | as `private: true` | as `private: true` |
 
 ## Implementation Units
@@ -202,7 +204,7 @@ Leak-scan decision for one selected row:
 **Dependencies:** Unit 1
 
 **Files:**
-- Modify: `packages/registry/src/repos-metadata.ts`, `packages/registry/src/check-repo-onboarded.ts`, `packages/wiki-write-core/src/wiki-ingest.ts`, `scripts/wiki-ingest.ts`, `packages/dispatch/src/dispatch-plan.ts`, `packages/dispatch/src/dispatch-cli.ts`, `packages/reports/src/daily-digest-counts.ts`, `packages/reports/src/gateway-announce.ts`, `.github/workflows/survey-repo.yaml`, `.github/workflows/fro-bot.yaml`
+- Modify: `packages/registry/src/repos-metadata.ts`, `packages/registry/src/check-repo-onboarded.ts`, `packages/wiki-write-core/src/wiki-ingest.ts`, `scripts/wiki-ingest.ts`, `packages/dispatch/src/dispatch-renovate.ts`, `packages/registry/src/update-metadata.ts`, `.github/workflows/dispatch-renovate.yaml`, `.github/workflows/update-metadata.yaml`, `packages/dispatch/src/dispatch-plan.ts`, `packages/dispatch/src/dispatch-cli.ts`, `packages/reports/src/daily-digest-counts.ts`, `packages/reports/src/gateway-announce.ts`, `.github/workflows/survey-repo.yaml`, `.github/workflows/fro-bot.yaml`
 - Test: `packages/registry/src/repos-metadata.test.ts`, `packages/registry/src/check-repo-onboarded.test.ts`, `packages/dispatch/src/cross-repo-dispatch.test.ts`, `packages/reports/src/daily-digest-counts.test.ts`, `scripts/survey-repo-workflow.test.ts`, `scripts/fro-bot-workflow.test.ts`
 
 **Approach:**
@@ -210,6 +212,7 @@ Leak-scan decision for one selected row:
 - A manual survey must stop before the agent runs, not only before the hand-off: gate the agent steps on the start check.
 - `applySurveyResult` writes nothing for an archived row, for success and failure results, so a survey in flight leaves no trace and triggers no re-dispatch.
 - `gateTarget` blocks an archived target with a reason; the CLI passes the status through.
+- Renovate discovery and the Renovate dispatch planner drop a repository whose registry row on `data` is archived, matched by owner and name. An unreadable registry yields an empty list.
 - The trusted wiki writer checks the target's row in the tree it commits onto and writes nothing for an archived target. The survey's re-dispatch job and its announce step are conditioned on the same result.
 - The digest gains an archived count and stops counting archived rows as tracked. Every Observe duty that enumerates repositories and can open an issue or list an attention item excludes archived rows: the tracked-repository list and the accessible-repository sweep. The daily report shows the archived count.
 - Remediate reads `main`'s registry today. Its repository list is filtered against `data`'s registry before it acts; when that read fails, it acts on no repository from the list.
@@ -226,6 +229,8 @@ Leak-scan decision for one selected row:
 - Integration: an archive commit lands between the recheck and the wiki write; the writer rereads the row at the new head and writes nothing, and no re-dispatch or announce follows.
 - Happy path: a row with status `archived` is accepted wherever the survey-result tests enumerate statuses.
 - Integration: both Observe duties that enumerate repositories exclude archived rows, and Remediate's list is filtered against `data`.
+- Error path: Remediate's read of `data`'s registry fails while its stale list is populated: it acts on no repository from the list.
+- Happy path: Renovate discovery and the dispatch planner drop a repository with an archived row that GitHub does not report archived; error path: an unreadable registry yields no repositories.
 - Happy path: `gateTarget` blocks an archived row and allows the same row onboarded.
 - Happy path: the digest reports an archived row in the archived count and not in the tracked count.
 - Integration: the Observe prompt text excludes archived rows from tracked repositories and names the archived count.
@@ -241,14 +246,14 @@ Leak-scan decision for one selected row:
 **Dependencies:** Unit 1
 
 **Files:**
-- Modify: `packages/privacy/src/check-private-leak.ts`, `packages/wiki-write-core/src/private-leak-adapter.ts`, `packages/wiki-write-core/dist/gate-contract.json`, `packages/privacy/README.md`, `metadata/README.md`, `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md`
+- Modify: `packages/privacy/src/check-private-leak.ts`, `packages/privacy/src/check-wiki-private-presence.ts`, `packages/privacy/src/check-wiki-private-presence-cli.ts`, `packages/privacy/src/private-repo-resolution.ts`, `packages/wiki-ops/src/wiki-repair.ts`, `.github/workflows/merge-data.yaml`, `packages/wiki-write-core/src/private-leak-adapter.ts`, `packages/wiki-write-core/dist/gate-contract.json`, `packages/privacy/README.md`, `metadata/README.md`, `docs/solutions/best-practices/privacy-gate-promotion-leak-prevention-2026-06-04.md`
 - Test: `packages/privacy/src/check-private-leak.test.ts`, `packages/wiki-write-core/src/private-leak-adapter.test.ts`, `packages/privacy/src/check-wiki-private-presence.test.ts`
 
 **Approach:**
 - One selector serves the three selection sites: rows stored private, plus archived rows.
 - `resolvePrivateRows` takes the row, not only its node ID, and follows the decision table above. An archived row's failed lookup is not a scan failure.
 - The published adapter applies the same table.
-- The wiki-presence gate needs no change: a named archived row is in the public slug map, and a redacted one is not. Add tests that pin both, including that an edited page of a redacted archived row is `unattributable-page`.
+- The wiki-presence gate resolves each archived row's node through the same shared resolution and keeps the row in the public slug map only on a live `PUBLIC`. A redacted row, a non-public result and a failed lookup leave it out, so a changed page is `unattributable-page` and an unchanged page passes. Every caller of the gate gets the lookup, wiki repair included; the workflow steps that run it pass the read-only token.
 - Both mutated modules stay at their current mutation score with no new directive.
 
 **Execution note:** test-first, relative imports, constants inside functions.
@@ -261,7 +266,9 @@ Leak-scan decision for one selected row:
 - Edge case: an archived row beside an unresolvable private row still blocks as a resolution failure.
 - Edge case: a redacted archived row behaves exactly as a private row.
 - Integration: both scan modes and the adapter agree on every row of the decision table.
-- Happy path: the wiki-presence gate attributes an edited page to a named archived row; error path: it blocks an edited page whose archived row is redacted, and passes that page unchanged from `main`.
+- Error path: an archived row whose live identity is a different, non-public owner and name: an added line naming the live name fails, and so does one naming the stored name.
+- Happy path: the wiki-presence gate attributes an edited page to a named archived row that resolves `PUBLIC`.
+- Error path: the same edited page, with body-only additions that name no repository, is blocked when the row resolves non-public, when the lookup fails, and when the row is redacted; the page unchanged from `main` passes in each case.
 
 **Verification:** the mutation gate passes; the promotion scan run against a fixture with one archived row prints counts and no name.
 
@@ -420,7 +427,7 @@ Leak-scan decision for one selected row:
 **Approach:**
 - An optional declared-name field on the row, validated as a repository name.
 - `declare-rename` takes the node ID and the name; an empty name cancels. It writes the row only.
-- Refuse: an archived row, a private row, a row with no `node_id` or `database_id`, the row's current name, a name or slug that belongs to another tracked row, a slug with an existing page, and a slug reserved by another page's full-path alias.
+- Refuse: an archived row, a private row, a row with no `node_id` or `database_id`, the row's current name, a name or slug that belongs to another tracked row, a slug with a page that is not this repository's own, and a slug reserved by another page's full-path alias. The repository's own page at the same slug is not a collision, which is the case-only rename.
 - A declaration for a repository GitHub has already renamed to that name is accepted; reconcile then applies it.
 
 **Test scenarios:**
@@ -446,7 +453,10 @@ Leak-scan decision for one selected row:
 **Approach:**
 - When a page moves, add `wiki/repos/<old-slug>` to its `aliases`, deduplicated. The ingest's node-ID migration writes the same form.
 - No alias when old and new slugs are equal.
-- `apply-declared` requires a declaration on the row and GitHub's name equal to it, checked on every snapshot and retry. It refuses with `no-declaration` or `declared-name-differs` and clears the field in the rename commit. The operator's `apply` on a row with a declaration follows the same equality rule; with no declaration it behaves as today.
+- `apply-declared` carries the declared name it was started for. It requires the row's declaration and GitHub's name to both equal that name, checked on every snapshot and retry, so a run queued for one declaration never applies its replacement. It refuses with `no-declaration` or `declared-name-differs` and clears the field in the rename commit. The operator's `apply` on a row with a declaration follows the same equality rule; with no declaration it behaves as today.
+- Both apply actions refuse an archived row on every snapshot and retry.
+- A redirect alias survives ordinary writes: when the stored page carries full-path aliases and an incoming page for the same path omits them, the writer keeps them.
+- An alias equal to the page's own address is removed when a page moves, so a rename back to an earlier name leaves no redirect onto the live page.
 - Collisions are rechecked at apply time.
 - `knowledge/schema.md` states that a rename adds a redirect alias and what form it takes.
 
@@ -458,6 +468,10 @@ Leak-scan decision for one selected row:
 - Error path: GitHub's name differs from the declaration: refused, no write, declaration kept.
 - Error path: `apply-declared` on a row whose declaration was cancelled, or replaced, after the dispatch: refused, no write.
 - Edge case: `apply-declared` when the rename has already been applied: reports it and writes nothing.
+- Error path: a run started for name A, after the declaration was replaced by B and GitHub shows B: refused.
+- Error path: `apply` and `apply-declared` on an archived row: refused, no write.
+- Integration: rename, then a survey rewrite of the page that omits `aliases`: the full-path alias is still present.
+- Edge case: A to B to A: the page at A carries the alias for B and none for A.
 - Error path: a page now exists at the target slug: refused.
 
 **Verification:** a local site build of a fixture page with the alias serves a redirect at the old page address.
@@ -477,7 +491,7 @@ Leak-scan decision for one selected row:
 **Approach:**
 - `detectRenames` classifies a same-owner name change as declared when every observed name equals the declaration, and as pending otherwise, with a flag when a declaration exists and differs. Transfers are checked first and stay blocked.
 - Declared matches are returned from both plan exits, including the no-op exit.
-- A new effect dispatches the lifecycle workflow with `apply-declared` for each declared match, after the metadata commit or after the handler has confirmed there is nothing to write, with the existing dispatch timeout. A failed or unknown dispatch is counted and retried on the next run, because the declaration is still present.
+- A new effect dispatches the lifecycle workflow with `apply-declared`, the node ID and the declared name for each declared match, after the metadata commit or after the handler has confirmed there is nothing to write, with the existing dispatch timeout. A failed or unknown dispatch is counted and retried on the next run, because the declaration is still present.
 - The lifecycle run's summary is the authoritative result of an apply. Reconcile's summary lists pending declarations, started applies and mismatches; a declaration that is still present on the next run is listed again. The rename-pending issue body says when a declaration differs.
 
 **Test scenarios:**
@@ -512,6 +526,7 @@ Leak-scan decision for one selected row:
 **Test scenarios:**
 - Happy path: a page with a bare old-slug alias gains the full-path alias; a second run changes nothing.
 - Edge case: a free-text alias that is not slug-shaped is untouched.
+- Integration: a dry run with eligible changes lists them, makes no Git Data write, and the workflow passes the dry-run input through env.
 - Edge case: an alias equal to a live page's slug is reported and untouched.
 
 **Verification:** the dry run on current `data` lists the pages; after the write and a site publish, one old page address returns a redirect.
