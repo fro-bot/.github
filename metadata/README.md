@@ -71,7 +71,7 @@ Onboarding status values:
 - `failed` — the most recent survey attempt failed.
 - `lost-access` — fro-bot no longer has collaborator access (revoked, archived, or deleted). The entry is preserved for audit; other fields stay at their last-known values.
 - `pending-review` — repo was discovered via collaborator access from an owner not listed in `allowlist.yaml`. A GitHub issue labeled `reconcile:pending-review` tracks each one; the entry stays in this state until an operator promotes it (approve and change status to `pending`) or removes it.
-- `archived` — the operator archived the repository; the row keeps its owner and name. Nothing writes this state yet, and no job treats it differently yet.
+- `archived` — the operator archived the repository; the row keeps its owner and name. Nothing writes this state yet. Every active job skips it: a survey of it is refused (at its start, at its persist recheck, and by the trusted writer on the `data` head it writes onto), a survey result for it writes nothing, cross-repo dispatch blocks it, Renovate discovery and dispatch drop it (matched by node or database ID, so a rename on GitHub does not hide it), the daily digest counts it as archived instead of tracked, and the daily passes open no issue or attention item for it. Reconcile and the privacy gates do not treat it differently yet.
 
 For private repos in `pending-review`, the issue body omits the owner/repo name and identifies the subject via its GitHub `node_id`. Public-repo `pending-review` issues include the full `owner/repo`. The control-plane repo is public, so issue bodies never leak private repo names.
 
@@ -194,7 +194,7 @@ Each event carries a small, fixed context the gateway renders into a Discord mes
 | `invitation_accepted` | `poll-invitations.yaml` | `{ count, repos: [{ owner, name }] }`                          |
 | `daily_digest`        | `fro-bot.yaml`          | `{ repos_tracked: number, surveys_today: number, report_url }` |
 
-`daily_digest` posts on scheduled runs only, and only on days with at least one survey — quiet days are suppressed (the oversight report issue is still created either way). `repos_tracked` counts public tracked repos; `surveys_today` counts repos surveyed that UTC day; `report_url` links that day's oversight report.
+`daily_digest` posts on scheduled runs only, and only on days with at least one survey — quiet days are suppressed (the oversight report issue is still created either way). `repos_tracked` counts public tracked repos (an archived row is counted separately, in the digest step's own output, and is not announced); `surveys_today` counts repos surveyed that UTC day; `report_url` links that day's oversight report.
 
 #### Daily digest go-live
 
