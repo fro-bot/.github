@@ -212,7 +212,8 @@ Leak-scan decision for one selected row:
 - A manual survey must stop before the agent runs, not only before the hand-off: gate the agent steps on the start check.
 - `applySurveyResult` writes nothing for an archived row, for success and failure results, so a survey in flight leaves no trace and triggers no re-dispatch.
 - `gateTarget` blocks an archived target with a reason; the CLI passes the status through.
-- Renovate discovery and the Renovate dispatch planner drop a repository whose registry row on `data` is archived, matched by owner and name. An unreadable registry yields an empty list.
+- Renovate discovery and the Renovate dispatch planner drop a repository whose registry row on `data` is archived. The match is by the repository's node ID or database ID from the access list, because an archived row keeps its stored name through a rename on GitHub. A row with neither ID is matched by owner and name. An unreadable registry yields an empty list.
+- The survey gate and the cross-repo dispatch gate look a target up by name and admit only a row they find, so a renamed archived repository has no row under its new name and is refused.
 - The trusted wiki writer checks the target's row in the tree it commits onto and writes nothing for an archived target. The survey's re-dispatch job and its announce step are conditioned on the same result.
 - The digest gains an archived count and stops counting archived rows as tracked. Every Observe duty that enumerates repositories and can open an issue or list an attention item excludes archived rows: the tracked-repository list and the accessible-repository sweep. The daily report shows the archived count.
 - Remediate reads `main`'s registry today. Its repository list is filtered against `data`'s registry before it acts; when that read fails, it acts on no repository from the list.
@@ -231,6 +232,7 @@ Leak-scan decision for one selected row:
 - Integration: both Observe duties that enumerate repositories exclude archived rows, and Remediate's list is filtered against `data`.
 - Error path: Remediate's read of `data`'s registry fails while its stale list is populated: it acts on no repository from the list.
 - Happy path: Renovate discovery and the dispatch planner drop a repository with an archived row that GitHub does not report archived; error path: an unreadable registry yields no repositories.
+- Edge case: a repository with an archived row, not archived on GitHub and renamed there: discovery and the dispatch planner still drop it, and a survey or cross-repo dispatch under the new name is refused.
 - Happy path: `gateTarget` blocks an archived row and allows the same row onboarded.
 - Happy path: the digest reports an archived row in the archived count and not in the tracked count.
 - Integration: the Observe prompt text excludes archived rows from tracked repositories and names the archived count.
