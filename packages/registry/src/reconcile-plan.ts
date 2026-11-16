@@ -1182,10 +1182,11 @@ function absorbArchivedDuplicates(rows: readonly RepoEntry[]): {rows: readonly R
  * or not, listed or absent, any probe result, renamed, transferred, a duplicate listing). No migration,
  * refresh, survey, lost-access flip, regain or un-redaction can reach it.
  *
- * The one write is redaction, on one exact piece of evidence: an access-list entry for the row's own
- * node ID whose `private` is strictly `true`. Two entries for the node that disagree redact when either
- * says `true`. NOT evidence: a duplicate listing (so `accessPrivateForStorage` is not used here), a
- * missing `private` flag, a probe result, or a lookup that failed. A row with no node ID cannot be
+ * The one write is redaction, on one exact piece of evidence: the row's own node ID is in
+ * `ReconcileInput.explicitPrivateNodeIds`, the nodes some raw listing reported `private === true`. It is
+ * not read from `accessList`, whose `private` is fail-closed (a missing flag reads as private) and keeps
+ * one entry per name. NOT evidence: a duplicate listing (so `accessPrivateForStorage` is not used here), a
+ * missing or null `private` flag, a probe result, or a lookup that failed. A row with no node ID cannot be
  * redacted. A row already redacted (owner `[REDACTED]`) is returned unchanged whatever the evidence, so
  * a node that is public again never restores a name.
  */

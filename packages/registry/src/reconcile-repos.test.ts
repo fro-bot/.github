@@ -11314,6 +11314,17 @@ describe('reconcileRepos leaves an archived row alone', () => {
       expect(result.summary.pendingReview).toBe(0)
     })
 
+    it('an absorbed sibling reports no rename, however the access list names the repository', () => {
+      const sibling = archSibling({name: 'attic-former'})
+
+      const result = archPlan([archRow(), sibling], [archAccess({name: 'attic-current'})])
+
+      expect(result.nextRepos.repos).toEqual([archRow()])
+      expect(result.pendingRenames).toEqual([])
+      expect(result.excludedNodeIds).toEqual([])
+      expect(result.issues).toEqual([])
+    })
+
     it('a sibling with no node ID and the same database ID is absorbed', () => {
       const sibling = archSibling({name: 'attic-copy', database_id: ARCH_DB})
       delete sibling.node_id
@@ -11939,7 +11950,7 @@ describe('reconcile discovery and effects with an archived row', () => {
     const initial = serializeRows(options.rows)
     const issuesCreate = vi.fn(async () => ({data: {number: 1}}))
     const issuesUpdate = vi.fn(async (_params: unknown) => ({data: {}}))
-    const createWorkflowDispatch = vi.fn(async () => undefined)
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => undefined)
     const reposGet = vi.fn(
       options.reposGet ?? (async () => ({data: {archived: false, private: false, node_id: 'R_x'}})),
     )
@@ -12256,6 +12267,45 @@ describe('reconcile discovery and effects with an archived row', () => {
         expect(result.summary.byChannel.collab.dispatched).toBe(0)
       }
     })
+  })
+
+  it('an archived row that shares a name with a dispatched row does not decide its survey order or null group', async () => {
+    const stranger = makeEntry({
+      owner: ARCH_OWNER,
+      name: ARCH_NAME,
+      node_id: 'R_stranger',
+      private: false,
+      last_survey_at: '2026-01-01',
+      next_survey_eligible_at: '2026-02-01',
+    })
+    const neverSurveyed = (name: string, nodeId: string) =>
+      makeEntry({
+        owner: ARCH_OWNER,
+        name,
+        node_id: nodeId,
+        private: false,
+        onboarding_status: 'pending',
+        last_survey_at: null,
+        last_survey_status: null,
+        next_survey_eligible_at: null,
+      })
+    const listed = [
+      rawListing({owner: {login: ARCH_OWNER}, node_id: 'R_stranger'}),
+      rawListing({owner: {login: ARCH_OWNER}, name: 'n-one', node_id: 'R_n1'}),
+      rawListing({owner: {login: ARCH_OWNER}, name: 'n-two', node_id: 'R_n2'}),
+    ]
+    // The archived row comes last and was never surveyed: a lookup by name must not see it.
+    const rows = [
+      stranger,
+      neverSurveyed('n-one', 'R_n1'),
+      neverSurveyed('n-two', 'R_n2'),
+      archRow({last_survey_at: null, last_survey_status: null}),
+    ]
+
+    const {createWorkflowDispatch} = await archivedRun({rows, collab: listed})
+
+    const order = createWorkflowDispatch.mock.calls.map(call => (call[0] as {inputs: {node_id: string}}).inputs.node_id)
+    expect(order).toEqual(['R_n1', 'R_n2', 'R_stranger'])
   })
 
   describe('through the real serializer', () => {
