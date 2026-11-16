@@ -718,8 +718,59 @@ describe('dispatch-renovate (bun, dispatch-renovate.yaml)', () => {
     s: 204,
   })
 
-  it('`plan` writes the reachable repositories to $GITHUB_OUTPUT and dispatches nothing', async () => {
+  const REGISTRY_EMPTY = 'version: 1\nrepos: []\n'
+  const REGISTRY_ARCHIVED = `version: 1
+repos:
+  - owner: fro-bot
+    name: dashboard
+    added: '2026-01-01'
+    onboarding_status: archived
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: true
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+    node_id: R_kgDOARCHIVED
+    database_id: 31
+`
+  const installationWithIds = route('GET', '/installation/repositories', {
+    b: {
+      total_count: 2,
+      repositories: [
+        {name: 'agent', owner: {login: 'fro-bot'}, node_id: 'R_kgDOAGENT', id: 30},
+        {name: 'dashboard-renamed', owner: {login: 'fro-bot'}, node_id: 'R_kgDOARCHIVED', id: 31},
+      ],
+    },
+  })
+
+  it('`plan` leaves out a repository whose registry row is archived, matched by ID after a rename', async () => {
+    const cwd = checkout({
+      'metadata/renovate.yaml': 'version: 1\nrepositories:\n  with-renovate:\n    - agent\n    - dashboard-renamed\n',
+      'metadata/repos.yaml': REGISTRY_ARCHIVED,
+    })
+    const result = await run('dispatch-renovate', ['plan'], [installationWithIds], {
+      cwd,
+      env: {GITHUB_TOKEN: 'tok-discovery'},
+    })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.githubOutput).toBe('repositories=agent\n')
+  })
+
+  it('`plan` with no readable registry writes an empty output, lists nothing and exits 1 with the fixed line', async () => {
     const cwd = checkout({'metadata/renovate.yaml': RENOVATE})
+    const result = await run('dispatch-renovate', ['plan'], [installation], {cwd, env: {GITHUB_TOKEN: 'tok-discovery'}})
+
+    expect(result.exitCode).toBe(1)
+    expect(result.githubOutput).toBe('repositories=\n')
+    expect(result.stderr).toBe('dispatch-renovate: registry unreadable; planning no repositories\n')
+    expect(requests()).toStrictEqual([])
+  })
+
+  it('`plan` writes the reachable repositories to $GITHUB_OUTPUT and dispatches nothing', async () => {
+    const cwd = checkout({'metadata/renovate.yaml': RENOVATE, 'metadata/repos.yaml': REGISTRY_EMPTY})
     const result = await run('dispatch-renovate', ['plan'], [installation], {cwd, env: {GITHUB_TOKEN: 'tok-discovery'}})
 
     expect(result.exitCode).toBe(0)
@@ -729,7 +780,7 @@ describe('dispatch-renovate (bun, dispatch-renovate.yaml)', () => {
   })
 
   it('`plan` throws without $GITHUB_OUTPUT, as the workflow step relies on', async () => {
-    const cwd = checkout({'metadata/renovate.yaml': RENOVATE})
+    const cwd = checkout({'metadata/renovate.yaml': RENOVATE, 'metadata/repos.yaml': REGISTRY_EMPTY})
     const result = await run('dispatch-renovate', ['plan'], [installation], {
       cwd,
       env: {GITHUB_TOKEN: 'tok-discovery'},

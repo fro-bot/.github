@@ -2841,3 +2841,275 @@ describe('survey-repo.yaml knowledge tools in the three survey attempts', () => 
     expect(block).not.toContain('knowledge_wiki_linked')
   })
 })
+
+describe('survey-repo.yaml archived repositories', () => {
+  const surveyJob = workflowParsed.jobs['survey-repo']
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const redispatchJob = workflowParsed.jobs['survey-redispatch']
+  const steps = surveyJob?.steps ?? []
+  const persistSteps = persistJob?.steps ?? []
+
+  const onboardedStep = steps.find(step => step.id === 'onboarded')
+  const attempt1 = steps.find(step => step.id === 'survey-agent')
+  const retry1 = steps.find(step => step.id === 'survey-agent-retry-1')
+  const retry2 = steps.find(step => step.id === 'survey-agent-retry-2')
+  const wikiCommit = persistSteps.find(step => step.id === 'wiki-commit')
+  const recordStep = persistSteps.find(step => step.name === 'Record survey result')
+  const announceStep = persistSteps.find(step => step.name === '📣 Announce survey to gateway')
+
+  const status = {always: false, cancelled: false, failure: false, success: true}
+
+  it('runs the start check before the first agent step, as the only gate on it', () => {
+    const onboardedIndex = steps.findIndex(step => step.id === 'onboarded')
+    const agentIndex = steps.findIndex(step => step.id === 'survey-agent')
+
+    expect(onboardedStep?.run).toBe('bun scripts/check-repo-onboarded.ts')
+    expect(onboardedIndex).toBeGreaterThanOrEqual(0)
+    expect(onboardedIndex).toBeLessThan(agentIndex)
+  })
+
+  it('runs the first agent attempt only when the start check admitted the target', () => {
+    const condition = String(attempt1?.if ?? '')
+
+    expect(condition).toContain("steps.onboarded.outputs.onboarded == 'true'")
+    expect(evaluateCondition(condition, {context: {'steps.onboarded.outputs.onboarded': 'true'}, status})).toBe(true)
+    for (const verdict of ['false', '']) {
+      expect(evaluateCondition(condition, {context: {'steps.onboarded.outputs.onboarded': verdict}, status})).toBe(
+        false,
+      )
+    }
+  })
+
+  it('does not run either retry when the first attempt was skipped', () => {
+    for (const retry of [retry1, retry2]) {
+      expect(
+        evaluateCondition(String(retry?.if ?? ''), {
+          context: {
+            'steps.survey-agent.conclusion': 'skipped',
+            'steps.survey-agent-retry-1.conclusion': 'skipped',
+            'steps.wiki-changes.outputs.changed': '',
+            'steps.wiki-changes-retry-1.outputs.changed': '',
+          },
+          status,
+        }),
+      ).toBe(false)
+    }
+  })
+
+  it('does not record a result for a start check that refused the target (the final conclusion stays skipped)', () => {
+    expect(
+      evaluateCondition(String(recordStep?.if ?? ''), {
+        context: {
+          'needs.survey-repo.outputs.agent-conclusion': 'skipped',
+          'needs.survey-resolve.outputs.resolve-outcome': 'success',
+          'steps.recheck.conclusion': 'success',
+        },
+        status,
+      }),
+    ).toBe(false)
+  })
+
+  it('gates the wiki commit on the persist recheck of the onboarded check', () => {
+    const condition = String(wikiCommit?.if ?? '')
+
+    expect(condition).toContain("steps.onboarded-persist.outputs.onboarded == 'true'")
+    expect(
+      evaluateCondition(condition, {
+        context: {
+          'needs.survey-repo.outputs.wiki-artifact-ready': 'success',
+          'steps.recheck.conclusion': 'success',
+          'steps.onboarded-persist.outputs.onboarded': 'false',
+        },
+        status,
+      }),
+    ).toBe(false)
+  })
+
+  it('exports an archived output from persist: a refused write-back or a writer that found the row archived', () => {
+    const expression = String(persistJob?.outputs?.archived ?? '')
+
+    expect(expression).toContain("steps.wiki-commit.outputs.archived == 'true'")
+    expect(expression).toContain("steps.record-result.outputs.archived == 'true'")
+    for (const [commit, record, expected] of [
+      ['true', '', true],
+      ['', 'true', true],
+      ['', '', false],
+    ] as const) {
+      expect(
+        evaluateCondition(expression, {
+          context: {'steps.wiki-commit.outputs.archived': commit, 'steps.record-result.outputs.archived': record},
+        }),
+      ).toBe(expected)
+    }
+  })
+
+  describe('announce', () => {
+    const succeeded = {
+      'needs.survey-repo.outputs.agent-conclusion': 'success',
+      'needs.survey-repo.outputs.wiki-changed': 'true',
+      'needs.survey-repo.result': 'success',
+      'steps.recheck.conclusion': 'success',
+      'needs.survey-repo.outputs.onboarded': 'true',
+      'steps.wiki-commit.conclusion': 'success',
+    }
+
+    it('still announces a real success', () => {
+      expect(evaluateCondition(String(announceStep?.if ?? ''), {context: succeeded, status})).toBe(true)
+    })
+
+    it('skips the announce when the writer found the row archived', () => {
+      expect(
+        evaluateCondition(String(announceStep?.if ?? ''), {
+          context: {...succeeded, 'steps.wiki-commit.outputs.archived': 'true'},
+          status,
+        }),
+      ).toBe(false)
+    })
+
+    it('skips the announce when the survey result write-back found the row archived', () => {
+      expect(
+        evaluateCondition(String(announceStep?.if ?? ''), {
+          context: {...succeeded, 'steps.record-result.outputs.archived': 'true'},
+          status,
+        }),
+      ).toBe(false)
+    })
+  })
+
+  it('skips the re-run for an archived target even after a page conflict', () => {
+    expect(String(redispatchJob?.if ?? '')).toContain("needs.survey-persist.outputs.archived != 'true'")
+  })
+
+  it('keeps the record step and its write-back the only holders of the archived output', () => {
+    expect(recordStep?.id).toBe('record-result')
+    expect(recordStep?.run).toBe('bun scripts/record-survey-result.ts')
+  })
+})
+
+describe('survey-repo.yaml archived writer result is terminal for the survey', () => {
+  const persistJob = workflowParsed.jobs['survey-persist']
+  const redispatchJob = workflowParsed.jobs['survey-redispatch']
+  const persistSteps = persistJob?.steps ?? []
+  const recordStep = persistSteps.find(step => step.id === 'record-result')
+  const fallbackStep = persistSteps.find(step => step.name === 'Record survey result (cancelled/timeout fallback)')
+  const announceStep = persistSteps.find(step => step.name === '📣 Announce survey to gateway')
+
+  const RECORD_IF = String(recordStep?.if ?? '')
+  const FALLBACK_IF = String(fallbackStep?.if ?? '')
+  const ANNOUNCE_IF = String(announceStep?.if ?? '')
+
+  // A survey that ran cleanly to a successful wiki commit.
+  const clean = {
+    'needs.survey-repo.outputs.agent-conclusion': 'success',
+    'needs.survey-repo.outputs.wiki-changed': 'true',
+    'needs.survey-repo.result': 'success',
+    'needs.survey-repo.outputs.onboarded': 'true',
+    'needs.survey-resolve.outputs.resolve-outcome': 'success',
+    'steps.recheck.conclusion': 'success',
+    'steps.wiki-commit.conclusion': 'success',
+    'steps.record-result.outcome': 'success',
+  }
+  const ok = {always: false, cancelled: false, failure: false, success: true}
+
+  describe('the writer reports archived: neither recorder runs', () => {
+    const archived = {...clean, 'steps.wiki-commit.outputs.archived': 'true', 'steps.record-result.outcome': 'skipped'}
+
+    it('skips the primary recorder', () => {
+      expect(evaluateCondition(RECORD_IF, {context: archived, status: ok})).toBe(false)
+    })
+
+    it.each([
+      ['a failure() earlier in the job', {...ok, failure: true, success: false}],
+      ['a cancelled job', {...ok, cancelled: true, success: false}],
+    ])('skips the fallback recorder too, under %s', (_label, status) => {
+      expect(
+        evaluateCondition(FALLBACK_IF, {context: {...archived, 'needs.survey-repo.result': 'failure'}, status}),
+      ).toBe(false)
+    })
+
+    it('skips the fallback when the survey job failed but the writer still reported archived', () => {
+      expect(
+        evaluateCondition(FALLBACK_IF, {
+          context: {...archived, 'needs.survey-repo.result': 'cancelled'},
+          status: {...ok, cancelled: true, success: false},
+        }),
+      ).toBe(false)
+    })
+  })
+
+  describe('the normal path is unchanged', () => {
+    it('runs the primary recorder on a clean survey, whether the writer output is empty or not archived', () => {
+      expect(evaluateCondition(RECORD_IF, {context: clean, status: ok})).toBe(true)
+      expect(
+        evaluateCondition(RECORD_IF, {context: {...clean, 'steps.wiki-commit.outputs.archived': 'false'}, status: ok}),
+      ).toBe(true)
+    })
+
+    it('still runs the primary recorder when the commit step was skipped or failed (a failure is recorded)', () => {
+      for (const conclusion of ['skipped', 'failure']) {
+        expect(
+          evaluateCondition(RECORD_IF, {context: {...clean, 'steps.wiki-commit.conclusion': conclusion}, status: ok}),
+        ).toBe(true)
+      }
+    })
+
+    it('still runs the fallback when the primary did not succeed and the survey failed', () => {
+      expect(
+        evaluateCondition(FALLBACK_IF, {
+          context: {...clean, 'needs.survey-repo.result': 'failure', 'steps.record-result.outcome': 'skipped'},
+          status: {...ok, failure: true, success: false},
+        }),
+      ).toBe(true)
+    })
+
+    it('keeps the primary recorder env and the announce for a clean survey', () => {
+      expect(evaluateCondition(ANNOUNCE_IF, {context: clean, status: ok})).toBe(true)
+      expect(String(recordStep?.env?.SURVEY_STATUS ?? '')).toContain("steps.wiki-commit.conclusion == 'success'")
+    })
+
+    it('does not change the job conclusion: the writer step still succeeds, and no step is marked continue-on-error', () => {
+      const commitStep = persistSteps.find(step => step.id === 'wiki-commit')
+
+      expect(commitStep).not.toHaveProperty('continue-on-error')
+      expect(recordStep).not.toHaveProperty('continue-on-error')
+      expect(fallbackStep).not.toHaveProperty('continue-on-error')
+    })
+  })
+
+  describe('the fallback recorder is part of the archived output', () => {
+    const expression = String(persistJob?.outputs?.archived ?? '')
+    const evaluate = (context: Record<string, string>) => evaluateCondition(expression, {context})
+
+    it('gives the fallback step an id the output reads', () => {
+      expect(fallbackStep?.id).toBe('record-result-fallback')
+      expect(expression).toContain("steps.record-result-fallback.outputs.archived == 'true'")
+    })
+
+    it.each([
+      ['only the writer', {'steps.wiki-commit.outputs.archived': 'true'}, true],
+      ['only the primary recorder', {'steps.record-result.outputs.archived': 'true'}, true],
+      ['only the fallback recorder', {'steps.record-result-fallback.outputs.archived': 'true'}, true],
+      ['none of them', {}, false],
+      ['a value that is not true', {'steps.record-result-fallback.outputs.archived': 'false'}, false],
+    ])('is %s → archived is %j', (_label, context, expected) => {
+      expect(evaluate(context)).toBe(expected)
+    })
+
+    it('suppresses the redispatch when only the fallback detects an archived row', () => {
+      // The redispatch reads the job output the fallback now feeds, even after a page conflict.
+      const condition = String(redispatchJob?.if ?? '')
+
+      expect(condition).toContain("needs.survey-persist.outputs.archived != 'true'")
+      expect(String(redispatchJob?.needs)).toContain('survey-persist')
+      // The job output is an OR over the writer and both recorders (above), and this condition ANDs `!= 'true'` on it.
+      expect(condition).toMatch(/&&\s*needs\.survey-persist\.outputs\.archived != 'true'\s*&&/u)
+    })
+
+    it('does not read the fallback from the announce condition: the announce step runs before the fallback step', () => {
+      // A step can only read an earlier step, and the fallback only fires on a failure or cancellation, where the
+      // announce's own conditions (a clean survey and a successful commit) already hold it off.
+      expect(persistSteps.indexOf(announceStep as never)).toBeLessThan(persistSteps.indexOf(fallbackStep as never))
+      expect(ANNOUNCE_IF).not.toContain('record-result-fallback')
+    })
+  })
+})

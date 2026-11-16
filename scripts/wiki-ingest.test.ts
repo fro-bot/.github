@@ -1,7 +1,7 @@
 import type {GitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import type {OctokitClient} from './wiki-ingest.ts'
 import {Buffer} from 'node:buffer'
-import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
@@ -4169,5 +4169,380 @@ describe('validateWikilinks', () => {
   it('still checks the target of an aliased wikilink outside code', () => {
     expect(() => validateWikilinks(filesWith('See [[known|Known page]].'))).not.toThrow()
     expect(() => validateWikilinks(filesWith('See [[ghost|Known page]].'))).toThrow('[[ghost]]')
+  })
+})
+
+describe('commitWikiChanges (a target archived on the head it writes onto)', () => {
+  const PAGE = 'knowledge/wiki/repos/example-owner--example-repo.md'
+  const INDEX = 'knowledge/index.md'
+  const LOG = 'knowledge/log.md'
+  const REGISTRY = 'metadata/repos.yaml'
+  const TARGET_NODE = 'R_kgDOTARGET1'
+  const WRITES = ['createBlob', 'createTree', 'createCommit', 'updateRef']
+  let fake: GitDataFake
+
+  const row = (nodeId: string, status: string): Record<string, unknown> => ({
+    owner: 'example-owner',
+    name: nodeId === TARGET_NODE ? 'example-repo' : 'other-repo',
+    added: '2026-01-01',
+    onboarding_status: status,
+    last_survey_at: null,
+    last_survey_status: null,
+    has_fro_bot_workflow: false,
+    has_renovate: false,
+    discovery_channel: 'collab',
+    next_survey_eligible_at: null,
+    private: false,
+    node_id: nodeId,
+  })
+
+  const registry = (...rows: Record<string, unknown>[]): string =>
+    `version: 1\nrepos:\n${rows
+      .map(
+        r =>
+          `  - ${Object.entries(r)
+            .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+            .join('\n    ')}`,
+      )
+      .join('\n')}\n`
+
+  function seed(registryText: string | undefined): void {
+    fake = createGitDataFake({
+      branch: 'data',
+      files: {
+        [INDEX]: '# Wiki Index\n',
+        [LOG]: '# Wiki Log\n',
+        [PAGE]: 'page 1\n',
+        ...(registryText === undefined ? {} : {[REGISTRY]: registryText}),
+      },
+    })
+  }
+
+  const wrote = (): boolean => fake.calls.some(call => WRITES.includes(call.method))
+
+  async function commit(extra: Partial<Parameters<typeof commitWikiChanges>[0]> = {}) {
+    return commitWikiChanges({
+      octokit: fake.client as unknown as OctokitClient,
+      owner: 'fro-bot',
+      repo: '.github',
+      branch: 'data',
+      message: 'feat(knowledge): survey',
+      files: {[PAGE]: 'page 2\n', [INDEX]: '# Wiki Index\n', [LOG]: '# Wiki Log\n\nentry\n'},
+      bootstrapDataBranch: async () => ({created: false, ref: 'refs/heads/data', sha: fake.head()}),
+      maxRetries: 3,
+      targetNodeId: TARGET_NODE,
+      ...extra,
+    })
+  }
+
+  it('writes the survey when the target row is onboarded on the head', async () => {
+    seed(registry(row(TARGET_NODE, 'onboarded')))
+
+    const result = await commit()
+
+    expect(result).toMatchObject({committed: true, attempts: 1})
+    expect(result).not.toHaveProperty('archived')
+    expect(fake.files()[PAGE]).toBe('page 2\n')
+  })
+
+  it('writes nothing and reports archived when the target row is archived on the first head', async () => {
+    seed(registry(row(TARGET_NODE, 'archived')))
+    const head = fake.head()
+
+    const result = await commit()
+
+    expect(result).toMatchObject({committed: false, archived: true, commitSha: head, attempts: 1})
+    expect(wrote()).toBe(false)
+    expect(fake.head()).toBe(head)
+    expect(fake.files()[PAGE]).toBe('page 1\n')
+  })
+
+  it('rereads the row on the retry head: archived between the first read and the ref update writes nothing', async () => {
+    seed(registry(row(TARGET_NODE, 'onboarded')))
+    vi.useFakeTimers()
+    // The archive commit lands after attempt 1 read an onboarded head and before its ref update, so that update
+    // is refused as a non-fast-forward and the retry reads the head that now carries the archived row.
+    fake.beforeUpdateRef(1, () => fake.advance({[REGISTRY]: registry(row(TARGET_NODE, 'archived'))}))
+    try {
+      const settled = commit()
+      await vi.advanceTimersByTimeAsync(30_000)
+      const result = await settled
+
+      expect(result).toMatchObject({committed: false, archived: true, attempts: 2})
+      expect(fake.calls.filter(call => call.method === 'updateRef')).toHaveLength(1)
+      expect(fake.files()[PAGE]).toBe('page 1\n')
+      expect(fake.messageOf(fake.head())).not.toBe('feat(knowledge): survey')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('reports archived ahead of a page conflict when the same head archives the row and changes a handed-off page', async () => {
+    seed(registry(row(TARGET_NODE, 'onboarded')))
+    const agentSha = fake.head()
+    fake.advance({[REGISTRY]: registry(row(TARGET_NODE, 'archived')), [PAGE]: 'page other\n'})
+
+    const result = await commit({handoff: {agentCommitSha: agentSha, paths: [PAGE]}})
+
+    expect(result).toMatchObject({committed: false, archived: true})
+    expect(wrote()).toBe(false)
+  })
+
+  describe('a target row with no node ID (a legacy row)', () => {
+    const TARGET_REPO = {owner: 'example-owner', name: 'example-repo'}
+    const legacy = (status: string, overrides: Record<string, unknown> = {}): Record<string, unknown> => {
+      const base = row(TARGET_NODE, status)
+      delete base.node_id
+      return {...base, ...overrides}
+    }
+
+    it('writes nothing for an archived legacy row on the first head, matched by owner and name', async () => {
+      seed(registry(legacy('archived')))
+      const head = fake.head()
+
+      const result = await commit({targetRepo: TARGET_REPO})
+
+      expect(result).toMatchObject({committed: false, archived: true, commitSha: head})
+      expect(wrote()).toBe(false)
+    })
+
+    it('rereads on the retry head: onboarded on attempt 1, archived legacy row on attempt 2, one updateRef', async () => {
+      seed(registry(legacy('onboarded')))
+      vi.useFakeTimers()
+      fake.beforeUpdateRef(1, () => fake.advance({[REGISTRY]: registry(legacy('archived'))}))
+      try {
+        const settled = commit({targetRepo: TARGET_REPO})
+        await vi.advanceTimersByTimeAsync(30_000)
+        const result = await settled
+
+        expect(result).toMatchObject({committed: false, archived: true, attempts: 2})
+        expect(fake.calls.filter(call => call.method === 'updateRef')).toHaveLength(1)
+        expect(fake.files()[PAGE]).toBe('page 1\n')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('does not match an archived legacy row when no owner and name were given', async () => {
+      seed(registry(legacy('archived')))
+
+      expect(await commit()).toMatchObject({committed: true})
+    })
+
+    it('does not match a legacy row of another owner or another name', async () => {
+      seed(registry(legacy('archived', {owner: 'someone-else'}), legacy('archived', {name: 'other-repo'})))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+
+    it('compares owner and name exactly, as publicRepoEntryExists does: a case difference is no match', async () => {
+      seed(registry(legacy('archived', {name: 'Example-Repo'})))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+
+    it('never matches by name a row that has a different node ID', async () => {
+      seed(registry({...row('R_kgDODIFFERENT', 'archived'), name: 'example-repo'}))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+
+    it('matches an archived row with the same node ID under a different stored name (renamed on GitHub)', async () => {
+      seed(registry({...row(TARGET_NODE, 'archived'), name: 'old-stored-name'}))
+
+      expect(await commit({targetRepo: {owner: 'example-owner', name: 'renamed-on-github'}})).toMatchObject({
+        committed: false,
+        archived: true,
+      })
+    })
+
+    it('does not fall back to the name for an onboarded row beside an archived row with another ID', async () => {
+      seed(registry(row(TARGET_NODE, 'onboarded'), {...row('R_kgDOOTHER02', 'archived'), name: 'example-repo'}))
+
+      expect(await commit({targetRepo: TARGET_REPO})).toMatchObject({committed: true})
+    })
+  })
+
+  it('ignores an archived row that belongs to another repository', async () => {
+    seed(registry(row(TARGET_NODE, 'onboarded'), row('R_kgDOOTHER02', 'archived')))
+
+    expect(await commit()).toMatchObject({committed: true})
+  })
+
+  it('checks nothing when no target is known: an archived row is not consulted', async () => {
+    seed(registry(row(TARGET_NODE, 'archived')))
+
+    const result = await commit({targetNodeId: undefined})
+
+    expect(result).toMatchObject({committed: true})
+    expect(fake.calls.some(call => call.method === 'getBlob')).toBe(false)
+  })
+
+  it('keeps the existing behaviour when the head has no registry file', async () => {
+    seed(undefined)
+
+    expect(await commit()).toMatchObject({committed: true})
+  })
+
+  it.each([
+    ['malformed YAML', ': : [[['],
+    ['an invalid registry', 'version: 1\nrepos: nope\n'],
+  ])('keeps the existing behaviour when the registry on the head is %s', async (_label, text) => {
+    seed(text)
+
+    expect(await commit()).toMatchObject({committed: true})
+  })
+
+  it('keeps the existing behaviour when the tree listing is truncated', async () => {
+    seed(registry(row(TARGET_NODE, 'archived')))
+    fake.truncate(true)
+
+    expect(await commit()).toMatchObject({committed: true})
+  })
+
+  it('does not swallow a failed registry read', async () => {
+    seed(registry(row(TARGET_NODE, 'onboarded')))
+    fake.failNext('getBlob', 500)
+
+    await expect(commit()).rejects.toMatchObject({status: 500})
+    expect(wrote()).toBe(false)
+  })
+})
+
+describe('runWikiIngestCli (a survey target archived on the head)', () => {
+  const originalCwd = process.cwd()
+  const saved = {
+    output: process.env.GITHUB_OUTPUT,
+    operation: process.env.WIKI_OPERATION,
+    node: process.env.REPO_NODE_ID,
+    tip: process.env.WIKI_INGEST_DATA_TIP_SHA,
+    handoff: process.env.WIKI_HANDOFF_DIR,
+    base: process.env.WIKI_HANDOFF_BASE_SHA,
+    target: process.env.WIKI_TARGET,
+  }
+  const page = createWikiPage({path: 'knowledge/wiki/repos/alice--project.md', type: 'repo', title: 'alice/project'})
+  let dir = ''
+  let outputPath = ''
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'wiki-ingest-archived-'))
+    mkdirSync(join(dir, 'knowledge/wiki/repos'), {recursive: true})
+    writeFileSync(join(dir, page.path), page.content)
+    outputPath = join(dir, 'github-output')
+    writeFileSync(outputPath, '')
+    process.chdir(dir)
+    process.env.GITHUB_OUTPUT = outputPath
+    delete process.env.WIKI_HANDOFF_DIR
+    delete process.env.WIKI_HANDOFF_BASE_SHA
+    delete process.env.WIKI_INGEST_DATA_TIP_SHA
+    delete process.env.WIKI_TARGET
+    vi.spyOn(process.stdout, 'write').mockImplementation(() => true)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    process.chdir(originalCwd)
+    rmSync(dir, {recursive: true, force: true})
+    for (const [key, value] of [
+      ['GITHUB_OUTPUT', saved.output],
+      ['WIKI_OPERATION', saved.operation],
+      ['REPO_NODE_ID', saved.node],
+      ['WIKI_INGEST_DATA_TIP_SHA', saved.tip],
+      ['WIKI_HANDOFF_DIR', saved.handoff],
+      ['WIKI_HANDOFF_BASE_SHA', saved.base],
+      ['WIKI_TARGET', saved.target],
+    ] as const) {
+      if (value === undefined) delete process.env[key]
+      else process.env[key] = value
+    }
+  })
+
+  async function run(result: Record<string, unknown>) {
+    const commit = vi.fn(async (_params: Record<string, unknown>) => result)
+    await runWikiIngestCli({
+      readCorrections: async () => ({corrections: {version: 1, corrections: []}, warnings: []}),
+      getChangedWikiPaths: async () => [page.path],
+      commitWikiChanges: commit as never,
+    })
+    return commit
+  }
+
+  it('passes the survey target node ID to the writer', async () => {
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+
+    const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({targetNodeId: 'R_kgDOTARGET1'})
+  })
+
+  it.each(['event', 'lint', 'manual-edit'])(
+    'passes no target for a %s ingest, even with a node ID in the environment',
+    async operation => {
+      process.env.WIKI_OPERATION = operation
+      process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+
+      const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('targetNodeId')
+    },
+  )
+
+  it('passes the survey target owner and name, read from WIKI_TARGET', async () => {
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+    process.env.WIKI_TARGET = 'repo:example-owner/example-repo'
+
+    const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+    expect(commit.mock.calls[0]?.[0]).toMatchObject({
+      targetNodeId: 'R_kgDOTARGET1',
+      targetRepo: {owner: 'example-owner', name: 'example-repo'},
+    })
+  })
+
+  it.each([undefined, 'repo:unknown', 'topic:example-owner/example-repo'])(
+    'passes no owner and name when WIKI_TARGET is %j',
+    async target => {
+      process.env.WIKI_OPERATION = 'survey'
+      process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+      if (target === undefined) delete process.env.WIKI_TARGET
+      else process.env.WIKI_TARGET = target
+
+      const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+      expect(commit.mock.calls[0]?.[0]).toMatchObject({targetNodeId: 'R_kgDOTARGET1'})
+      expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('targetRepo')
+    },
+  )
+
+  it('passes no target when a survey names no node ID', async () => {
+    process.env.WIKI_OPERATION = 'survey'
+    delete process.env.REPO_NODE_ID
+
+    const commit = await run({committed: true, commitSha: 'c', attempts: 1})
+
+    expect(commit.mock.calls[0]?.[0]).not.toHaveProperty('targetNodeId')
+  })
+
+  it('reports an archived target as a clean run: archived=true and pages_changed=0, no throw', async () => {
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+    process.exitCode = undefined
+
+    await run({committed: false, archived: true, commitSha: 'c', attempts: 2})
+
+    const lines = readFileSync(outputPath, 'utf8').trim().split('\n').sort()
+    expect(lines).toEqual(['archived=true', 'pages_changed=0'])
+    expect(process.exitCode).toBeUndefined()
+  })
+
+  it('writes no archived output for a committed survey', async () => {
+    process.env.WIKI_OPERATION = 'survey'
+    process.env.REPO_NODE_ID = 'R_kgDOTARGET1'
+
+    await run({committed: true, commitSha: 'c', attempts: 1})
+
+    expect(readFileSync(outputPath, 'utf8')).toBe('pages_changed=1\n')
   })
 })

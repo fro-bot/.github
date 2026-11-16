@@ -23,9 +23,13 @@ import {buildResultMarker} from './dispatch-receipts.ts'
  * - `blocked-not-onboarded` when the entry lacks the Fro Bot workflow.
  * - `blocked-ineligible` when the owner is not in the eligible set, the repo
  *   is not definitively public, or the entry is missing from the registry.
+ * - `blocked-archived` when the entry's status is `archived`, whatever else is true of it. The caller looks a
+ *   target up by name, and an archived row keeps its stored name through a rename on GitHub, so the new name
+ *   finds no row and is `blocked-ineligible`.
  */
 export function gateTarget(entry: GateEntry | undefined): GateResult {
   if (entry === undefined) return 'blocked-ineligible'
+  if (entry.onboarding_status === 'archived') return 'blocked-archived'
   if (!ELIGIBLE_OWNERS.has(entry.owner)) return 'blocked-ineligible'
   if (entry.private !== false) return 'blocked-ineligible'
   if (!entry.has_fro_bot_workflow) return 'blocked-not-onboarded'

@@ -75,7 +75,9 @@ describe('a run', () => {
     const result = await run([reposFile('repos.yaml'), '2026-05-11'])
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('')
-    expect(result.stdout).toBe('{"repos_tracked":3,"surveys_today":2,"should_post":true,"count_status":"ok"}\n')
+    expect(result.stdout).toBe(
+      '{"repos_tracked":3,"surveys_today":2,"repos_archived":0,"should_post":true,"count_status":"ok"}\n',
+    )
   })
 
   it('takes the date from the second argument before TODAY_UTC', async () => {
@@ -98,7 +100,9 @@ describe('a run', () => {
     const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
     const result = await run([join(root, 'absent.yaml'), '2026-05-11'])
     expect(result.exitCode).toBe(0)
-    expect(result.stdout).toBe('{"repos_tracked":0,"surveys_today":0,"should_post":false,"count_status":"error"}\n')
+    expect(result.stdout).toBe(
+      '{"repos_tracked":0,"surveys_today":0,"repos_archived":0,"should_post":false,"count_status":"error"}\n',
+    )
     expect(stderr).toHaveBeenCalledWith(expect.stringMatching(/^daily-digest-counts: failed to read /u))
   })
 
@@ -135,7 +139,7 @@ describe('main', () => {
     }
     expect(process.exitCode).toBe(0)
     expect(String(stdout.mock.calls[0]?.[0])).toBe(
-      '{"repos_tracked":3,"surveys_today":2,"should_post":true,"count_status":"ok"}\n',
+      '{"repos_tracked":3,"surveys_today":2,"repos_archived":0,"should_post":true,"count_status":"ok"}\n',
     )
     expect(exit).not.toHaveBeenCalled()
     stdout.mockRestore()

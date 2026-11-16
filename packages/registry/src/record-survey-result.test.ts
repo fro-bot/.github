@@ -1,6 +1,9 @@
 import type {RepoEntry, ReposFile} from '@fro.bot/wiki-write-core/schemas'
 
 import type {commitMetadata} from './commit-metadata.ts'
+import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {describe, expect, it, vi} from 'vitest'
 import YAML from 'yaml'
 import {
@@ -424,5 +427,85 @@ describe('runRecordSurveyResult', () => {
     const {io, err} = sinks()
     expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(1)
     expect(err).toEqual(['record-survey-result: HttpError with no message (HTTP 502)\n'])
+  })
+})
+
+describe('runRecordSurveyResult for an archived row', () => {
+  it('writes nothing, warns without naming the target and reports the archived outcome', async () => {
+    const commit = committing(
+      {version: 1, repos: [row({onboarding_status: 'archived'})]},
+      {
+        committed: false as never,
+        sha: undefined as never,
+        attempts: 1,
+      },
+    )
+    const {io, out, err} = sinks()
+
+    expect(await runRecordSurveyResult(SURVEY_ENV, io, commit)).toBe(0)
+
+    expect(out).toEqual([
+      '{"committed":false,"attempts":1,"target":"fro-bot/dashboard","status":null,"outcome":"archived"}\n',
+    ])
+    expect(err).toEqual(['record-survey-result: survey target is archived; nothing was written\n'])
+  })
+
+  it('exits 0 for a failure result on an archived row too', async () => {
+    const commit = committing(
+      {version: 1, repos: [row({onboarding_status: 'archived'})]},
+      {
+        committed: false as never,
+        sha: undefined as never,
+        attempts: 1,
+      },
+    )
+    const {io} = sinks()
+
+    expect(await runRecordSurveyResult({...SURVEY_ENV, SURVEY_STATUS: 'failure'}, io, commit)).toBe(0)
+  })
+
+  it('appends archived=true to GITHUB_OUTPUT so the workflow can skip the announce and the re-dispatch', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'record-survey-archived-'))
+    const path = join(directory, 'output')
+    writeFileSync(path, '')
+    try {
+      const commit = committing(
+        {version: 1, repos: [row({onboarding_status: 'archived'})]},
+        {
+          committed: false as never,
+          sha: undefined as never,
+          attempts: 1,
+        },
+      )
+      const {io} = sinks()
+
+      await runRecordSurveyResult({...SURVEY_ENV, GITHUB_OUTPUT: path}, io, commit)
+
+      expect(readFileSync(path, 'utf8')).toBe('archived=true\n')
+    } finally {
+      rmSync(directory, {recursive: true, force: true})
+    }
+  })
+
+  it('writes no output for a row that is not archived', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'record-survey-live-'))
+    const path = join(directory, 'output')
+    writeFileSync(path, '')
+    try {
+      const commit = committing({version: 1, repos: [row()]})
+      const {io} = sinks()
+
+      await runRecordSurveyResult({...SURVEY_ENV, GITHUB_OUTPUT: path}, io, commit)
+
+      expect(readFileSync(path, 'utf8')).toBe('')
+    } finally {
+      rmSync(directory, {recursive: true, force: true})
+    }
+  })
+
+  it('formats the archived warning without owner, name or node ID', () => {
+    const warning = formatSurveyWriteBackWarning('archived')
+
+    expect(warning).toBe('record-survey-result: survey target is archived; nothing was written\n')
   })
 })

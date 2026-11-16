@@ -57,6 +57,7 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 3,
       surveys_today: 2,
+      repos_archived: 0,
       should_post: true,
       count_status: 'ok',
     })
@@ -77,9 +78,53 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 2,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: true,
       count_status: 'ok',
     })
+  })
+
+  // ─── Archived rows ────────────────────────────────────────────────────────
+
+  it('counts an archived public row as archived, not as tracked, and not for its survey date', () => {
+    const yaml = makeYaml([
+      {private: false, onboarding_status: 'onboarded', last_survey_at: YESTERDAY},
+      {private: false, onboarding_status: 'archived', last_survey_at: YESTERDAY},
+      {private: false, onboarding_status: 'archived', last_survey_at: '2026-01-01'},
+    ])
+
+    expect(deriveCounts(yaml, TODAY)).toEqual({
+      repos_tracked: 1,
+      surveys_today: 1,
+      repos_archived: 2,
+      should_post: true,
+      count_status: 'ok',
+    })
+  })
+
+  it('does not count an archived row that is private or has no explicit private flag', () => {
+    const yaml = makeYaml([
+      {private: true, onboarding_status: 'archived', last_survey_at: YESTERDAY},
+      {onboarding_status: 'archived', last_survey_at: YESTERDAY},
+      {private: false, onboarding_status: 'archived'},
+    ])
+
+    expect(deriveCounts(yaml, TODAY)).toMatchObject({repos_tracked: 0, surveys_today: 0, repos_archived: 1})
+  })
+
+  it.each(['pending', 'onboarded', 'failed', 'lost-access', 'pending-review'])(
+    'still counts a public %s row as tracked and not as archived',
+    status => {
+      const yaml = makeYaml([{private: false, onboarding_status: status, last_survey_at: YESTERDAY}])
+
+      expect(deriveCounts(yaml, TODAY)).toMatchObject({repos_tracked: 1, surveys_today: 1, repos_archived: 0})
+    },
+  )
+
+  it('still counts a public legacy row with no status as tracked', () => {
+    const yaml = makeYaml([{private: false, last_survey_at: YESTERDAY}])
+
+    expect(deriveCounts(yaml, TODAY)).toMatchObject({repos_tracked: 1, surveys_today: 1, repos_archived: 0})
   })
 
   // ─── Private excluded from repos_tracked ─────────────────────────────────
@@ -123,6 +168,7 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 0,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: true,
       count_status: 'ok',
     })
@@ -270,6 +316,7 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 0,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: false,
       count_status: 'error',
     })
@@ -287,6 +334,7 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 0,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: false,
       count_status: 'error',
     })
@@ -305,6 +353,7 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 0,
       surveys_today: 0,
+      repos_archived: 0,
       should_post: false,
       count_status: 'error',
     })
@@ -327,6 +376,7 @@ describe('deriveCounts', () => {
     expect(result).toEqual({
       repos_tracked: 1,
       surveys_today: 1,
+      repos_archived: 0,
       should_post: true,
       count_status: 'ok',
     })

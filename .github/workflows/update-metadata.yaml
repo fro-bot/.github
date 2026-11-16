@@ -52,6 +52,18 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
+      # Restores only the registry from `data`, the copy that carries an archive before `main` does. Discovery skips
+      # every repository whose row there is archived, so a declared archive stops the Renovate list even when GitHub
+      # does not report the repository archived. `if-absent: fail`: with no `data` branch the step fails and the
+      # list is not refreshed from `main`'s older registry. A registry that exists but cannot be read (malformed or
+      # invalid) makes the update step discover nothing, commit nothing and fail, so the run is red and the committed
+      # list stays as it was.
+      - name: ⤵ Restore the registry from data
+        uses: ./.github/actions/sync-data
+        with:
+          paths: metadata/repos.yaml
+          if-absent: fail
+
       - name: 🔄 Update metadata
         env:
           UPDATE_METADATA_DISCOVERY_TOKEN: ${{ steps.discovery-token.outputs.token }}

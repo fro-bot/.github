@@ -372,63 +372,135 @@ describe('addRepoEntry', () => {
 })
 
 describe('applySurveyResult on an archived row', () => {
-  // Pins today's behaviour only: applySurveyResult has no archived special case, so a survey result
-  // written against an archived row is recorded like any other non-pending row and the row stays
-  // archived. A later unit adds an outcome that writes nothing for an archived row and changes this.
-  it('records the survey outcome and keeps the row archived (no special case yet)', () => {
-    const archived = repoEntry({
-      owner: 'example-owner',
-      name: 'example-archived-repo',
-      onboarding_status: 'archived',
-      private: false,
-      node_id: PUBLIC_NODE_ID,
-      database_id: 424242,
-    })
+  const archived = repoEntry({
+    owner: 'example-owner',
+    name: 'example-archived-repo',
+    onboarding_status: 'archived',
+    private: false,
+    node_id: PUBLIC_NODE_ID,
+    database_id: 424242,
+    last_survey_at: '2026-03-01',
+    last_survey_status: 'success',
+    next_survey_eligible_at: '2026-04-01',
+  })
+  const at = new Date('2026-04-18T05:34:00Z')
+
+  it.each(['success', 'failure'] as const)(
+    'writes nothing for a %s survey result and reports the archived outcome',
+    status => {
+      const current: ReposFile = {version: 1, repos: [archived]}
+
+      const result = applySurveyResult(current, {
+        owner: 'example-owner',
+        repo: 'example-archived-repo',
+        node_id: PUBLIC_NODE_ID,
+        private: false,
+        at,
+        status,
+      })
+
+      expect(result.outcome).toBe('archived')
+      expect(result.written).toBeUndefined()
+      expect(result.file).toBe(current)
+      expect(YAML.stringify(result.file)).toBe(YAML.stringify({version: 1, repos: [archived]}))
+    },
+  )
+
+  it('writes nothing for a conflict failure either', () => {
     const current: ReposFile = {version: 1, repos: [archived]}
-    const at = new Date('2026-04-18T05:34:00Z')
 
     const result = applySurveyResult(current, {
       owner: 'example-owner',
       repo: 'example-archived-repo',
       node_id: PUBLIC_NODE_ID,
-      private: false,
+      at,
+      status: 'failure',
+      conflict: true,
+    })
+
+    expect(result.outcome).toBe('archived')
+    expect(result.file).toBe(current)
+  })
+
+  it('matches an archived row by node ID even when the survey target was renamed on GitHub', () => {
+    const current: ReposFile = {version: 1, repos: [archived]}
+
+    const result = applySurveyResult(current, {
+      owner: 'example-owner',
+      repo: 'renamed-archived-repo',
+      node_id: PUBLIC_NODE_ID,
+      at,
+      status: 'success',
+    })
+
+    expect(result.outcome).toBe('archived')
+    expect(result.file).toBe(current)
+  })
+
+  it('does not redact or otherwise touch an archived row when the survey reports it private', () => {
+    const current: ReposFile = {version: 1, repos: [archived]}
+
+    const result = applySurveyResult(current, {
+      owner: 'example-owner',
+      repo: 'example-archived-repo',
+      node_id: PUBLIC_NODE_ID,
+      private: true,
+      at,
+      status: 'success',
+    })
+
+    expect(result.outcome).toBe('archived')
+    expect(result.file).toBe(current)
+  })
+
+  it('still records a non-archived row that sits beside an archived one', () => {
+    const live = repoEntry({
+      owner: 'example-owner',
+      name: 'live-repo',
+      node_id: 'R_kgDOLIVE',
+      onboarding_status: 'onboarded',
+    })
+    const current: ReposFile = {version: 1, repos: [archived, live]}
+
+    const result = applySurveyResult(current, {
+      owner: 'example-owner',
+      repo: 'live-repo',
+      node_id: 'R_kgDOLIVE',
       at,
       status: 'success',
     })
 
     expect(result.outcome).toBe('recorded')
-    expect(result.written).toBe('success')
-    expect(result.file.repos).toEqual([
-      {
-        ...archived,
-        onboarding_status: 'archived',
-        last_survey_at: '2026-04-18',
-        last_survey_status: 'success',
-        next_survey_eligible_at: computeNextEligibleAt({
-          owner: 'example-owner',
-          repo: 'example-archived-repo',
-          channel: 'collab',
-          baseDate: at,
-        }),
-      },
-    ])
+    expect(result.file.repos[0]).toBe(archived)
+    expect(result.file.repos[1]?.last_survey_status).toBe('success')
+  })
+})
+
+describe('publicRepoEntryExists on an archived row', () => {
+  const row = (status: RepoEntry['onboarding_status']): ReposFile => ({
+    version: 1,
+    repos: [
+      repoEntry({
+        owner: 'example-owner',
+        name: 'example-archived-repo',
+        onboarding_status: status,
+        private: false,
+        node_id: PUBLIC_NODE_ID,
+      }),
+    ],
   })
 
-  it('counts an archived row as an existing public entry today (no archived special case yet)', () => {
-    const current: ReposFile = {
-      version: 1,
-      repos: [
-        repoEntry({
-          owner: 'example-owner',
-          name: 'example-archived-repo',
-          onboarding_status: 'archived',
-          private: false,
-          node_id: PUBLIC_NODE_ID,
-        }),
-      ],
-    }
+  it('is true for an onboarded public row and false for the same row archived', () => {
+    expect(publicRepoEntryExists(row('onboarded'), 'example-owner', 'example-archived-repo')).toBe(true)
+    expect(publicRepoEntryExists(row('archived'), 'example-owner', 'example-archived-repo')).toBe(false)
+  })
 
-    expect(publicRepoEntryExists(current, 'example-owner', 'example-archived-repo')).toBe(true)
+  it('is false under a new name for an archived row that keeps its stored name', () => {
+    expect(publicRepoEntryExists(row('archived'), 'example-owner', 'renamed-on-github')).toBe(false)
+  })
+
+  it('still admits a pending public row', () => {
+    expect(publicRepoEntryExists(row('pending'), 'example-owner', 'example-archived-repo')).toBe(true)
   })
 })
 

@@ -2,6 +2,8 @@ import type {ReposFile} from '@fro.bot/wiki-write-core/schemas'
 
 import type {RegistryIo} from './registry-io.ts'
 
+import {appendFile} from 'node:fs/promises'
+
 import {commitMetadata} from './commit-metadata.ts'
 import {
   applySurveyResult,
@@ -36,7 +38,8 @@ import {
  * success, duplicate-identity write-back (reconcile owns the repair), or a missing entry;
  * other failures (including a missing REPO_NODE_ID) exit non-zero. When the node ID matches a row
  * stored under a different owner/name (a pending rename or a transfer), the row keeps its stored
- * name and `failure` is recorded; the outcome is reported as `name-mismatch`. When the survey target has no entry in `metadata/repos.yaml`,
+ * name and `failure` is recorded; the outcome is reported as `name-mismatch`. When the row is archived, nothing is written (a
+ * success and a failure alike), the outcome is `archived` and `archived=true` is appended to `GITHUB_OUTPUT`. When the survey target has no entry in `metadata/repos.yaml`,
  * writes nothing and exits 0 with a warning (the entry must already exist — reconcile is the
  * canonical writer for new entries).
  */
@@ -67,6 +70,14 @@ async function recordSurveyResult(
   const outcomeField = outcome === undefined || outcome === 'recorded' ? {} : {outcome}
   // What the mutator actually wrote; `null` when it wrote nothing, so output never claims a success.
   const status = writeBack.written() ?? null
+
+  // The workflow reads this to skip the announce and the re-dispatch for an archived target.
+  if (outcome === 'archived') {
+    const outputPath = env.GITHUB_OUTPUT
+    if (outputPath !== undefined && outputPath !== '') {
+      await appendFile(outputPath, 'archived=true\n')
+    }
+  }
 
   if (result.committed) {
     io.stdout(
@@ -118,6 +129,9 @@ export function formatSurveyWriteBackWarning(outcome: SurveyWriteBackOutcome): s
   }
   if (outcome === 'visibility-mismatch') {
     return 'record-survey-result: survey reported public for a row stored as private; nothing was written\n'
+  }
+  if (outcome === 'archived') {
+    return 'record-survey-result: survey target is archived; nothing was written\n'
   }
   return undefined
 }

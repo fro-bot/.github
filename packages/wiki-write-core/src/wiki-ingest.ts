@@ -141,6 +141,20 @@ export interface CommitWikiChangesParams {
    * read it.
    */
   handoff?: {agentCommitSha: string; paths: readonly string[]}
+  /**
+   * The node ID of the one repository this write is about (a survey). Every attempt reads
+   * `metadata/repos.yaml` from the tree of the head it is about to write onto, and writes nothing when a row
+   * with this node ID is `archived`: the result carries `archived: true`. The archive can land after the
+   * survey's own registry check and before this write, and a ref-race retry reads a new head, so the check
+   * repeats per attempt. Omitted for a write with no single target (an event or Observe ingest). When the
+   * registry is missing, truncated out of the listing, or not valid, the write goes ahead as it would without it.
+   *
+   * The row is matched by node ID. A row with no `node_id` (a legacy row) is matched by `targetRepo`, owner and
+   * name compared exactly (as the survey's own registry check does, case included); a row that has a different
+   * `node_id` is never matched by name, whatever its name.
+   */
+  targetNodeId?: string
+  targetRepo?: {owner: string; name: string}
   octokit?: OctokitClient
   maxRetries?: number
   /**
@@ -152,8 +166,11 @@ export interface CommitWikiChangesParams {
 
 export interface CommitWikiChangesResult {
   committed: boolean
+  /** The new commit; the head that was read, unchanged, when nothing was written. */
   commitSha: string
   attempts: number
+  /** `true` when `targetNodeId` names an archived row on the head: nothing was written. */
+  archived?: true
 }
 
 export interface RunWikiIngestCliDependencies {
@@ -433,6 +450,20 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         params.baseCommitSha === undefined
           ? commit.data.tree.sha
           : await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha)
+      // Ahead of every conflict guard: a target archived on this head is not written, whatever else moved.
+      if (
+        params.targetNodeId !== undefined &&
+        (await isTargetArchivedInTree(
+          octokit,
+          owner,
+          repo,
+          commit.data.tree.sha,
+          params.targetNodeId,
+          params.targetRepo,
+        ))
+      ) {
+        return {committed: false, commitSha: commit.data.sha, attempts: attempt, archived: true}
+      }
       const location = `${owner}/${repo}@${branch}`
       // Handed-off pages first, against the commit the agent read, so a page conflict surfaces as such
       // even when the head also moved under the shared files.
@@ -578,6 +609,39 @@ function truncatedTreeRefusal(reason: string): WikiIngestError {
     remediation:
       'The data branch tree listing was truncated. Retry the workflow; if it persists, the tree has outgrown the recursive listing.',
   })
+}
+
+/**
+ * Whether `metadata/repos.yaml` in `treeSha` has a row with `nodeId` whose status is `archived`. A missing,
+ * truncated-out or invalid registry answers `false`, so the write proceeds as it does without the check; an API
+ * failure reading it propagates and fails the write.
+ */
+async function isTargetArchivedInTree(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  treeSha: string,
+  nodeId: string,
+  targetRepo: {owner: string; name: string} | undefined,
+): Promise<boolean> {
+  const entries = await readTreeEntries(octokit, owner, repo, treeSha)
+  const entry = entries?.get('metadata/repos.yaml')
+  if (entry === undefined || entry.type !== 'blob') return false
+  const blob = await octokit.rest.git.getBlob({owner, repo, file_sha: entry.sha})
+  let parsed: unknown
+  try {
+    parsed = parse(Buffer.from(blob.data.content, 'base64').toString('utf8'))
+    assertReposFile(parsed)
+  } catch {
+    return false
+  }
+  return parsed.repos.some(
+    row =>
+      row.onboarding_status === 'archived' &&
+      (row.node_id === undefined
+        ? targetRepo !== undefined && row.owner === targetRepo.owner && row.name === targetRepo.name
+        : row.node_id === nodeId),
+  )
 }
 
 async function readCommitTreeSha(octokit: OctokitClient, owner: string, repo: string, sha: string): Promise<string> {
@@ -1694,6 +1758,13 @@ async function emitPagesChanged(n: number): Promise<void> {
   }
 }
 
+async function emitArchived(): Promise<void> {
+  const outputPath = process.env.GITHUB_OUTPUT
+  if (outputPath !== undefined && outputPath !== '') {
+    await appendFile(outputPath, 'archived=true\n')
+  }
+}
+
 interface HandoffManifest {
   changed: string[]
   deleted: string[]
@@ -1903,6 +1974,9 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
 
   let committedPagePaths: string[]
   let handoff: LoadedHandoff | undefined
+  // Only a survey names its one target, through `REPO_NODE_ID`; an event or Observe ingest has none.
+  let targetNodeId: string | undefined
+  let targetRepo: {owner: string; name: string} | undefined
 
   try {
     if (payloadPath !== undefined && payloadPath !== '') {
@@ -1981,6 +2055,12 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
       message =
         process.env.WIKI_COMMIT_MESSAGE ??
         `feat(knowledge): ${process.env.WIKI_OPERATION ?? 'event'} ${process.env.WIKI_TARGET ?? 'wiki update'}`
+      targetNodeId = operation === 'survey' ? envValue('REPO_NODE_ID') : undefined
+      // The same trusted `repo:<owner>/<name>` target the page identity uses, set by the survey's persist job from
+      // the resolve job's outputs. Only a survey with a node ID carries it, to match a legacy row with no node ID.
+      // `WIKI_TARGET` itself, not the `repo:unknown/unknown` placeholder `target` falls back to.
+      const surveyTarget = envValue('WIKI_TARGET')
+      targetRepo = targetNodeId === undefined || surveyTarget === undefined ? undefined : repoTargetParts(surveyTarget)
       committedPagePaths = changedPaths
     }
   } catch (error: unknown) {
@@ -2005,10 +2085,20 @@ export async function runWikiIngestCli(dependencies: RunWikiIngestCliDependencie
     files: built.files,
     deletedPaths: built.deletedPaths,
     ...(baseCommitSha === undefined ? {} : {baseCommitSha}),
+    ...(targetNodeId === undefined ? {} : {targetNodeId}),
+    ...(targetRepo === undefined ? {} : {targetRepo}),
     ...(handoff === undefined
       ? {}
       : {octokit: handoff.octokit, handoff: {agentCommitSha: handoff.agentCommitSha, paths: handoff.pagePaths}}),
   })
+
+  // The target was archived on the head: nothing was written, which is a clean end, not a conflict or a failure.
+  if (result.archived === true) {
+    await emitPagesChanged(0)
+    await emitArchived()
+    process.stdout.write(`${JSON.stringify({...result, pagesChanged: 0})}\n`)
+    return
+  }
 
   const pagesChanged = countWikiPages(committedPagePaths)
   await emitPagesChanged(pagesChanged)

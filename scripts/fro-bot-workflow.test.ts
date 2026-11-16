@@ -1547,6 +1547,29 @@ describe('fro-bot.yaml daily-digest announce isolation (agent post-step credenti
     expect(String(countsStep?.run ?? '')).toContain('scripts/daily-digest-counts.ts')
   })
 
+  it('reads the archived count from the counts script into a step output, logs it, and passes it to the gateway announce as env only', () => {
+    const countsStep = announceJob?.steps?.find(step => step.name === '📊 Derive daily digest counts')
+    const run = String(countsStep?.run ?? '')
+    expect(run).toContain(`jq '.repos_archived'`)
+    // Split to dodge eslint's no-template-curly-in-string rule: this is shell text, not a JS interpolation.
+    const archived = '$' + '{REPOS_ARCHIVED}'
+    expect(run).toContain(`echo "repos_archived=${archived}"`)
+    expect(run).toContain(`daily-digest: repos_archived=${archived}`)
+
+    // The gateway ignores keys it does not know, so the announce step carries the count as one more env key.
+    const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
+    expect(Object.keys(announceStep?.env ?? {}).toSorted()).toEqual([
+      'GATEWAY_ANNOUNCE_DISABLED',
+      'GATEWAY_PRESENCE_URL',
+      'GATEWAY_WEBHOOK_SECRET',
+      'REPORT_URL',
+      'REPOS_ARCHIVED',
+      'REPOS_TRACKED',
+      'SURVEYS_TODAY',
+    ])
+    expect(String(announceStep?.env?.REPOS_ARCHIVED ?? '')).toContain('steps.digest-counts.outputs.repos_archived')
+  })
+
   it('validates count_status/report-url shape and repos-tracked/surveys-today as non-negative integers before announcing, reading from its own steps (not needs.fro-bot-observe)', () => {
     const validateStep = announceJob?.steps?.find(step => step.name === '🔒 Validate digest values')
     expect(String(validateStep?.env?.REPORT_URL ?? '')).toContain('steps.report-url.outputs.report_url')
@@ -2099,5 +2122,98 @@ describe('fro-bot.yaml wiki context in the rendered prompts', () => {
       expect(prompt.indexOf('<wiki_context>')).toBeLessThan(prompt.indexOf('<solutions_context>'))
       expect(prompt.indexOf('</wiki_context>')).toBeLessThan(prompt.indexOf('<wiki_context_expansion>'))
     }
+  })
+})
+
+describe('fro-bot.yaml archived repositories in the daily pass', () => {
+  const env = froBotParsed.env as Record<string, string>
+  const remediateJob = froBotParsed.jobs['fro-bot-remediate']
+  const observeJob = froBotParsed.jobs['fro-bot-observe']
+  const categories = flat(env.OBSERVE_CATEGORIES ?? '')
+  const oversight = categories.slice(categories.indexOf('5. OVERSIGHT'), categories.indexOf('6. CROSS-PROJECT'))
+  const crossProject = categories.slice(categories.indexOf('6. CROSS-PROJECT'), categories.indexOf('7. PROGRESSIVE'))
+  const output = flat(env.OBSERVE_OUTPUT ?? '')
+  const remediateIntro = flat(env.REMEDIATE_INTRO ?? '')
+
+  describe('Observe (instructions to the model; the registry it reads is deterministic)', () => {
+    it("reads data's registry: the metadata overlay runs before the agent step", () => {
+      const steps = observeJob?.steps ?? []
+      const overlay = steps.findIndex(
+        step => step.uses === './.github/actions/sync-data' && step.with?.paths === 'metadata/',
+      )
+      const agent = steps.findIndex(step => step.id === 'fro-bot-agent')
+
+      expect(overlay).toBeGreaterThanOrEqual(0)
+      expect(overlay).toBeLessThan(agent)
+    })
+
+    it('the accessible-repository sweep excludes a repository an archived row identifies, by ID', () => {
+      expect(oversight).toContain('Exclude every repository that an archived row of metadata/repos.yaml identifies')
+      expect(oversight).toContain('`onboarding_status: archived`')
+      expect(oversight).toContain('match by `node_id` or `database_id`')
+      expect(oversight).toContain('else by owner and name')
+      expect(oversight).toContain('renamed on GitHub')
+      expect(oversight).toContain('open no issue, tracking issue or attention item for it')
+    })
+
+    it('the sweep opens no attention item when the registry cannot be read', () => {
+      expect(oversight).toContain('If you cannot read metadata/repos.yaml or it is not a valid registry')
+      expect(oversight).toContain('open no tracking issue and list no attention item from this category')
+      expect(oversight).toContain('mark Oversight ❔')
+    })
+
+    it('the tracked-repository list leaves archived entries out of the scan and out of coverage', () => {
+      expect(crossProject).toContain('metadata/repos.yaml (not an example list)')
+      expect(crossProject).toContain('whose `onboarding_status` is not `archived`')
+      expect(crossProject).toContain('An archived entry is not scanned')
+      expect(crossProject).toContain('is not reported as inaccessible or unscanned and does not make coverage partial')
+      expect(crossProject).toContain('mark coverage partial')
+    })
+
+    it('the report shows the archived count as a Run Summary row, over confirmed-public rows only', () => {
+      const rows = (env.OBSERVE_OUTPUT ?? '').split('\n').map(line => line.trim())
+      expect(rows).toContain('| Archived repositories | ✅/❔ | ... |')
+      expect(rows.indexOf('| Archived repositories | ✅/❔ | ... |')).toBeGreaterThan(
+        rows.indexOf('| Progressive Improvement | ✅/⚠️/❌/❔ | ... |'),
+      )
+      expect(output).toContain('ARCHIVED REPOSITORIES')
+      expect(output).toContain('Count the rows of metadata/repos.yaml whose `onboarding_status` is `archived`')
+      expect(output).toContain('and whose repository the PUBLIC-ONLY REPORT RULE lets you name')
+      expect(output).toContain('Show the number and no name')
+      expect(output).toContain('❔ when the registry could not be read')
+    })
+
+    it('keeps the digest and Remediate-learnings parts of the report as they were', () => {
+      expect(output).toContain('### Remediation Learnings')
+      expect(output).toContain('### Needs Human Attention')
+    })
+  })
+
+  describe('Remediate (instructions to the model; the checkout is main, not data)', () => {
+    it("filters a repository list against data's registry before it acts, reading it from the checkout's data ref", () => {
+      expect(remediateIntro).toContain('REGISTRY RULE')
+      expect(remediateIntro).toContain("this checkout's metadata/repos.yaml is `main`'s copy")
+      expect(remediateIntro).toContain('git show origin/data:metadata/repos.yaml')
+      expect(remediateIntro).toContain('skip every repository whose row there has `onboarding_status: archived`')
+      expect(remediateIntro).toContain('match by `node_id` or `database_id`')
+    })
+
+    it("acts on no repository from the list when data's registry cannot be read", () => {
+      expect(remediateIntro).toContain('If that command fails, or its output is not a valid registry')
+      expect(remediateIntro).toContain('act on no repository other than this one')
+    })
+
+    it('does not overlay metadata onto the checkout: branch-pr delivery must not sweep a metadata diff into a PR', () => {
+      const overlays = (remediateJob?.steps ?? []).filter(
+        step => step.uses === './.github/actions/sync-data' && String(step.with?.paths).startsWith('metadata'),
+      )
+
+      expect(overlays).toStrictEqual([])
+    })
+
+    it('keeps the boundary: Remediate never writes metadata', () => {
+      expect(remediateIntro).toContain('Never commit to knowledge/wiki/**')
+      expect(remediateIntro).toContain('metadata/*.yaml')
+    })
   })
 })

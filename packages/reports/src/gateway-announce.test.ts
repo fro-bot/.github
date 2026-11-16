@@ -1384,6 +1384,63 @@ describe('runCli --event builds the context the jq blocks built', () => {
     expect(params?.context).toEqual({repos_tracked: 7, surveys_today: 3, report_url: DIGEST_ENV.REPORT_URL})
   })
 
+  it('daily_digest: a valid REPOS_ARCHIVED joins the context after surveys_today and before report_url', async () => {
+    const {spy} = await buildWith('daily_digest', {...DIGEST_ENV, REPOS_ARCHIVED: '2'})
+    const params = (spy.mock.calls as unknown as [{context: Record<string, unknown>}][])[0]?.[0]
+
+    expect(params?.context).toEqual({
+      repos_tracked: 14,
+      surveys_today: 3,
+      repos_archived: 2,
+      report_url: DIGEST_ENV.REPORT_URL,
+    })
+    expect(Object.keys(params?.context ?? {})).toEqual([
+      'repos_tracked',
+      'surveys_today',
+      'repos_archived',
+      'report_url',
+    ])
+  })
+
+  it('daily_digest: a zero REPOS_ARCHIVED is sent as 0, and leading zeros read as the number', async () => {
+    const zero = await buildWith('daily_digest', {...DIGEST_ENV, REPOS_ARCHIVED: '0'})
+    const padded = await buildWith('daily_digest', {...DIGEST_ENV, REPOS_ARCHIVED: '007'})
+    const context = (built: typeof zero) =>
+      (built.spy.mock.calls as unknown as [{context: Record<string, unknown>}][])[0]?.[0].context
+
+    expect(context(zero)).toHaveProperty('repos_archived', 0)
+    expect(context(padded)).toHaveProperty('repos_archived', 7)
+  })
+
+  it.each([
+    ['absent', undefined],
+    ['empty', ''],
+    ['negative', '-1'],
+    ['non-numeric', 'leaky-value-3'],
+    ['fractional', '1.5'],
+    ['trailing text', '1x'],
+    ['with a trailing newline', '1\n'],
+    ['past the safe integers', '9007199254740993'],
+  ])(
+    'daily_digest: a %s REPOS_ARCHIVED omits the field and still announces the three others',
+    async (_label, value) => {
+      const env = value === undefined ? DIGEST_ENV : {...DIGEST_ENV, REPOS_ARCHIVED: value}
+      const {spy} = await buildWith('daily_digest', env)
+      const params = (spy.mock.calls as unknown as [{context: unknown}][])[0]?.[0]
+
+      expect(spy).toHaveBeenCalledTimes(1)
+      expect(params?.context).toEqual(JQ_DIGEST_VALUE)
+      expect(params?.context).not.toHaveProperty('repos_archived')
+    },
+  )
+
+  it('daily_digest: an invalid REPOS_ARCHIVED never prints its value or fails the run', async () => {
+    const {spy, stderr} = await buildWith('daily_digest', {...DIGEST_ENV, REPOS_ARCHIVED: 'leaky-value-4'})
+
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(stderr).not.toContain('leaky-value-4')
+  })
+
   it('survey_completed: an absent WIKI_PAGES_CHANGED is 0', async () => {
     const {REPO_OWNER, REPO_NAME, REPO_SLUG} = SURVEY_ENV
     const {spy} = await buildWith('survey_completed', {REPO_OWNER, REPO_NAME, REPO_SLUG})
