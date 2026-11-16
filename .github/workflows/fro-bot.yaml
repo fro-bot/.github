@@ -1541,7 +1541,7 @@ jobs:
             echo "repos_archived=${REPOS_ARCHIVED}"
             echo "count_status=${COUNT_STATUS}"
           } >> "$GITHUB_OUTPUT"
-          # The archived count is logged, not announced: the gateway payload keeps its three fields.
+          # The archived count is logged here and sent with the announce as an optional field.
           echo "daily-digest: repos_archived=${REPOS_ARCHIVED}"
           if [ "$COUNT_STATUS" = "error" ]; then
             echo "::warning::daily-digest-counts: count_status=error — metadata overlay may have failed; treating as quiet day"
@@ -1594,6 +1594,7 @@ jobs:
         env:
           REPOS_TRACKED: ${{ steps.digest-counts.outputs.repos_tracked }}
           SURVEYS_TODAY: ${{ steps.digest-counts.outputs.surveys_today }}
+          REPOS_ARCHIVED: ${{ steps.digest-counts.outputs.repos_archived }}
           REPORT_URL: ${{ steps.report-url.outputs.report_url }}
           GATEWAY_PRESENCE_URL: ${{ vars.GATEWAY_PRESENCE_URL }}
           GATEWAY_WEBHOOK_SECRET: ${{ secrets.GATEWAY_WEBHOOK_SECRET }}

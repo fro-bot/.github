@@ -207,8 +207,17 @@ function buildEventContext(event: EventType, env: Record<string, string | undefi
     const reposTracked = parseCount(env.REPOS_TRACKED)
     const surveysToday = parseCount(env.SURVEYS_TODAY)
     const reportUrl = nonEmpty(env.REPORT_URL)
+    // Optional: an absent or invalid count leaves the field out, so the announce never fails on it. The key sits
+    // between surveys_today and report_url, which fixes the signed bytes. Read before the required fields are
+    // checked, so a run with no inputs records the name, as gateway-announce-steps.test.ts relies on.
+    const reposArchived = parseCount(env.REPOS_ARCHIVED)
     if (reposTracked === undefined || surveysToday === undefined || reportUrl === undefined) return undefined
-    return {repos_tracked: reposTracked, surveys_today: surveysToday, report_url: reportUrl}
+    return {
+      repos_tracked: reposTracked,
+      surveys_today: surveysToday,
+      ...(reposArchived === undefined ? {} : {repos_archived: reposArchived}),
+      report_url: reportUrl,
+    }
   }
   if (event === 'invitation_accepted') {
     const count = parseCount(env.INVITATIONS_ACCEPTED)

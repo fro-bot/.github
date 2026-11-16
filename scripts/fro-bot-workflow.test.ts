@@ -1547,7 +1547,7 @@ describe('fro-bot.yaml daily-digest announce isolation (agent post-step credenti
     expect(String(countsStep?.run ?? '')).toContain('scripts/daily-digest-counts.ts')
   })
 
-  it('reads the archived count from the counts script into a step output and logs it, without sending it to the gateway', () => {
+  it('reads the archived count from the counts script into a step output, logs it, and passes it to the gateway announce as env only', () => {
     const countsStep = announceJob?.steps?.find(step => step.name === '📊 Derive daily digest counts')
     const run = String(countsStep?.run ?? '')
     expect(run).toContain(`jq '.repos_archived'`)
@@ -1556,16 +1556,18 @@ describe('fro-bot.yaml daily-digest announce isolation (agent post-step credenti
     expect(run).toContain(`echo "repos_archived=${archived}"`)
     expect(run).toContain(`daily-digest: repos_archived=${archived}`)
 
-    // The signed gateway payload keeps its three fields: the gateway's accepted schema is not ours to extend here.
+    // The gateway ignores keys it does not know, so the announce step carries the count as one more env key.
     const announceStep = announceJob?.steps?.find(step => step.name === '📣 Announce daily digest to gateway')
     expect(Object.keys(announceStep?.env ?? {}).toSorted()).toEqual([
       'GATEWAY_ANNOUNCE_DISABLED',
       'GATEWAY_PRESENCE_URL',
       'GATEWAY_WEBHOOK_SECRET',
       'REPORT_URL',
+      'REPOS_ARCHIVED',
       'REPOS_TRACKED',
       'SURVEYS_TODAY',
     ])
+    expect(String(announceStep?.env?.REPOS_ARCHIVED ?? '')).toContain('steps.digest-counts.outputs.repos_archived')
   })
 
   it('validates count_status/report-url shape and repos-tracked/surveys-today as non-negative integers before announcing, reading from its own steps (not needs.fro-bot-observe)', () => {
