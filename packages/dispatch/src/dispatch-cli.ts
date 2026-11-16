@@ -30,7 +30,8 @@ async function createOctokitFromEnv(env: Env): Promise<CrossRepoDispatchOctokitC
 /** Env var carrying the owner→token JSON map minted per-owner in the workflow. */
 const TARGET_TOKENS_ENV_VAR = 'CROSS_REPO_DISPATCH_TARGET_TOKENS'
 
-async function loadRegistryFromDisk(): Promise<GateEntry[]> {
+/** The registry's gate entries, read from `metadata/repos.yaml` in the working directory. An unreadable file is no entries. */
+export async function loadRegistryFromDisk(): Promise<GateEntry[]> {
   const {readFile} = await import('node:fs/promises')
   const {parse} = await import('yaml')
   try {
@@ -41,6 +42,7 @@ async function loadRegistryFromDisk(): Promise<GateEntry[]> {
       name: entry.name,
       has_fro_bot_workflow: entry.has_fro_bot_workflow,
       private: entry.private,
+      onboarding_status: entry.onboarding_status,
       cross_repo_receipts: entry.cross_repo_receipts,
     }))
   } catch {

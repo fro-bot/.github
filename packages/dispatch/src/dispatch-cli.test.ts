@@ -1,7 +1,10 @@
+import {mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
-import {crossRepoDispatchCli, main, runDispatchCli} from './dispatch-cli.ts'
+import {crossRepoDispatchCli, loadRegistryFromDisk, main, runDispatchCli} from './dispatch-cli.ts'
 
 const MODE_ERROR = 'cross-repo-dispatch: expected argv[2] to be "dispatch" or "track"\n'
 
@@ -118,5 +121,52 @@ describe('main', () => {
     }
     expect(process.exitCode).toBe(1)
     expect(written.join('')).toContain('GITHUB_EVENT_PATH is required for dispatch mode')
+  })
+})
+
+describe('loadRegistryFromDisk', () => {
+  const originalCwd = process.cwd()
+  let directory = ''
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), 'dispatch-registry-'))
+    mkdirSync(join(directory, 'metadata'))
+    process.chdir(directory)
+  })
+
+  afterEach(() => {
+    process.chdir(originalCwd)
+    rmSync(directory, {recursive: true, force: true})
+  })
+
+  const entry = (name: string, status: string) => `  - owner: fro-bot
+    name: ${name}
+    added: '2026-01-01'
+    onboarding_status: ${status}
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: true
+    has_renovate: false
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+`
+
+  it('passes each row status into the gate entry, an archived row included', async () => {
+    writeFileSync(
+      join(directory, 'metadata/repos.yaml'),
+      `version: 1\nrepos:\n${entry('live-repo', 'onboarded')}${entry('retired-repo', 'archived')}`,
+    )
+
+    const registry = await loadRegistryFromDisk()
+
+    expect(registry.map(row => [row.name, row.onboarding_status])).toEqual([
+      ['live-repo', 'onboarded'],
+      ['retired-repo', 'archived'],
+    ])
+  })
+
+  it('returns no entries for an unreadable registry, so every target is refused', async () => {
+    expect(await loadRegistryFromDisk()).toEqual([])
   })
 })

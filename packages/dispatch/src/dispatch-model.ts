@@ -117,7 +117,7 @@ export interface ParseResultOutcome {
   reason?: 'absent' | 'malformed'
 }
 
-export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible'
+export type GateResult = 'ok' | 'blocked-not-onboarded' | 'blocked-ineligible' | 'blocked-archived'
 
 /**
  * Operator-declared receipt contract classification for a target. Sourced only from the
@@ -139,6 +139,8 @@ export interface GateEntry {
   name: string
   has_fro_bot_workflow: boolean
   private?: boolean
+  /** The row's `onboarding_status`. `archived` blocks the target; any other value, or none, does not. */
+  onboarding_status?: string
   /**
    * Optional operator-declared receipt contract capability. Only the data-branch
    * `metadata/repos.yaml` sole-writer path may set this — it is not a prompt-delivered or

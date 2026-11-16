@@ -17,6 +17,7 @@ const WORKFLOWS_DIR = resolve(import.meta.dirname, '../.github/workflows')
 const ACTION = './.github/actions/sync-data'
 const OVERLAY = '⤵ Overlay metadata from data branch'
 const WIKI_SYNC = 'Sync wiki from data branch'
+const RESTORE_REGISTRY = '⤵ Restore the registry from data'
 
 interface Step {
   name?: string
@@ -265,6 +266,24 @@ const CALLERS: readonly Caller[] = [
     precedes: {name: 'Validate and apply wiki handoff'},
   },
   {
+    workflow: 'dispatch-renovate.yaml',
+    job: 'dispatch-renovate',
+    site: {name: RESTORE_REGISTRY},
+    paths: 'metadata/repos.yaml',
+    ifAbsent: 'fail',
+    follows: 'checkout',
+    precedes: {id: 'plan'},
+  },
+  {
+    workflow: 'update-metadata.yaml',
+    job: 'update-metadata',
+    site: {name: RESTORE_REGISTRY},
+    paths: 'metadata/repos.yaml',
+    ifAbsent: 'fail',
+    follows: 'checkout',
+    precedes: {name: '🔄 Update metadata'},
+  },
+  {
     workflow: 'survey-repo.yaml',
     job: 'survey-repo',
     site: {id: 'sync-wiki'},
@@ -344,9 +363,9 @@ function discoverCallSites(): {workflow: string; job: string; step: Step; index:
 const callSites = discoverCallSites()
 
 describe('data sync callers: the caller list', () => {
-  it('lists 24 call sites with distinct keys', () => {
-    expect(CALLERS).toHaveLength(24)
-    expect(new Set(CALLERS.map(callerKey)).size).toBe(24)
+  it('lists 26 call sites with distinct keys', () => {
+    expect(CALLERS).toHaveLength(26)
+    expect(new Set(CALLERS.map(callerKey)).size).toBe(26)
   })
 
   it('finds exactly the listed call sites in the workflows, no more and no fewer', () => {

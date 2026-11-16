@@ -2,9 +2,12 @@ import type {DataBranchBootstrapResult} from '@fro.bot/wiki-write-core/data-bran
 import type {DiscoveryClient, OctokitClient, RunUpdateMetadataParams} from './update-metadata.ts'
 
 import {Buffer} from 'node:buffer'
+import {mkdtempSync, rmSync, writeFileSync} from 'node:fs'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import process from 'node:process'
 
-import {beforeEach, describe, expect, it, vi} from 'vitest'
+import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 // BDD: buildRenovateFile
 // Given: a list of detected repo names
@@ -42,14 +45,36 @@ const {mocks, mockOctokit} = vi.hoisted(() => {
 
 // Test fixture builder so each repo carries the realistic owner/archived/fork shape
 // returned by `apps.listReposAccessibleToInstallation`.
-function repo(name: string, opts?: {owner?: string; archived?: boolean; fork?: boolean}) {
+function repo(
+  name: string,
+  opts?: {owner?: string; archived?: boolean; fork?: boolean; node_id?: string; id?: number},
+) {
   return {
     name,
     archived: opts?.archived ?? false,
     fork: opts?.fork ?? false,
     owner: {login: opts?.owner ?? 'fro-bot'},
+    ...(opts?.node_id === undefined ? {} : {node_id: opts.node_id}),
+    ...(opts?.id === undefined ? {} : {id: opts.id}),
   }
 }
+
+const READABLE_REGISTRY = {readable: true, archivedRows: []} as const
+
+const registryDirectories: string[] = []
+
+/** Writes a registry file to a fresh temp directory and returns its path. */
+async function writeRegistry(text: string): Promise<string> {
+  const directory = mkdtempSync(join(tmpdir(), 'update-metadata-registry-'))
+  registryDirectories.push(directory)
+  const path = join(directory, 'repos.yaml')
+  writeFileSync(path, text)
+  return path
+}
+
+afterEach(() => {
+  for (const directory of registryDirectories.splice(0)) rmSync(directory, {recursive: true, force: true})
+})
 
 describe('buildRenovateFile', () => {
   it('wraps names in the renovate.yaml schema shape', async () => {
@@ -105,7 +130,7 @@ describe('discoverRenovateRepos', () => {
     mocks.getContent.mockResolvedValueOnce({status: 200})
     mocks.getContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
 
-    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(result).toEqual(['agent', '.github'])
   })
 
@@ -116,7 +141,7 @@ describe('discoverRenovateRepos', () => {
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
     mocks.paginate.mockResolvedValueOnce([])
 
-    await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(mocks.paginate).toHaveBeenCalledTimes(1)
     expect(mocks.paginate).toHaveBeenCalledWith(mocks.listReposAccessibleToInstallation, {per_page: 100})
   })
@@ -134,7 +159,7 @@ describe('discoverRenovateRepos', () => {
     mocks.getContent.mockResolvedValueOnce({status: 200})
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
-    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(result).toEqual(['agent', '.github'])
     expect(mocks.getContent).toHaveBeenCalledTimes(2)
     expect(mocks.getContent).not.toHaveBeenCalledWith(expect.objectContaining({repo: 'config'}))
@@ -148,7 +173,7 @@ describe('discoverRenovateRepos', () => {
     mocks.paginate.mockResolvedValueOnce([repo('archived-repo', {archived: true}), repo('agent')])
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
-    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(result).toEqual(['agent'])
     expect(mocks.getContent).toHaveBeenCalledTimes(1)
     expect(mocks.getContent).toHaveBeenCalledWith(expect.objectContaining({repo: 'agent'}))
@@ -162,7 +187,7 @@ describe('discoverRenovateRepos', () => {
     mocks.paginate.mockResolvedValueOnce([repo('forked-repo', {fork: true}), repo('agent')])
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
-    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(result).toEqual(['agent'])
     expect(mocks.getContent).toHaveBeenCalledTimes(1)
   })
@@ -175,7 +200,7 @@ describe('discoverRenovateRepos', () => {
     mocks.paginate.mockResolvedValueOnce([repo('no-renovate')])
     mocks.getContent.mockRejectedValueOnce(Object.assign(new Error('Not Found'), {status: 404}))
 
-    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(result).toEqual([])
   })
 
@@ -188,11 +213,11 @@ describe('discoverRenovateRepos', () => {
     const original = Object.assign(new Error('Server Error'), {status: 500})
     mocks.getContent.mockRejectedValueOnce(original)
 
-    await expect(discoverRenovateRepos(mockOctokit, 'fro-bot')).rejects.toThrow(/fro-bot\/broken-repo.*status=500/)
+    await expect(discoverRenovateRepos(mockOctokit, 'fro-bot', [])).rejects.toThrow(/fro-bot\/broken-repo.*status=500/)
     // Re-run to inspect the cause chain (the previous expect consumed the rejection).
     mocks.paginate.mockResolvedValueOnce([repo('broken-repo')])
     mocks.getContent.mockRejectedValueOnce(original)
-    await expect(discoverRenovateRepos(mockOctokit, 'fro-bot')).rejects.toMatchObject({cause: original})
+    await expect(discoverRenovateRepos(mockOctokit, 'fro-bot', [])).rejects.toMatchObject({cause: original})
   })
 
   it('propagates paginate rejections without probing any repos', async () => {
@@ -202,7 +227,7 @@ describe('discoverRenovateRepos', () => {
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
     mocks.paginate.mockRejectedValueOnce(new Error('API down'))
 
-    await expect(discoverRenovateRepos(mockOctokit, 'fro-bot')).rejects.toThrow('API down')
+    await expect(discoverRenovateRepos(mockOctokit, 'fro-bot', [])).rejects.toThrow('API down')
     expect(mocks.getContent).not.toHaveBeenCalled()
   })
 
@@ -213,7 +238,7 @@ describe('discoverRenovateRepos', () => {
     const {discoverRenovateRepos} = await import('./update-metadata.ts')
     mocks.paginate.mockResolvedValueOnce([])
 
-    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(result).toEqual([])
     expect(mocks.getContent).not.toHaveBeenCalled()
   })
@@ -226,7 +251,7 @@ describe('discoverRenovateRepos', () => {
     mocks.paginate.mockResolvedValueOnce([repo('agent')])
     mocks.getContent.mockResolvedValueOnce({status: 200})
 
-    await discoverRenovateRepos(mockOctokit, 'fro-bot')
+    await discoverRenovateRepos(mockOctokit, 'fro-bot', [])
     expect(mocks.getContent).toHaveBeenCalledWith({
       owner: 'fro-bot',
       repo: 'agent',
@@ -353,7 +378,7 @@ describe('runUpdateMetadata (discovery/writer split)', () => {
     })
 
     // #when the run executes
-    const summary = await runUpdateMetadata({discovery, writer, owner: 'fro-bot', commit})
+    const summary = await runUpdateMetadata({discovery, writer, owner: 'fro-bot', commit, registry: READABLE_REGISTRY})
 
     // #then discovery probed only the fixed path and the writer carried the commit
     expect(summary).toEqual({owner: 'fro-bot', detected: 2, committed: true, attempts: 1})
@@ -384,6 +409,7 @@ describe('runUpdateMetadata (discovery/writer split)', () => {
       discovery,
       writer,
       owner: 'fro-bot',
+      registry: READABLE_REGISTRY,
       commit: async params => commitMetadata({...params, bootstrapDataBranch}),
     })
 
@@ -415,6 +441,7 @@ describe('runUpdateMetadata (discovery/writer split)', () => {
         discovery,
         writer,
         owner: 'fro-bot',
+        registry: READABLE_REGISTRY,
         commit: async () => ({committed: false, attempts: 1}),
       })
       // #then no stream or console output carries the body
@@ -498,6 +525,7 @@ describe('createClientsFromEnv', () => {
       {UPDATE_METADATA_DISCOVERY_TOKEN: 'd-tok', UPDATE_METADATA_WRITER_TOKEN: 'w-tok'},
       createClient,
       commit,
+      {registryPath: await writeRegistry('version: 1\nrepos: []\n')},
     )
 
     // #then each token produced exactly one client
@@ -523,7 +551,11 @@ describe('runUpdateMetadataCli', () => {
       attempts: 1,
     })
 
-    await runUpdateMetadataCli(env, {stdout: text => out.push(text), stderr: () => {}}, {createClient, commit})
+    await runUpdateMetadataCli(
+      env,
+      {stdout: text => out.push(text), stderr: () => {}},
+      {createClient, commit, registryPath: await writeRegistry('version: 1\nrepos: []\n')},
+    )
 
     expect(createClient.mock.calls.map(call => call[0])).toEqual(['disc', 'writer'])
     expect(commit).toHaveBeenCalledTimes(1)
@@ -542,5 +574,182 @@ describe('runUpdateMetadataCli', () => {
       ),
     ).rejects.toThrow('UPDATE_METADATA_WRITER_TOKEN')
     expect(createClient).not.toHaveBeenCalled()
+  })
+})
+
+describe('discoverRenovateRepos (archived registry rows)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  const retired = {owner: 'fro-bot', name: 'retired-repo', node_id: 'R_kgDORETIRED', database_id: 11}
+
+  it('drops a repository with an archived row that GitHub does not report archived, and never probes it', async () => {
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      repo('retired-repo', {node_id: 'R_kgDORETIRED', id: 11}),
+      repo('live-repo', {node_id: 'R_kgDOLIVE', id: 12}),
+    ])
+    mocks.getContent.mockResolvedValue({status: 200})
+
+    const result = await discoverRenovateRepos(mockOctokit, 'fro-bot', [retired])
+
+    expect(result).toEqual(['live-repo'])
+    expect(mocks.getContent).toHaveBeenCalledTimes(1)
+    expect(mocks.getContent).toHaveBeenCalledWith(expect.objectContaining({repo: 'live-repo'}))
+  })
+
+  it('still drops it after a rename on GitHub: the archived row keeps its stored name, the IDs match', async () => {
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([repo('retired-renamed', {node_id: 'R_kgDORETIRED', id: 11})])
+    mocks.getContent.mockResolvedValue({status: 200})
+
+    expect(await discoverRenovateRepos(mockOctokit, 'fro-bot', [retired])).toEqual([])
+    expect(mocks.getContent).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      'node ID only',
+      {owner: 'fro-bot', name: 'retired-repo', node_id: 'R_kgDORETIRED'},
+      {node_id: 'R_kgDORETIRED', id: 99},
+    ],
+    ['database ID only', {owner: 'fro-bot', name: 'retired-repo', database_id: 11}, {node_id: 'R_kgDOOTHER', id: 11}],
+  ])('matches an archived row by %s', async (_label, row, ids) => {
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([repo('renamed', ids)])
+    mocks.getContent.mockResolvedValue({status: 200})
+
+    expect(await discoverRenovateRepos(mockOctokit, 'fro-bot', [row])).toEqual([])
+  })
+
+  it('matches a row with neither ID by owner and name', async () => {
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      repo('retired-repo', {node_id: 'R_kgDOANY', id: 1}),
+      repo('live-repo', {node_id: 'R_kgDOLIVE', id: 2}),
+    ])
+    mocks.getContent.mockResolvedValue({status: 200})
+
+    expect(await discoverRenovateRepos(mockOctokit, 'fro-bot', [{owner: 'fro-bot', name: 'retired-repo'}])).toEqual([
+      'live-repo',
+    ])
+  })
+
+  it('does not match an archived row that has IDs by name alone: a new repository may reuse the name', async () => {
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([repo('retired-repo', {node_id: 'R_kgDONEWREPO', id: 77})])
+    mocks.getContent.mockResolvedValue({status: 200})
+
+    expect(await discoverRenovateRepos(mockOctokit, 'fro-bot', [retired])).toEqual(['retired-repo'])
+  })
+
+  it('does not match an owner-and-name row against another owner', async () => {
+    const {discoverRenovateRepos} = await import('./update-metadata.ts')
+    mocks.paginate.mockResolvedValueOnce([repo('retired-repo')])
+    mocks.getContent.mockResolvedValue({status: 200})
+
+    expect(
+      await discoverRenovateRepos(mockOctokit, 'fro-bot', [{owner: 'someone-else', name: 'retired-repo'}]),
+    ).toEqual(['retired-repo'])
+  })
+})
+
+describe('runUpdateMetadata (an unreadable registry)', () => {
+  it('discovers nothing, commits nothing and logs one fixed line', async () => {
+    const {runUpdateMetadata} = await import('./update-metadata.ts')
+    const calls: SplitCall[] = []
+    const discovery = makeDiscoveryClient(calls, [repo('agent')])
+    const writer = makeWriterClient(calls)
+    const commit = vi.fn(async () => ({committed: true, sha: 'new-sha', attempts: 1}))
+    const lines: string[] = []
+
+    const summary = await runUpdateMetadata({
+      discovery,
+      writer,
+      owner: 'fro-bot',
+      commit,
+      registry: {readable: false},
+      log: text => {
+        lines.push(text)
+      },
+    })
+
+    expect(summary).toEqual({owner: 'fro-bot', detected: 0, committed: false, attempts: 0})
+    expect(commit).not.toHaveBeenCalled()
+    expect(calls).toEqual([])
+    expect(lines).toEqual(['update-metadata: registry unreadable; discovering no repositories\n'])
+  })
+})
+
+describe('runFromEnv and runUpdateMetadataCli (the registry)', () => {
+  const env = {UPDATE_METADATA_DISCOVERY_TOKEN: 'disc', UPDATE_METADATA_WRITER_TOKEN: 'writer'}
+  const archivedRow = `  - owner: fro-bot
+    name: retired-repo
+    added: '2026-01-01'
+    onboarding_status: archived
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: true
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+    node_id: R_kgDORETIRED
+    database_id: 11
+`
+
+  it('commits a list without the archived repository, matched by ID after a rename', async () => {
+    const {runUpdateMetadataCli} = await import('./update-metadata.ts')
+    const out: string[] = []
+    const discovery = {
+      paginate: vi
+        .fn()
+        .mockResolvedValue([
+          repo('retired-renamed', {node_id: 'R_kgDORETIRED', id: 11}),
+          repo('live-repo', {node_id: 'R_kgDOLIVE', id: 12}),
+        ]),
+      rest: {apps: {listReposAccessibleToInstallation: vi.fn()}, repos: {getContent: vi.fn().mockResolvedValue({})}},
+    }
+    const createClient = vi.fn(async (token: string) => (token === 'disc' ? discovery : {tag: 'writer'}) as never)
+    const commit = vi.fn<NonNullable<RunUpdateMetadataParams['commit']>>(async params => {
+      expect(await params.mutator({})).toEqual({repositories: {'with-renovate': ['live-repo']}})
+      return {committed: true, sha: 'a'.repeat(40), attempts: 1}
+    })
+
+    await runUpdateMetadataCli(
+      env,
+      {stdout: text => out.push(text), stderr: () => {}},
+      {createClient, commit, registryPath: await writeRegistry(`version: 1\nrepos:\n${archivedRow}`)},
+    )
+
+    expect(out).toEqual(['{"owner":"fro-bot","detected":1,"committed":true,"attempts":1}\n'])
+  })
+
+  it.each([
+    ['a missing file', async () => join(tmpdir(), 'update-metadata-absent', 'repos.yaml')],
+    ['malformed YAML', async () => writeRegistry(': : [[[')],
+    ['an invalid registry', async () => writeRegistry('version: 1\nrepos: nope\n')],
+  ])('with %s it makes no discovery call, commits nothing and says so on stderr', async (_label, makePath) => {
+    const {runUpdateMetadataCli} = await import('./update-metadata.ts')
+    const out: string[] = []
+    const err: string[] = []
+    const discovery = {
+      paginate: vi.fn().mockResolvedValue([repo('agent')]),
+      rest: {apps: {listReposAccessibleToInstallation: vi.fn()}, repos: {getContent: vi.fn()}},
+    }
+    const createClient = vi.fn(async (token: string) => (token === 'disc' ? discovery : {tag: 'writer'}) as never)
+    const commit = vi.fn<NonNullable<RunUpdateMetadataParams['commit']>>()
+
+    await runUpdateMetadataCli(
+      env,
+      {stdout: text => out.push(text), stderr: text => err.push(text)},
+      {createClient, commit, registryPath: await makePath()},
+    )
+
+    expect(discovery.paginate).not.toHaveBeenCalled()
+    expect(commit).not.toHaveBeenCalled()
+    expect(err).toEqual(['update-metadata: registry unreadable; discovering no repositories\n'])
+    expect(out).toEqual(['{"owner":"fro-bot","detected":0,"committed":false,"attempts":0}\n'])
   })
 })

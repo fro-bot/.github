@@ -35,7 +35,18 @@ jobs:
       - name: 📦 Setup
         uses: ./.github/actions/setup
 
-      # Intersects metadata/renovate.yaml with the installation's repos; a discovery failure fails the step.
+      # Restores only the registry from `data`, the copy that carries an archive before `main` does. The plan
+      # drops every repository whose row there is archived, so a declared archive stops Renovate dispatches even
+      # when GitHub does not report the repository archived. `if-absent: fail`: with no `data` branch the step
+      # fails and nothing is planned, rather than planning from `main`'s older registry.
+      - name: ⤵ Restore the registry from data
+        uses: ./.github/actions/sync-data
+        with:
+          paths: metadata/repos.yaml
+          if-absent: fail
+
+      # Intersects metadata/renovate.yaml with the installation's repos, minus archived rows; a discovery
+      # failure fails the step, and a registry that cannot be read plans no repositories.
       - id: plan
         name: 🗺 Plan Renovate targets
         env:

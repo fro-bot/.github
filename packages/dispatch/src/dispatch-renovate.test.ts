@@ -203,6 +203,8 @@ describe('dispatchRenovate', () => {
 interface FakeRepo {
   name: string
   owner: {login: string}
+  node_id?: string
+  id?: number
 }
 
 function installation(...names: string[]): FakeRepo[] {
@@ -234,7 +236,11 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('agent', '.github', 'tokentoilet'))
 
-    const plan = await planDispatchRepositories({octokit: planClient, requested: ['agent', '.github']})
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['agent', '.github'],
+      archivedRows: [],
+    })
 
     expect(plan).toEqual(['agent', '.github'])
     expect(mocks.paginate).toHaveBeenCalledWith(mocks.listReposAccessibleToInstallation, {per_page: 100})
@@ -244,7 +250,11 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('agent'))
 
-    const plan = await planDispatchRepositories({octokit: planClient, requested: ['agent', 'gone-repo']})
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['agent', 'gone-repo'],
+      archivedRows: [],
+    })
 
     expect(plan).toEqual(['agent'])
   })
@@ -256,7 +266,11 @@ describe('planDispatchRepositories', () => {
       {name: '.github', owner: {login: 'fro-bot'}},
     ])
 
-    const plan = await planDispatchRepositories({octokit: planClient, requested: ['agent', '.github']})
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['agent', '.github'],
+      archivedRows: [],
+    })
 
     expect(plan).toEqual(['.github'])
   })
@@ -268,6 +282,7 @@ describe('planDispatchRepositories', () => {
     const plan = await planDispatchRepositories({
       octokit: planClient,
       requested: [' agent ', '', '  ', 'agent', '.github'],
+      archivedRows: [],
     })
 
     expect(plan).toEqual(['agent', '.github'])
@@ -277,7 +292,11 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('unrelated'))
 
-    const plan = await planDispatchRepositories({octokit: planClient, requested: ['gone-1', 'gone-2']})
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['gone-1', 'gone-2'],
+      archivedRows: [],
+    })
 
     expect(plan).toEqual([])
   })
@@ -285,7 +304,7 @@ describe('planDispatchRepositories', () => {
   it('returns an empty plan without calling the API when there is nothing requested', async () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
 
-    const plan = await planDispatchRepositories({octokit: planClient, requested: ['', '  ']})
+    const plan = await planDispatchRepositories({octokit: planClient, requested: ['', '  '], archivedRows: []})
 
     expect(plan).toEqual([])
     expect(mocks.paginate).not.toHaveBeenCalled()
@@ -295,7 +314,112 @@ describe('planDispatchRepositories', () => {
     const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockRejectedValueOnce(new Error('API 403'))
 
-    await expect(planDispatchRepositories({octokit: planClient, requested: ['agent']})).rejects.toThrow('API 403')
+    await expect(
+      planDispatchRepositories({octokit: planClient, requested: ['agent'], archivedRows: []}),
+    ).rejects.toThrow('API 403')
+  })
+})
+
+describe('planDispatchRepositories (archived rows)', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+  })
+
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    owner: 'fro-bot',
+    name: 'retired-repo',
+    ...overrides,
+  })
+
+  it('drops a repository whose node ID matches an archived row, though GitHub does not report it archived', async () => {
+    const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      {name: 'retired-repo', owner: {login: 'fro-bot'}, node_id: 'R_kgDORETIRED', id: 11},
+      {name: 'live-repo', owner: {login: 'fro-bot'}, node_id: 'R_kgDOLIVE', id: 12},
+    ])
+
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['retired-repo', 'live-repo'],
+      archivedRows: [row({node_id: 'R_kgDORETIRED', database_id: 11})],
+    })
+
+    expect(plan).toEqual(['live-repo'])
+  })
+
+  it('still drops it after a rename on GitHub: the archived row keeps its stored name, the IDs match', async () => {
+    const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      {name: 'retired-repo-renamed', owner: {login: 'fro-bot'}, node_id: 'R_kgDORETIRED', id: 11},
+    ])
+
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['retired-repo-renamed'],
+      archivedRows: [row({node_id: 'R_kgDORETIRED', database_id: 11})],
+    })
+
+    expect(plan).toEqual([])
+  })
+
+  it.each([
+    ['node ID only', {node_id: 'R_kgDORETIRED'}, {node_id: 'R_kgDORETIRED', id: 99}],
+    ['database ID only', {database_id: 11}, {node_id: 'R_kgDOOTHER', id: 11}],
+  ])('matches an archived row by %s', async (_label, rowIds, repoIds) => {
+    const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([{name: 'renamed', owner: {login: 'fro-bot'}, ...repoIds}])
+
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['renamed'],
+      archivedRows: [row(rowIds)],
+    })
+
+    expect(plan).toEqual([])
+  })
+
+  it('matches a row with neither ID by owner and name', async () => {
+    const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      {name: 'retired-repo', owner: {login: 'fro-bot'}, node_id: 'R_kgDOANY', id: 1},
+      {name: 'live-repo', owner: {login: 'fro-bot'}, node_id: 'R_kgDOLIVE', id: 2},
+    ])
+
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['retired-repo', 'live-repo'],
+      archivedRows: [row()],
+    })
+
+    expect(plan).toEqual(['live-repo'])
+  })
+
+  it('does not match an archived row that has IDs by name alone: a new repository may reuse the name', async () => {
+    const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      {name: 'retired-repo', owner: {login: 'fro-bot'}, node_id: 'R_kgDONEWREPO', id: 77},
+    ])
+
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['retired-repo'],
+      archivedRows: [row({node_id: 'R_kgDORETIRED', database_id: 11})],
+    })
+
+    expect(plan).toEqual(['retired-repo'])
+  })
+
+  it('does not match an owner-and-name row against another owner', async () => {
+    const {planDispatchRepositories} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([{name: 'retired-repo', owner: {login: 'fro-bot'}}])
+
+    const plan = await planDispatchRepositories({
+      octokit: planClient,
+      requested: ['retired-repo'],
+      archivedRows: [row({owner: 'someone-else'})],
+    })
+
+    expect(plan).toEqual(['retired-repo'])
   })
 })
 
@@ -314,6 +438,12 @@ describe('runPlanMode', () => {
     return path
   }
 
+  async function registryFile(): Promise<string> {
+    const path = join(dir, 'repos.yaml')
+    await writeFile(path, 'version: 1\nrepos: []\n')
+    return path
+  }
+
   it('writes the comma-separated cleaned list to GITHUB_OUTPUT', async () => {
     const {runPlanMode} = await import('./dispatch-renovate.ts')
     mocks.paginate.mockResolvedValueOnce(installation('agent', '.github'))
@@ -322,6 +452,7 @@ describe('runPlanMode', () => {
     await runPlanMode({
       octokit: planClient,
       renovatePath: await renovateFile([' agent', 'agent', '.github', 'stale']),
+      registryPath: await registryFile(),
       outputPath,
     })
 
@@ -333,7 +464,12 @@ describe('runPlanMode', () => {
     mocks.paginate.mockResolvedValueOnce(installation('unrelated'))
     const outputPath = join(dir, 'output')
 
-    await runPlanMode({octokit: planClient, renovatePath: await renovateFile(['stale']), outputPath})
+    await runPlanMode({
+      octokit: planClient,
+      renovatePath: await renovateFile(['stale']),
+      registryPath: await registryFile(),
+      outputPath,
+    })
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
   })
@@ -342,7 +478,12 @@ describe('runPlanMode', () => {
     const {runPlanMode} = await import('./dispatch-renovate.ts')
     const outputPath = join(dir, 'output')
 
-    await runPlanMode({octokit: planClient, renovatePath: await renovateFile([]), outputPath})
+    await runPlanMode({
+      octokit: planClient,
+      renovatePath: await renovateFile([]),
+      registryPath: await registryFile(),
+      outputPath,
+    })
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
     expect(mocks.paginate).not.toHaveBeenCalled()
@@ -352,7 +493,12 @@ describe('runPlanMode', () => {
     const {runPlanMode} = await import('./dispatch-renovate.ts')
     const outputPath = join(dir, 'output')
 
-    await runPlanMode({octokit: planClient, renovatePath: join(dir, 'missing.yaml'), outputPath})
+    await runPlanMode({
+      octokit: planClient,
+      renovatePath: join(dir, 'missing.yaml'),
+      registryPath: await registryFile(),
+      outputPath,
+    })
 
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
   })
@@ -363,7 +509,12 @@ describe('runPlanMode', () => {
     const outputPath = join(dir, 'output')
 
     await expect(
-      runPlanMode({octokit: planClient, renovatePath: await renovateFile(['agent']), outputPath}),
+      runPlanMode({
+        octokit: planClient,
+        renovatePath: await renovateFile(['agent']),
+        registryPath: await registryFile(),
+        outputPath,
+      }),
     ).rejects.toThrow('API 500')
     await expect(readFile(outputPath, 'utf8')).rejects.toMatchObject({code: 'ENOENT'})
   })
@@ -373,7 +524,116 @@ describe('runPlanMode', () => {
     const path = join(dir, 'renovate.yaml')
     await writeFile(path, 'repositories: nope\n')
 
-    await expect(runPlanMode({octokit: planClient, renovatePath: path, outputPath: join(dir, 'o')})).rejects.toThrow()
+    await expect(
+      runPlanMode({
+        octokit: planClient,
+        renovatePath: path,
+        registryPath: await registryFile(),
+        outputPath: join(dir, 'o'),
+      }),
+    ).rejects.toThrow()
+  })
+})
+
+describe('runPlanMode (archived rows and the registry)', () => {
+  let dir = ''
+  const FIXED_LINE = 'dispatch-renovate: registry unreadable; planning no repositories\n'
+
+  beforeEach(async () => {
+    vi.resetAllMocks()
+    if (dir !== '') await rm(dir, {recursive: true, force: true})
+    dir = await mkdtemp(join(tmpdir(), 'dispatch-renovate-archived-'))
+  })
+
+  async function renovateFile(names: string[]): Promise<string> {
+    const path = join(dir, 'renovate.yaml')
+    await writeFile(path, `repositories:\n  with-renovate: ${JSON.stringify(names)}\n`)
+    return path
+  }
+
+  const registryRow = (name: string, status: string, ids = '') => `  - owner: fro-bot
+    name: ${name}
+    added: '2026-01-01'
+    onboarding_status: ${status}
+    last_survey_at: null
+    last_survey_status: null
+    has_fro_bot_workflow: false
+    has_renovate: true
+    discovery_channel: owned
+    next_survey_eligible_at: null
+    private: false
+${ids}`
+
+  async function registryText(text: string): Promise<string> {
+    const path = join(dir, 'repos.yaml')
+    await writeFile(path, text)
+    return path
+  }
+
+  it('leaves an archived repository out of the plan that GitHub reports as active under a new name', async () => {
+    const {runPlanMode} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce([
+      {name: 'retired-renamed', owner: {login: 'fro-bot'}, node_id: 'R_kgDORETIRED', id: 11},
+      {name: 'live-repo', owner: {login: 'fro-bot'}, node_id: 'R_kgDOLIVE', id: 12},
+    ])
+    const outputPath = join(dir, 'output')
+    const registryPath = await registryText(
+      `version: 1\nrepos:\n${registryRow('retired-repo', 'archived', '    node_id: R_kgDORETIRED\n    database_id: 11\n')}${registryRow('live-repo', 'onboarded', '    node_id: R_kgDOLIVE\n    database_id: 12\n')}`,
+    )
+
+    const plan = await runPlanMode({
+      octokit: planClient,
+      renovatePath: await renovateFile(['retired-renamed', 'live-repo']),
+      registryPath,
+      outputPath,
+    })
+
+    expect(plan).toEqual(['live-repo'])
+    expect(await readFile(outputPath, 'utf8')).toBe('repositories=live-repo\n')
+  })
+
+  it.each([
+    ['a missing file', async () => join(dir, 'absent.yaml')],
+    ['malformed YAML', async () => registryText(': : [[[')],
+    ['an invalid registry', async () => registryText('version: 1\nrepos: nope\n')],
+    ['an empty file', async () => registryText('')],
+  ])('plans no repositories and logs one fixed line for %s, with no discovery call', async (_label, makePath) => {
+    const {runPlanMode} = await import('./dispatch-renovate.ts')
+    const outputPath = join(dir, 'output')
+    const lines: string[] = []
+
+    const plan = await runPlanMode({
+      octokit: planClient,
+      renovatePath: await renovateFile(['agent']),
+      registryPath: await makePath(),
+      outputPath,
+      stderr: text => {
+        lines.push(text)
+      },
+    })
+
+    expect(plan).toEqual([])
+    expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
+    expect(lines).toEqual([FIXED_LINE])
+    expect(mocks.paginate).not.toHaveBeenCalled()
+  })
+
+  it('logs nothing for a readable registry', async () => {
+    const {runPlanMode} = await import('./dispatch-renovate.ts')
+    mocks.paginate.mockResolvedValueOnce(installation('agent'))
+    const lines: string[] = []
+
+    await runPlanMode({
+      octokit: planClient,
+      renovatePath: await renovateFile(['agent']),
+      registryPath: await registryText('version: 1\nrepos: []\n'),
+      outputPath: join(dir, 'output'),
+      stderr: text => {
+        lines.push(text)
+      },
+    })
+
+    expect(lines).toEqual([])
   })
 })
 
@@ -381,6 +641,7 @@ describe('runRenovatePlanCli and runRenovateDispatchCli (inputs)', () => {
   let dir = ''
   let outputPath = ''
   let renovatePath = ''
+  let registryPath = ''
   const createOctokit = vi.fn(async (_token: string) => cliClient)
   const out: string[] = []
   const stdout = (text: string) => {
@@ -396,6 +657,8 @@ describe('runRenovatePlanCli and runRenovateDispatchCli (inputs)', () => {
     outputPath = join(dir, 'output')
     renovatePath = join(dir, 'renovate.yaml')
     await writeFile(renovatePath, 'repositories:\n  with-renovate: ["agent", ".github", "stale"]\n')
+    registryPath = join(dir, 'repos.yaml')
+    await writeFile(registryPath, 'version: 1\nrepos: []\n')
   })
 
   const planEnv = () => ({GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: outputPath})
@@ -406,13 +669,36 @@ describe('runRenovatePlanCli and runRenovateDispatchCli (inputs)', () => {
     mocks.paginate.mockResolvedValueOnce(installation('agent', '.github'))
 
     // DISPATCH_REPOSITORIES is set on purpose: plan mode must ignore it.
-    await runRenovatePlanCli({...planEnv(), DISPATCH_REPOSITORIES: 'other'}, {createOctokit, stdout, renovatePath})
+    await runRenovatePlanCli(
+      {...planEnv(), DISPATCH_REPOSITORIES: 'other'},
+      {createOctokit, stdout, renovatePath, registryPath},
+    )
 
     expect(createOctokit).toHaveBeenCalledExactlyOnceWith('discovery-token')
     expect(await readFile(outputPath, 'utf8')).toBe('repositories=agent,.github\n')
     expect(out.join('')).toBe('dispatch-renovate: planned 2 repositories\n')
     expect(mocks.listWorkflowRuns).not.toHaveBeenCalled()
     expect(mocks.createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('plan mode with an unreadable registry plans nothing, says so once on stderr and never lists the installation', async () => {
+    const {runRenovatePlanCli} = await import('./dispatch-renovate.ts')
+    const lines: string[] = []
+
+    await runRenovatePlanCli(planEnv(), {
+      createOctokit,
+      stdout,
+      renovatePath,
+      registryPath: join(dir, 'absent.yaml'),
+      stderr: text => {
+        lines.push(text)
+      },
+    })
+
+    expect(await readFile(outputPath, 'utf8')).toBe('repositories=\n')
+    expect(lines).toEqual(['dispatch-renovate: registry unreadable; planning no repositories\n'])
+    expect(out.join('')).toBe('dispatch-renovate: planned 0 repositories\n')
+    expect(mocks.paginate).not.toHaveBeenCalled()
   })
 
   it('dispatch mode dispatches the planned list and never lists the installation', async () => {
@@ -451,7 +737,10 @@ describe('runRenovatePlanCli and runRenovateDispatchCli (inputs)', () => {
   it.each([[undefined], ['']])('plan mode fails without GITHUB_OUTPUT (%j) and makes no API call', async output => {
     const {runRenovatePlanCli} = await import('./dispatch-renovate.ts')
     await expect(
-      runRenovatePlanCli({GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: output}, {createOctokit, renovatePath}),
+      runRenovatePlanCli(
+        {GITHUB_TOKEN: 'discovery-token', GITHUB_OUTPUT: output},
+        {createOctokit, renovatePath, registryPath},
+      ),
     ).rejects.toThrow('GITHUB_OUTPUT is required in plan mode')
     expect(mocks.paginate).not.toHaveBeenCalled()
   })
@@ -519,6 +808,19 @@ describe('dispatch-renovate.yaml workflow contract', () => {
     expect(setupIndex).toBeGreaterThan(checkoutIndex)
     expect(planIndex).toBeGreaterThan(setupIndex)
     expect(ids.indexOf('dispatch-token')).toBeGreaterThan(planIndex)
+  })
+
+  it("restores data's registry before planning, failing the step when the data branch is absent or unreadable", async () => {
+    const steps = await loadWorkflowSteps()
+    const sync = steps.find(step => step.uses === './.github/actions/sync-data')
+    const syncIndex = steps.indexOf(sync as ContractStep)
+    const checkoutIndex = steps.findIndex(step => step.uses?.startsWith('actions/checkout@'))
+    const planIndex = steps.findIndex(step => step.id === 'plan')
+
+    expect(sync?.with).toStrictEqual({paths: 'metadata/repos.yaml', 'if-absent': 'fail'})
+    expect(syncIndex).toBeGreaterThan(checkoutIndex)
+    expect(syncIndex).toBeLessThan(planIndex)
+    expect(JSON.stringify(sync)).not.toContain('token')
   })
 
   it('mints the dispatch token for the planned list only, guarded on a non-empty list', async () => {

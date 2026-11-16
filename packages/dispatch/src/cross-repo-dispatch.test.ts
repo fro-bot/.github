@@ -784,6 +784,17 @@ describe('gateTarget', () => {
   it('blocks a missing registry entry as ineligible', () => {
     expect(gateTarget(undefined)).toBe('blocked-ineligible')
   })
+
+  it('blocks an archived row with its own reason and allows the same row onboarded', () => {
+    expect(gateTarget({...base, onboarding_status: 'archived'})).toBe('blocked-archived')
+    expect(gateTarget({...base, onboarding_status: 'onboarded'})).toBe('ok')
+    expect(gateTarget({...base, onboarding_status: 'pending'})).toBe('ok')
+  })
+
+  it('reports an archived row as archived whatever else would block it', () => {
+    expect(gateTarget({...base, onboarding_status: 'archived', has_fro_bot_workflow: false})).toBe('blocked-archived')
+    expect(gateTarget({...base, onboarding_status: 'archived', owner: 'some-other-org'})).toBe('blocked-archived')
+  })
 })
 
 describe('classifyReceiptCapability', () => {
@@ -1244,6 +1255,79 @@ describe('runDispatch — happy sequential dispatch', () => {
       expect(call?.inputs).not.toHaveProperty('correlation_id')
       expect(Object.keys(call?.inputs ?? {})).toEqual(['prompt'])
     }
+  })
+})
+
+describe('runDispatch — an archived target', () => {
+  it('moves the item to blocked and dispatches nothing, and dispatches the same target once it is onboarded', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+
+    async function dispatchWith(entry: GateEntry) {
+      const {octokit, comments} = mockOctokit()
+      comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+      seedMarkerComment(comments, {goal: 'goal-1', items: [item], markerHash: ''})
+      const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+      const result = await runDispatch({
+        octokit,
+        event: makeLabeledEvent(),
+        repo: REPO,
+        approveLabel: 'dispatch-approved',
+        loadRegistry: async () => [entry],
+        loadOtherOpenGoalMarkers: async () => [],
+        findRunByCorrelationId: async () => false,
+        createWorkflowDispatch: async params => {
+          await createWorkflowDispatch(params)
+        },
+        nonceSource: () => 'nonce-1',
+      })
+      return {result, createWorkflowDispatch}
+    }
+
+    const archived = await dispatchWith({...gateEntryFor(target), onboarding_status: 'archived'})
+    expect(archived.createWorkflowDispatch).not.toHaveBeenCalled()
+    expect(archived.result.counts.dispatched).toBe(0)
+
+    const onboarded = await dispatchWith({...gateEntryFor(target), onboarding_status: 'onboarded'})
+    expect(onboarded.createWorkflowDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('refuses a target that has no row under its name, as a renamed archived repository does', async () => {
+    const stored = {owner: 'fro-bot', name: 'agent'}
+    const renamed = {owner: 'fro-bot', name: 'agent-renamed'}
+    const decomposition = makeDecompositionBody([{...renamed, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target: renamed,
+      promptHash: extractPromptHash(decomposition, renamed),
+      status: 'pending',
+    }
+    const {octokit, comments} = mockOctokit()
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, {goal: 'goal-1', items: [item], markerHash: ''})
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [{...gateEntryFor(stored), onboarding_status: 'archived'}],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-1',
+    })
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
   })
 })
 

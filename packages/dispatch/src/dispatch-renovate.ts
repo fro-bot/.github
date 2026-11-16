@@ -7,8 +7,9 @@
  *
  * Two modes, so the `actions: write` token reaches only the repos it will dispatch to:
  *   - `plan`: with the read-only discovery token, intersect metadata/renovate.yaml with the
- *     repositories the installation can access, clean the result, and write it to GITHUB_OUTPUT.
- *     A failed discovery fails the step; it never falls back to an unfiltered list.
+ *     repositories the installation can access, drop every repository whose registry row on `data` is
+ *     archived, clean the result, and write it to GITHUB_OUTPUT. A failed discovery fails the step; it
+ *     never falls back to an unfiltered list. A registry that cannot be read plans no repositories.
  *   - default: dispatch to the planned list (DISPATCH_REPOSITORIES) with the dispatch token.
  *
  * Architecture: pure buildDispatchPlan()/cleanRepoNames() + async planDispatchRepositories() /
@@ -20,7 +21,7 @@ import type {Octokit, RestEndpointMethodTypes} from '@octokit/rest'
 import {appendFile, readFile} from 'node:fs/promises'
 import process from 'node:process'
 import {createOctokit} from '@fro-bot/core/github'
-import {assertRenovateFile} from '@fro.bot/wiki-write-core/schemas'
+import {assertRenovateFile, assertReposFile} from '@fro.bot/wiki-write-core/schemas'
 import {parse} from 'yaml'
 
 export type OctokitClient = Octokit
@@ -33,7 +34,8 @@ type EndpointRoute = (...args: never[]) => unknown
 // fields planning reads, so the narrow client type (and its test doubles) need not fake the rest.
 type FullInstallationRepo =
   RestEndpointMethodTypes['apps']['listReposAccessibleToInstallation']['response']['data']['repositories'][number]
-type InstallationRepo = Pick<FullInstallationRepo, 'name'> & {owner: Pick<FullInstallationRepo['owner'], 'login'>}
+type InstallationRepo = Pick<FullInstallationRepo, 'name'> &
+  Partial<Pick<FullInstallationRepo, 'node_id' | 'id'>> & {owner: Pick<FullInstallationRepo['owner'], 'login'>}
 
 /**
  * Exactly what planning calls: paginated installation listing. Narrower than `OctokitClient` so
@@ -84,19 +86,33 @@ export interface DispatchRenovateResult {
   failed: {name: string; error: string}[]
 }
 
+/** The fields of an archived registry row that identify a repository. */
+export interface ArchivedRow {
+  owner: string
+  name: string
+  node_id?: string
+  database_id?: number
+}
+
 export interface PlanParams {
   /** Discovery client: read-only, owner-wide. */
   octokit: PlanClient
   /** Raw `with-renovate` entries from metadata/renovate.yaml. */
   requested: readonly string[]
+  /** The registry rows on `data` whose status is `archived`. A repository one of them identifies is dropped. */
+  archivedRows: readonly ArchivedRow[]
   owner?: string
 }
 
 export interface RunPlanParams {
   octokit: PlanClient
   renovatePath: string
+  /** `metadata/repos.yaml` as restored from `data`. */
+  registryPath: string
   outputPath: string
   owner?: string
+  /** Where the fixed registry-unreadable line goes. Defaults to the process's stderr. */
+  stderr?: (text: string) => void
 }
 
 // ─── Pure engine ────────────────────────────────────────────────────────────
@@ -142,14 +158,68 @@ export async function planDispatchRepositories(params: PlanParams): Promise<stri
   const accessible = await params.octokit.paginate(params.octokit.rest.apps.listReposAccessibleToInstallation, {
     per_page: 100,
   })
-  const names = new Set(accessible.filter(repo => repo.owner.login === owner).map(repo => repo.name))
+  const names = new Set(
+    accessible
+      .filter(repo => repo.owner.login === owner && !isArchivedRepo(repo, params.archivedRows))
+      .map(repo => repo.name),
+  )
   return requested.filter(name => names.has(name))
 }
 
-/** Plan mode: read renovate.yaml, plan, and append `repositories=<csv>` to the output file. */
+/**
+ * Whether an archived registry row identifies `repo`. An archived row keeps its stored name through a rename
+ * on GitHub, so a row with a node ID or a database ID matches by ID alone, and a row with neither matches by
+ * owner and name. A row with an ID is never matched by name: a new repository may reuse the name.
+ */
+function isArchivedRepo(repo: InstallationRepo, archivedRows: readonly ArchivedRow[]): boolean {
+  return archivedRows.some(row => {
+    if (row.node_id === undefined && row.database_id === undefined) {
+      return row.owner === repo.owner.login && row.name === repo.name
+    }
+    return (
+      (row.node_id !== undefined && row.node_id === repo.node_id) ||
+      (row.database_id !== undefined && row.database_id === repo.id)
+    )
+  })
+}
+
+/**
+ * The archived rows of the registry at `path`, or `undefined` when it cannot be read or is not a valid registry
+ * (a missing file included): the caller then plans nothing.
+ */
+async function readArchivedRows(path: string): Promise<ArchivedRow[] | undefined> {
+  try {
+    const raw: unknown = parse(await readFile(path, 'utf8'))
+    assertReposFile(raw, 'repos')
+    return raw.repos
+      .filter(row => row.onboarding_status === 'archived')
+      .map(row => ({
+        owner: row.owner,
+        name: row.name,
+        ...(row.node_id === undefined ? {} : {node_id: row.node_id}),
+        ...(row.database_id === undefined ? {} : {database_id: row.database_id}),
+      }))
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Plan mode: read the registry and renovate.yaml, plan, and append `repositories=<csv>` to the output file.
+ * A registry that cannot be read fails closed: nothing is planned, no discovery call is made, and one fixed
+ * line says why.
+ */
 export async function runPlanMode(params: RunPlanParams): Promise<string[]> {
+  const archivedRows = await readArchivedRows(params.registryPath)
+  if (archivedRows === undefined) {
+    const stderr = params.stderr ?? ((text: string) => process.stderr.write(text))
+    stderr('dispatch-renovate: registry unreadable; planning no repositories\n')
+    await appendFile(params.outputPath, 'repositories=\n')
+    return []
+  }
+
   const requested = await readRequestedRepos(params.renovatePath)
-  const plan = await planDispatchRepositories({octokit: params.octokit, requested, owner: params.owner})
+  const plan = await planDispatchRepositories({octokit: params.octokit, requested, archivedRows, owner: params.owner})
   await appendFile(params.outputPath, `repositories=${plan.join(',')}\n`)
   return plan
 }
@@ -239,7 +309,9 @@ export type CliClient = PlanClient & DispatchClient
 export interface CliDeps {
   createOctokit?: (token: string) => CliClient | Promise<CliClient>
   stdout?: (text: string) => void
+  stderr?: (text: string) => void
   renovatePath?: string
+  registryPath?: string
 }
 
 async function createRealOctokit(token: string): Promise<CliClient> {
@@ -263,7 +335,13 @@ export async function runRenovatePlanCli(env: Record<string, string | undefined>
 
   const outputPath = env.GITHUB_OUTPUT
   if (outputPath === undefined || outputPath === '') throw new Error('GITHUB_OUTPUT is required in plan mode')
-  const plan = await runPlanMode({octokit, renovatePath: deps.renovatePath ?? 'metadata/renovate.yaml', outputPath})
+  const plan = await runPlanMode({
+    octokit,
+    renovatePath: deps.renovatePath ?? 'metadata/renovate.yaml',
+    registryPath: deps.registryPath ?? 'metadata/repos.yaml',
+    outputPath,
+    ...(deps.stderr === undefined ? {} : {stderr: deps.stderr}),
+  })
   stdout(`dispatch-renovate: planned ${plan.length} repositories\n`)
 }
 
