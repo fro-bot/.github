@@ -41,6 +41,8 @@ metadata or the trusted survey identity. Agents must not invent or copy this val
 because wiki pages are public-only.
 Optional fields: `sources`, `tags`, `aliases`, `related`.
 
+The optional repo-page key `archived: YYYY-MM-DD` marks a repository the operator archived in the registry. An archived page carries one notice paragraph (the fixed text in `ARCHIVE_NOTICE`, `@fro.bot/wiki-write-core/wiki-utils`) directly under its top heading, which makes it the page's opening sentence in the agents' index. Both are written and removed only by the lifecycle workflow; a survey or repair write restores either when it omits it, and a manual save without the notice is refused.
+
 ## Corrections Store
 
 `knowledge/corrections.yaml` is a system-owned sidecar containing operator-marked corrections. Records
@@ -81,7 +83,7 @@ Wikilinks MUST point to existing pages. Broken links are flagged by weekly lint.
 
 ## Index and Log
 
-- `knowledge/index.md` — master catalog organized by page type. Updated on every ingest operation.
+- `knowledge/index.md` — master catalog organized by page type. Updated on every ingest operation. A repo page with the `archived` key is listed under an `## Archived` section after `## Comparisons`, and not under `## Repos`; with no archived page the section is absent.
 - `knowledge/log.md` — append-only chronological record of all wiki operations (ingest, query, lint, manual edit).
 
 ### Log Entry Format

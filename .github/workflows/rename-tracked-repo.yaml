@@ -1,9 +1,19 @@
 ---
 name: Rename Tracked Repo
 
-# Operator tool: applies a repository rename that reconcile has detected but never applies.
+# Operator tool for the lifecycle of one tracked repository, chosen by `action`:
 #
-# It first proves the rename from GitHub itself (`GET /repositories/{database_id}` must return the
+# - `apply` (the default): applies a repository rename that reconcile has detected but never applies.
+# - `archive`: marks a tracked public repository `archived`: the row state, the page's archive date and
+#   notice, the index and a log entry, in one commit. Surveys, dispatch and Renovate then skip it.
+# - `unarchive`: returns an archived row to `pending` and removes the page's date and notice.
+#
+# Both read the repository's node record (GraphQL `node(id:)`) with the unprivileged `GITHUB_TOKEN`: it
+# must show the same node, public (and, for `unarchive`, not archived on GitHub). A null or failed
+# lookup refuses the action and writes nothing. The run prints one line: the action, the outcome and
+# the node ID. See metadata/README.md, "Archiving a repository".
+#
+# `apply` first proves the rename from GitHub itself (`GET /repositories/{database_id}` must return the
 # same node ID, the same owner, and `private === false`; its `name` is the new name), then lands ONE
 # non-force Git Data commit on `fro-bot/.github@data` that renames the `metadata/repos.yaml` row,
 # moves the repo's wiki page to its new slug, repairs `[[old]]` wikilinks and `related:` entries,
@@ -13,13 +23,22 @@ name: Rename Tracked Repo
 # `GITHUB_TOKEN` (public repository metadata needs no grant); only the write step receives the
 # App token, scoped to this repository with contents: write.
 #
-# `old_name` is needed only when the row already holds the new name (residue of an earlier
+# `old_name` applies only to `apply`, and is needed only when the row already holds the new name (residue of an earlier
 # partial write): then the old `owner/name` must still redirect to the same node.
 on:
   workflow_dispatch:
     inputs:
+      action:
+        description: 'What to do: apply a detected rename (the default), archive the repository, or unarchive it.'
+        required: false
+        default: apply
+        type: choice
+        options:
+          - apply
+          - archive
+          - unarchive
       node_id:
-        description: GitHub GraphQL node ID of the renamed repository, as named in the reconcile rename issue.
+        description: GitHub GraphQL node ID of the repository (for `apply`, as named in the reconcile rename issue).
         required: true
         type: string
       old_name:
@@ -31,12 +50,12 @@ on:
 permissions: {}
 
 concurrency:
-  group: rename-tracked-repo
+  group: rename-tracked-repo-${{ inputs.node_id }}
   cancel-in-progress: false
 
 jobs:
   rename-tracked-repo:
-    name: Rename the tracked repo and move its wiki page
+    name: Apply a lifecycle action to a tracked repo
     # Defense in depth, not a boundary: this skips dispatches from any ref other than main, but
     # workflow_dispatch runs the workflow file of whichever ref is selected, and that file can omit this line.
     if: github.ref == 'refs/heads/main'
@@ -67,10 +86,11 @@ jobs:
 
       # Inputs reach the script through env, never through `run:` interpolation, and are
       # regex-validated before use.
-      - name: 🏷️ Rename tracked repo
+      - name: 🏷️ Run lifecycle action
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RENAME_WRITER_TOKEN: ${{ steps.writer-token.outputs.token }}
+          ACTION: ${{ inputs.action }}
           NODE_ID: ${{ inputs.node_id }}
           OLD_NAME: ${{ inputs.old_name }}
         run: bun scripts/rename-tracked-repo.ts

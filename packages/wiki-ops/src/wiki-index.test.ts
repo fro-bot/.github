@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises'
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {ARCHIVE_NOTICE} from '@fro.bot/wiki-write-core/wiki-utils'
 import {describe, expect, it} from 'vitest'
 import {
   assembleWikiIndex,
@@ -327,6 +328,22 @@ describe('assembleWikiIndex: the lines', () => {
       ].join('\n'),
     )
     expect(result).toMatchObject({listed: 3, held: 3, sentences: 'kept', incomplete: false})
+  })
+
+  it('lists an archived page with its notice as the sentence', () => {
+    const result = assemble({
+      'knowledge/wiki/repos/example-org--lantern.md': page(
+        'Example Lantern',
+        'repo',
+        `${heading('Example Lantern')}${ARCHIVE_NOTICE}\n\nSurvey notes. More.`,
+        'archived: 2026-11-16',
+      ),
+    })
+
+    expect(result?.index.split('\n').slice(1)).toEqual([
+      `knowledge/wiki/repos/example-org--lantern.md | Example Lantern | repo | ${ARCHIVE_NOTICE}`,
+    ])
+    expect(result).toMatchObject({sentences: 'kept'})
   })
 
   it('orders by the type the page names, not by its directory', () => {

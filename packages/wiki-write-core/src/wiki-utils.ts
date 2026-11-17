@@ -321,3 +321,107 @@ export function truncateToBytes(value: string, maxBytes: number): string {
 
   return truncated === '' ? '' : `${truncated}${ellipsis}`
 }
+
+// ─── Archive notice ────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The notice an archived repo page carries as the first paragraph under its top heading: one plain sentence under
+ * 200 characters, so it is also the page's opening sentence in the agents' index. The page's `archived` frontmatter
+ * key holds the date; this text is the same everywhere, so a writer can find it, restore it and remove it exactly.
+ */
+export const ARCHIVE_NOTICE = 'This repository is archived and no longer surveyed; its page is kept for reference.'
+
+/** The line index of the page's first top-level heading, or -1 when the body has none. */
+function topHeadingIndex(lines: readonly string[]): number {
+  return lines.findIndex(line => line.startsWith('# '))
+}
+
+/** The index of the first non-blank line after the heading at `heading` (or from the start for -1). */
+function firstParagraphIndex(lines: readonly string[], heading: number): number {
+  let index = heading + 1
+  while (index < lines.length && (lines[index] ?? '').trim() === '') index += 1
+  return index
+}
+
+/** Whether the first paragraph under the page's top heading is exactly the archive notice. */
+export function hasArchiveNotice(body: string): boolean {
+  const lines = body.split('\n')
+  const line = lines[firstParagraphIndex(lines, topHeadingIndex(lines))]
+  return line !== undefined && (line.endsWith('\r') ? line.slice(0, -1) : line) === ARCHIVE_NOTICE
+}
+
+/** Where the first top-level heading's text ends, and where its line, line ending included, ends. */
+interface HeadingSpan {
+  readonly textEnd: number
+  readonly lineEnd: number
+}
+
+function findHeading(body: string): HeadingSpan | undefined {
+  let position = 0
+  while (position <= body.length) {
+    const newline = body.indexOf('\n', position)
+    const end = newline === -1 ? body.length : newline
+    if (body.startsWith('# ', position)) {
+      return {
+        textEnd: newline !== -1 && body[end - 1] === '\r' ? end - 1 : end,
+        lineEnd: newline === -1 ? end : end + 1,
+      }
+    }
+    if (newline === -1) return undefined
+    position = newline + 1
+  }
+  return undefined
+}
+
+/** The body's own line ending: CRLF when it has one anywhere, else LF. Inserting the notice cannot change it. */
+function bodyEol(body: string): string {
+  return body.includes('\r\n') ? '\r\n' : '\n'
+}
+
+/**
+ * The body with the archive notice, by one fixed rule, so that `withoutArchiveNotice` is its exact inverse for
+ * every body and no other byte moves. With `<eol>` the body's own line ending:
+ * - a heading with a line ending: `<eol><NOTICE><eol>` goes in immediately after that ending, so
+ *   `# Repo\n\nNotes.` becomes `# Repo\n\n<NOTICE>\n\nNotes.` and `# Repo\nNotes.` becomes
+ *   `# Repo\n\n<NOTICE>\nNotes.` (there the notice shares a paragraph with the text that follows);
+ * - a heading that is the last line, with no line ending: the ending it lacks, then `<eol><NOTICE>`, and
+ *   nothing after, so `# Repo` becomes `# Repo\n\n<NOTICE>`;
+ * - no heading: `<NOTICE><eol>` goes in at the start.
+ * A body that already has the notice is returned as it is.
+ */
+export function withArchiveNotice(body: string): string {
+  if (hasArchiveNotice(body)) return body
+  const eol = bodyEol(body)
+  const heading = findHeading(body)
+  if (heading === undefined) return `${ARCHIVE_NOTICE}${eol}${body}`
+  if (heading.lineEnd === heading.textEnd) return `${body}${eol}${eol}${ARCHIVE_NOTICE}`
+  return `${body.slice(0, heading.lineEnd)}${eol}${ARCHIVE_NOTICE}${eol}${body.slice(heading.lineEnd)}`
+}
+
+/**
+ * The body without the notice: exactly the span `withArchiveNotice` inserted, in each of its three forms. A notice
+ * written by hand with other spacing is removed as its own line plus one blank line before it.
+ */
+export function withoutArchiveNotice(body: string): string {
+  if (!hasArchiveNotice(body)) return body
+  const eol = bodyEol(body)
+  const heading = findHeading(body)
+  if (heading === undefined) {
+    if (body.startsWith(`${ARCHIVE_NOTICE}${eol}`)) return body.slice(ARCHIVE_NOTICE.length + eol.length)
+  } else if (body.startsWith(`${eol}${ARCHIVE_NOTICE}`, heading.lineEnd)) {
+    const after = heading.lineEnd + eol.length + ARCHIVE_NOTICE.length
+    if (body.startsWith(eol, after)) return body.slice(0, heading.lineEnd) + body.slice(after + eol.length)
+    // The heading was the last line: the inserted span runs from its text to the end of the body.
+    if (after === body.length) return body.slice(0, heading.textEnd)
+  }
+  return withoutHandWrittenNotice(body)
+}
+
+function withoutHandWrittenNotice(body: string): string {
+  const lines = body.split('\n')
+  const heading = topHeadingIndex(lines)
+  const notice = firstParagraphIndex(lines, heading)
+  const blankBefore = notice - 1 > heading && (lines[notice - 1] ?? '').trim() === ''
+  lines.splice(blankBefore ? notice - 1 : notice, blankBefore ? 2 : 1)
+  return lines.join('\n')
+}

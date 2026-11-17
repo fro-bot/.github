@@ -1,8 +1,10 @@
 /**
- * Operator-dispatched rename of a tracked repository: prove the rename from GitHub, then land ONE
- * non-force Git Data commit on `fro-bot/.github@data` that renames the `metadata/repos.yaml` row,
- * moves the repo's wiki page, repairs `[[old]]` links and `related:` entries, rebuilds the index and
- * appends a single `manual-edit` log entry. Metadata and wiki never disagree in the resulting commit.
+ * Operator-dispatched lifecycle of a tracked repository: prove the change from GitHub, then land ONE
+ * non-force Git Data commit on `fro-bot/.github@data`. The default action, `apply`, renames the
+ * `metadata/repos.yaml` row, moves the repo's wiki page, repairs `[[old]]` links and `related:`
+ * entries, rebuilds the index and appends a single `manual-edit` log entry. `archive` and `unarchive`
+ * (see `lifecycleTrackedRepo`) set or clear the row's `archived` state together with the page's
+ * archive date and notice. Metadata and wiki never disagree in the resulting commit.
  *
  * Architecture: a pure decision core (`@fro.bot/wiki-write-core`'s `planRepoPageMove`) plus this
  * module's evidence checks and atomic writer, with every client injected. Nothing here calls
@@ -24,16 +26,21 @@
 
 import {Buffer} from 'node:buffer'
 import process from 'node:process'
+import {isDeepStrictEqual} from 'node:util'
 
 import {createOctokit} from '@fro-bot/core/github'
 import {retry} from '@fro-bot/core/retry'
 import {
+  appendLogEntry,
   assertBranchWritable,
   attributesPageTo,
   pageReflectsRename,
   pageSourceUrls,
   parseFrontmatterDocument,
   planRepoPageMove,
+  rebuildWikiIndex,
+  renderFrontmatterDocument,
+  WikiIngestError,
   type BranchProtectionClient,
   type PageChange,
   type PlanRepoPageMoveParams,
@@ -42,6 +49,7 @@ import {
 } from '@fro.bot/wiki-write-core'
 import {assertReposFile, NODE_ID_PATTERN, type RepoEntry} from '@fro.bot/wiki-write-core/schemas'
 import {computeRepoSlug} from '@fro.bot/wiki-write-core/wiki-slug'
+import {hasArchiveNotice, withArchiveNotice, withoutArchiveNotice} from '@fro.bot/wiki-write-core/wiki-utils'
 import {parse, stringify} from 'yaml'
 
 // ─── Constants ──────────────────────────────────────────────────────────────
@@ -78,6 +86,11 @@ export interface RenameTransport {
   getRepositoryById: (databaseId: number) => Promise<unknown>
   /** Follows redirects; the old name of a renamed repository resolves to the repository. */
   getRepositoryByName: (owner: string, name: string) => Promise<unknown>
+  /**
+   * The GraphQL `node(id:)` result for a repository node: `id`, `databaseId`, `name`, `owner.login`,
+   * `visibility` and `isArchived`, or `null`. Used by `archive` and `unarchive`.
+   */
+  getRepositoryByNodeId: (nodeId: string) => Promise<unknown>
 }
 
 /** The Git Data calls the atomic writer needs, structurally satisfied by Octokit. */
@@ -152,6 +165,10 @@ export type RenameBlockReason =
   | 'old-name-unverifiable'
   | 'old-name-reused'
   | 'residue-unproven'
+  | 'identity-not-confirmed'
+  | 'duplicate-identity'
+  | 'ambiguous-legacy-match'
+  | 'repository-archived'
 
 export type RenameOutcome =
   | {
@@ -260,7 +277,12 @@ async function guarded<T>(
   }
 }
 
-function blockedOutcome(reason: RenameBlockReason): RenameOutcome {
+interface Blocked {
+  readonly result: 'blocked'
+  readonly reason: RenameBlockReason
+}
+
+function blockedOutcome(reason: RenameBlockReason): Blocked {
   return {result: 'blocked', reason}
 }
 
@@ -742,6 +764,372 @@ async function writeCommit(
   return commit.data.sha
 }
 
+// ─── Archive and unarchive ──────────────────────────────────────────────────
+
+export type LifecycleAction = 'archive' | 'unarchive'
+
+const ARCHIVE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/u
+const REDACTED_OWNER = '[REDACTED]'
+
+/** GitHub's record of one repository node, parsed from the untrusted `node(id:)` result. */
+interface NodeFacts {
+  readonly nodeId: string
+  readonly databaseId: number
+  readonly owner: string
+  readonly name: string
+  readonly isPublic: boolean
+  readonly isArchived: boolean
+}
+
+export type LifecycleOutcome =
+  | {
+      readonly result: 'archived' | 'unarchived'
+      readonly commit: string
+      readonly attempts: number
+      readonly page: 'edited' | 'missing'
+    }
+  | {readonly result: 'noop'; readonly state: 'archived' | 'not-archived'}
+  | {readonly result: 'blocked'; readonly reason: RenameBlockReason}
+
+export interface LifecycleDeps {
+  /** Evidence reads (the unprivileged `GITHUB_TOKEN`); only `getRepositoryByNodeId` is used. */
+  readonly transport: RenameTransport
+  /** Contents-write client for `fro-bot/.github` only. */
+  readonly writer: GitDataClient
+  readonly action: LifecycleAction
+  readonly nodeId: string
+  readonly now?: () => Date
+}
+
+function parseNodeFacts(raw: unknown): NodeFacts | undefined {
+  if (!isRecord(raw) || !isRecord(raw.owner)) return undefined
+  const {id, databaseId, name, visibility, isArchived} = raw
+  const login = raw.owner.login
+  if (typeof id !== 'string' || id === '') return undefined
+  if (typeof databaseId !== 'number' || !Number.isSafeInteger(databaseId) || databaseId <= 0) return undefined
+  if (typeof login !== 'string' || login === '') return undefined
+  if (typeof name !== 'string' || !REPO_NAME_PATTERN.test(name) || name === '.' || name === '..') return undefined
+  if (typeof visibility !== 'string' || typeof isArchived !== 'boolean') return undefined
+  return {nodeId: id, databaseId, owner: login, name, isPublic: visibility === 'PUBLIC', isArchived}
+}
+
+/** A row stored redacted: its name is the node ID, so it cannot name a page. */
+function isRedactedRow(row: RepoEntry): boolean {
+  return row.owner === REDACTED_OWNER || row.private === true
+}
+
+function pagePathFor(owner: string, name: string): string | undefined {
+  const slug = safeSlug(owner, name)
+  return slug === undefined ? undefined : `knowledge/wiki/repos/${slug}.md`
+}
+
+/** The state the action would reach is already the row's: nothing to write. */
+function alreadyInState(action: LifecycleAction, row: RepoEntry): LifecycleOutcome | undefined {
+  if (action === 'archive' && row.onboarding_status === 'archived' && !isRedactedRow(row)) {
+    return {result: 'noop', state: 'archived'}
+  }
+  if (action === 'unarchive' && row.onboarding_status !== 'archived') return {result: 'noop', state: 'not-archived'}
+  return undefined
+}
+
+/**
+ * A row with no stored node ID is accepted for `node` only when GitHub's owner and name equal exactly one
+ * such row, and exactly one repo page lists the repository's URL in its `sources` (and sits at its slug).
+ */
+function findLegacyRow(
+  files: Readonly<Record<string, string>>,
+  rows: readonly RepoEntry[],
+  facts: NodeFacts,
+): RepoEntry | Blocked {
+  const candidates = rows.filter(
+    row => row.node_id === undefined && row.owner === facts.owner && row.name === facts.name,
+  )
+  if (candidates.length === 0) return blockedOutcome('row-not-found')
+  const [candidate] = candidates
+  if (candidates.length > 1 || candidate === undefined) return blockedOutcome('ambiguous-legacy-match')
+
+  const url = `https://github.com/${facts.owner}/${facts.name}`
+  const listing = Object.entries(files).filter(([path, content]) => {
+    if (!REPO_PAGE_PATTERN.test(path)) return false
+    try {
+      return pageSourceUrls(parseFrontmatterDocument(content)).includes(url)
+    } catch {
+      return false
+    }
+  })
+  if (listing.length !== 1 || listing[0]?.[0] !== pagePathFor(facts.owner, facts.name)) {
+    return blockedOutcome('ambiguous-legacy-match')
+  }
+  return candidate
+}
+
+function isLegacyBlock(value: RepoEntry | Blocked): value is Blocked {
+  return 'result' in value
+}
+
+function lifecycleRow(action: LifecycleAction, row: RepoEntry, facts: NodeFacts): RepoEntry {
+  if (action === 'unarchive') return {...row, onboarding_status: 'pending'}
+  const named = isRedactedRow(row) ? {owner: facts.owner, name: facts.name} : {}
+  return {
+    ...row,
+    ...named,
+    onboarding_status: 'archived',
+    private: false,
+    node_id: row.node_id ?? facts.nodeId,
+    database_id: row.database_id ?? facts.databaseId,
+  }
+}
+
+/** The page after the action: archive writes the date and the notice, unarchive removes both. */
+function lifecyclePage(action: LifecycleAction, content: string, today: string): string {
+  try {
+    const document = parseFrontmatterDocument(content)
+    const values = {...document.values}
+    if (action === 'archive') {
+      const kept = values.archived
+      values.archived = typeof kept === 'string' && kept !== '' ? kept : today
+      return renderFrontmatterDocument(values, withArchiveNotice(document.body))
+    }
+    delete values.archived
+    return renderFrontmatterDocument(values, withoutArchiveNotice(document.body))
+  } catch {
+    throw new RenameError({code: 'PATH_POLICY', phase: 'policy'})
+  }
+}
+
+function valuesWithout(values: Record<string, unknown>, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(values).filter(([name]) => name !== key))
+}
+
+/** Fields an `archive` may change on the row, and when. */
+function rowChangeAllowed(action: LifecycleAction, key: string, before: RepoEntry, after: RepoEntry): boolean {
+  const field = key as keyof RepoEntry
+  if (key === 'onboarding_status') return after.onboarding_status === (action === 'archive' ? 'archived' : 'pending')
+  if (action === 'unarchive') return false
+  if (key === 'private') return after.private === false
+  if (key === 'owner' || key === 'name') return isRedactedRow(before)
+  if (key === 'node_id' || key === 'database_id') return before[field] === undefined
+  return false
+}
+
+/**
+ * The field-by-field check of an archive or unarchive, run before anything is written. Every other row must be
+ * identical. On the target row, `archive` may change the state, the ID fields when they were missing and the
+ * redaction (private, owner, name), and nothing else; `unarchive` may change the state only. On the page,
+ * `archive` may add or set the `archived` key and the notice paragraph, `unarchive` may remove them, and any
+ * other difference in the frontmatter or the body fails the action.
+ */
+export function assertLifecyclePolicy(params: {
+  readonly action: LifecycleAction
+  readonly rowsBefore: readonly RepoEntry[]
+  readonly rowsAfter: readonly RepoEntry[]
+  readonly targetIndex: number
+  readonly pageBefore: string | undefined
+  readonly pageAfter: string | undefined
+}): void {
+  const {action, rowsBefore, rowsAfter, targetIndex, pageBefore, pageAfter} = params
+  const violation = (): never => policyViolation('PATH_POLICY')
+
+  if (rowsBefore.length !== rowsAfter.length) violation()
+  rowsBefore.forEach((before, index) => {
+    const after = rowsAfter[index]
+    if (after === undefined) return violation()
+    if (index !== targetIndex) {
+      if (!isDeepStrictEqual(before, after)) violation()
+      return undefined
+    }
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    for (const key of keys) {
+      const was: unknown = (before as unknown as Record<string, unknown>)[key]
+      const now: unknown = (after as unknown as Record<string, unknown>)[key]
+      if (!isDeepStrictEqual(was, now) && !rowChangeAllowed(action, key, before, after)) violation()
+    }
+    return undefined
+  })
+
+  if (pageBefore === undefined || pageAfter === undefined) {
+    if (pageBefore !== pageAfter) violation()
+    return
+  }
+  let before: ReturnType<typeof parseFrontmatterDocument>
+  let after: ReturnType<typeof parseFrontmatterDocument>
+  try {
+    before = parseFrontmatterDocument(pageBefore)
+    after = parseFrontmatterDocument(pageAfter)
+  } catch {
+    return violation()
+  }
+  if (!isDeepStrictEqual(valuesWithout(before.values, 'archived'), valuesWithout(after.values, 'archived'))) violation()
+  if (withoutArchiveNotice(before.body).trim() !== withoutArchiveNotice(after.body).trim()) violation()
+  if (action === 'archive') {
+    const date = after.values.archived
+    if (typeof date !== 'string' || !ARCHIVE_DATE_PATTERN.test(date) || !hasArchiveNotice(after.body)) violation()
+  } else if ('archived' in after.values || hasArchiveNotice(after.body)) {
+    violation()
+  }
+}
+
+/** The repo pages of the snapshot, with `override` standing in for the page the action rewrites. */
+function wikiPagesWith(files: Readonly<Record<string, string>>, override: Record<string, string>) {
+  const pages: Record<string, string> = {}
+  for (const [path, content] of Object.entries({...files, ...override})) {
+    if (WIKI_PAGE_PATTERN.test(path)) pages[path] = content
+  }
+  return pages
+}
+
+/**
+ * `archive` or `unarchive` one tracked public repository, in one commit through the shared writer.
+ *
+ * The row is located by node ID. GitHub's `node(id:)` record (read with the unprivileged token) must show the
+ * node public and the same repository (the node ID, and the `database_id` the row stores); `unarchive` also
+ * needs it not archived on GitHub. A row with no node ID is matched by name, see `findLegacyRow`. Archiving a
+ * redacted row restores its name from GitHub, and a redacted row that is already archived is re-archived only
+ * when the page at the restored name is attributed to the node. Every refusal is a fixed reason and writes
+ * nothing.
+ */
+export async function lifecycleTrackedRepo(deps: LifecycleDeps): Promise<LifecycleOutcome> {
+  const now = deps.now ?? (() => new Date())
+  let facts: NodeFacts | undefined
+
+  const attemptOnce = async (attempt: number): Promise<LifecycleOutcome> => {
+    const snapshot = await readSnapshot(deps.writer)
+    const view = readRows(snapshot.files, deps.nodeId)
+    const matches = view.rows.filter(candidate => candidate.node_id === deps.nodeId)
+    if (matches.length > 1) return blockedOutcome('duplicate-identity')
+    let target = matches[0]
+    if (target !== undefined) {
+      const settled = alreadyInState(deps.action, target)
+      if (settled !== undefined) return settled
+    }
+
+    if (facts === undefined) {
+      const raw = await guarded('evidence', 'EVIDENCE_FAILED', async () =>
+        deps.transport.getRepositoryByNodeId(deps.nodeId),
+      )
+      facts = parseNodeFacts(raw)
+    }
+    // GitHub must answer with this very node; anything else (null, malformed, another ID) proves nothing.
+    if (facts === undefined || facts.nodeId !== deps.nodeId) return blockedOutcome('identity-not-confirmed')
+
+    if (target === undefined) {
+      if (deps.action === 'unarchive') return blockedOutcome('row-not-found')
+      const legacy = findLegacyRow(snapshot.files, view.rows, facts)
+      if (isLegacyBlock(legacy)) return legacy
+      target = legacy
+      const settled = alreadyInState(deps.action, target)
+      if (settled !== undefined) return settled
+    }
+    if (target.database_id !== undefined && target.database_id !== facts.databaseId) {
+      return blockedOutcome('identity-not-confirmed')
+    }
+
+    const redacted = isRedactedRow(target)
+    if (deps.action === 'unarchive') {
+      if (redacted) return blockedOutcome('row-not-public')
+      if (!facts.isPublic) return blockedOutcome('repository-private')
+      if (facts.isArchived) return blockedOutcome('repository-archived')
+    } else if (!facts.isPublic) {
+      return blockedOutcome(redacted ? 'row-not-public' : 'repository-private')
+    }
+    // Both actions: another row that shares the node ID or the database ID makes the target ambiguous.
+    const {databaseId} = facts
+    const sharesIdentity = view.rows.some(
+      other => other !== target && (other.node_id === deps.nodeId || other.database_id === databaseId),
+    )
+    if (sharesIdentity) return blockedOutcome('duplicate-identity')
+
+    const after = lifecycleRow(deps.action, target, facts)
+    const pagePath = pagePathFor(after.owner, after.name)
+    if (pagePath === undefined) return blockedOutcome('identity-not-confirmed')
+    const url = `https://github.com/${after.owner}/${after.name}`
+    const pageBefore = snapshot.files[pagePath]
+    if (deps.action === 'archive' && target.onboarding_status === 'archived') {
+      // A redacted archived row: only the page at the restored name, attributed to this node, proves the name.
+      let attributed = false
+      try {
+        attributed =
+          pageBefore !== undefined && attributesPageTo(parseFrontmatterDocument(pageBefore), deps.nodeId, url)
+      } catch {
+        attributed = false
+      }
+      if (!attributed) return blockedOutcome('identity-not-confirmed')
+    }
+
+    const pageAfter =
+      pageBefore === undefined ? undefined : lifecyclePage(deps.action, pageBefore, now().toISOString().slice(0, 10))
+    const rowsAfter = view.rows.map(row => (row === target ? after : row))
+    const targetIndex = view.rows.indexOf(target)
+    assertLifecyclePolicy({
+      action: deps.action,
+      rowsBefore: view.rows,
+      rowsAfter,
+      targetIndex,
+      pageBefore,
+      pageAfter,
+    })
+
+    const changes: RenameChange[] = [
+      {op: 'write-row', path: REPOS_PATH, content: serializeYaml({...view.document, repos: rowsAfter})},
+    ]
+    if (pageAfter !== undefined && pageAfter !== pageBefore) {
+      changes.push({op: 'edit-page', path: pagePath, content: pageAfter})
+    }
+
+    let index: string
+    try {
+      index = rebuildWikiIndex({
+        existingIndex: snapshot.files[INDEX_PATH],
+        wikiFiles: wikiPagesWith(snapshot.files, pageAfter === undefined ? {} : {[pagePath]: pageAfter}),
+      })
+    } catch (error: unknown) {
+      if (error instanceof WikiIngestError) return blockedOutcome('invalid-index')
+      throw error
+    }
+    if (index !== snapshot.files[INDEX_PATH]) changes.push({op: 'write-index', path: INDEX_PATH, content: index})
+
+    const verb = deps.action === 'archive' ? 'Archived' : 'Unarchived'
+    changes.push({
+      op: 'append-log',
+      path: LOG_PATH,
+      content: appendLogEntry(snapshot.files[LOG_PATH], {
+        operation: 'manual-edit',
+        target: `repo:${after.owner}/${after.name}`,
+        summary:
+          deps.action === 'archive'
+            ? `${verb} \`${after.owner}/${after.name}\`. Its page carries the archive date and notice; surveys skip it.`
+            : `${verb} \`${after.owner}/${after.name}\`. Its page lost the archive date and notice; the row is pending again.`,
+        timestamp: now(),
+        sources: [],
+      }),
+    })
+
+    assertChangePolicy(changes, {
+      files: snapshot.files,
+      paths: snapshot.paths,
+      nodeId: deps.nodeId,
+      oldSlug: '',
+      oldUrl: url,
+    })
+
+    const message = `chore(archive): ${deps.action} ${after.owner}/${after.name}`
+    const commit = await writeCommit(deps.writer, snapshot, changes, message)
+    return {
+      result: deps.action === 'archive' ? 'archived' : 'unarchived',
+      commit,
+      attempts: attempt,
+      page: pageAfter === undefined ? 'missing' : 'edited',
+    }
+  }
+
+  try {
+    return await retry(attemptOnce, {attempts: MAX_ATTEMPTS, shouldRetry: error => error instanceof RefRaceError})
+  } catch (error: unknown) {
+    if (!(error instanceof RefRaceError)) throw error
+    throw new RenameError({code: 'RETRIES_EXHAUSTED', phase: 'updateRef', status: error.status})
+  }
+}
+
 // ─── CLI ────────────────────────────────────────────────────────────────────
 
 /** Seams for {@link runCli}; the defaults are the real Octokit clients and the process streams. */
@@ -752,6 +1140,9 @@ export interface CliDeps {
   stderr?: (text: string) => void
   now?: () => Date
 }
+
+const NODE_QUERY =
+  'query($id: ID!) { node(id: $id) { ... on Repository { id databaseId name owner { login } visibility isArchived } } }'
 
 async function createRealTransport(token: string): Promise<RenameTransport> {
   const octokit = await createOctokit(token)
@@ -765,6 +1156,10 @@ async function createRealTransport(token: string): Promise<RenameTransport> {
     getRepositoryByName: async (owner, name) => {
       const response: {data: unknown} = await octokit.rest.repos.get({owner, repo: name})
       return response.data
+    },
+    getRepositoryByNodeId: async nodeId => {
+      const response = await octokit.graphql<{node: unknown}>(NODE_QUERY, {id: nodeId})
+      return response.node
     },
   }
 }
@@ -782,7 +1177,8 @@ const BLOCK_HINTS: Partial<Record<RenameBlockReason, string>> = {
 
 /**
  * The CLI entry, with its environment and I/O injected. Returns the exit code.
- * `NODE_ID` is required; `OLD_NAME` (`owner/name`) only for the residue state. `GITHUB_TOKEN`
+ * `NODE_ID` is required. `ACTION` is `apply` (the default, the rename), `archive` or `unarchive`; `OLD_NAME`
+ * (`owner/name`) applies only to `apply`, for the residue state. `GITHUB_TOKEN`
  * (unprivileged) feeds the evidence reads and `RENAME_WRITER_TOKEN` (contents write, this repo only)
  * feeds the write.
  */
@@ -798,8 +1194,10 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
   if (nodeId === undefined || nodeId.length > NODE_ID_MAX_LENGTH || !NODE_ID_PATTERN.test(nodeId)) {
     return fail('INVALID_INPUT (field=node_id)')
   }
+  const action = env.ACTION === undefined || env.ACTION === '' ? 'apply' : env.ACTION
+  if (action !== 'apply' && action !== 'archive' && action !== 'unarchive') return fail('INVALID_INPUT (field=action)')
   const oldNameInput = env.OLD_NAME === undefined || env.OLD_NAME === '' ? undefined : env.OLD_NAME
-  if (oldNameInput !== undefined && parseOldName(oldNameInput) === undefined) {
+  if (action === 'apply' && oldNameInput !== undefined && parseOldName(oldNameInput) === undefined) {
     return fail('INVALID_INPUT (field=old_name)')
   }
   for (const name of ['GITHUB_TOKEN', 'RENAME_WRITER_TOKEN'] as const) {
@@ -810,6 +1208,25 @@ export async function runCli(env: Record<string, string | undefined>, deps: CliD
   try {
     const transport = await (deps.createTransport ?? createRealTransport)(env.GITHUB_TOKEN ?? '')
     const writer = await (deps.createWriter ?? createRealWriter)(env.RENAME_WRITER_TOKEN ?? '')
+
+    if (action !== 'apply') {
+      const outcome = await lifecycleTrackedRepo({transport, writer, action, nodeId, now: deps.now})
+      if (outcome.result === 'blocked') {
+        return fail(
+          `blocked (reason=${outcome.reason}). Nothing was written. See metadata/README.md, "Archiving a repository".`,
+        )
+      }
+      // One summary line: the action, the outcome and the node ID. No name, no commit, no path.
+      const result =
+        outcome.result === 'noop'
+          ? outcome.state === 'archived'
+            ? 'already-archived'
+            : 'not-archived'
+          : outcome.result
+      stdout(`${JSON.stringify({action, result, node_id: nodeId})}\n`)
+      return 0
+    }
+
     const outcome = await renameTrackedRepo({transport, writer, nodeId, oldName: oldNameInput, now: deps.now})
 
     if (outcome.result === 'blocked') {

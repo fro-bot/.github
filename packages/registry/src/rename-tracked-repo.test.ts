@@ -124,6 +124,7 @@ function transportFor(options: {byId?: () => Promise<unknown>; byName?: () => Pr
     byName,
     getRepositoryById: async id => byId(id),
     getRepositoryByName: async (owner, name) => byName(owner, name),
+    getRepositoryByNodeId: async () => null,
   }
 }
 

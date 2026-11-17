@@ -8,6 +8,7 @@ import process from 'node:process'
 
 import {createGitDataFake} from '@fro-bot/test-kit/git-data-fake'
 import {parseFrontmatterDocument} from '@fro.bot/wiki-write-core/frontmatter'
+import {ARCHIVE_NOTICE} from '@fro.bot/wiki-write-core/wiki-utils'
 import {afterEach, beforeEach, describe, expect, it, vi} from 'vitest'
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -18,6 +19,7 @@ const wikiIngestModulePromise: Promise<{
   deriveAgentLogEntries: typeof import('./wiki-ingest.js').deriveAgentLogEntries
   loadTrackedRepoNodeIds: typeof import('./wiki-ingest.js').loadTrackedRepoNodeIds
   mergeWikiLogs: typeof import('./wiki-ingest.js').mergeWikiLogs
+  rebuildWikiIndex: typeof import('./wiki-ingest.js').rebuildWikiIndex
   parsePorcelainPaths: typeof import('./wiki-ingest.js').parsePorcelainPaths
   runWikiIngestCli: typeof import('./wiki-ingest.js').runWikiIngestCli
   runWikiIngestEntry: typeof import('./wiki-ingest.js').runWikiIngestEntry
@@ -32,6 +34,7 @@ const {
   loadTrackedRepoNodeIds,
   mergeWikiLogs,
   parsePorcelainPaths,
+  rebuildWikiIndex,
   runWikiIngestCli,
   runWikiIngestEntry,
   validateWikilinks,
@@ -4544,5 +4547,321 @@ describe('runWikiIngestCli (a survey target archived on the head)', () => {
     await run({committed: true, commitSha: 'c', attempts: 1})
 
     expect(readFileSync(outputPath, 'utf8')).toBe('pages_changed=1\n')
+  })
+})
+
+describe('rebuildWikiIndex (an archived repository page)', () => {
+  const LANTERN = 'knowledge/wiki/repos/example-org--lantern.md'
+  const BEACON = 'knowledge/wiki/repos/example-org--beacon.md'
+  const wiki = (path: string, title: string, archived?: string): [string, string] => [
+    path,
+    [
+      '---',
+      'type: repo',
+      `title: ${title}`,
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      ...(archived === undefined ? [] : [`archived: ${archived}`]),
+      '---',
+      '',
+      `# ${title}`,
+      '',
+      ...(archived === undefined ? [] : [ARCHIVE_NOTICE, '']),
+      'Body.',
+      '',
+    ].join('\n'),
+  ]
+  const FOOTER =
+    '---\n\n_This index is maintained automatically by wiki ingest operations. Manual edits are preserved across updates._\n'
+
+  it('lists the page under Archived after the last section, not under Repos, and rebuilds byte for byte', () => {
+    // #given one live and one archived repo page
+    const wikiFiles = Object.fromEntries([
+      wiki(BEACON, 'example-org/beacon'),
+      wiki(LANTERN, 'example-org/lantern', '2026-11-16'),
+    ])
+
+    // #when the index is built, then built again from its own output
+    const index = rebuildWikiIndex({wikiFiles})
+    const again = rebuildWikiIndex({existingIndex: index, wikiFiles})
+
+    // #then the archived page is only under Archived, which comes after Comparisons and before the footer
+    const repos = index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))
+    expect(repos).toContain('- [[example-org--beacon]] — example-org/beacon')
+    expect(repos).not.toContain('example-org--lantern')
+    expect(index.indexOf('## Archived')).toBeGreaterThan(index.indexOf('## Comparisons'))
+    expect(index.slice(index.indexOf('## Archived'))).toBe(
+      `## Archived\n\n- [[example-org--lantern]] — example-org/lantern\n\n${FOOTER}`,
+    )
+
+    // #and a second build of the same input is byte-identical
+    expect(again).toBe(index)
+  })
+
+  it('is byte-identical to the output before this change when no page is archived', () => {
+    const wikiFiles = Object.fromEntries([wiki(BEACON, 'example-org/beacon')])
+
+    expect(rebuildWikiIndex({wikiFiles})).toBe(
+      [
+        '# Wiki Index',
+        '',
+        'Master catalog of all wiki pages, organized by type.',
+        '',
+        '## Repos',
+        '',
+        '- [[example-org--beacon]] — example-org/beacon',
+        '',
+        '## Topics',
+        '',
+        '_No topic pages yet. Pages will appear here as cross-cutting themes emerge._',
+        '',
+        '## Entities',
+        '',
+        '_No entity pages yet. Pages will appear here as tools and services are documented._',
+        '',
+        '## Comparisons',
+        '',
+        '_No comparison pages yet. Pages will appear here as alternatives are analyzed._',
+        '',
+        FOOTER.trimEnd(),
+        '',
+      ].join('\n'),
+    )
+    expect(rebuildWikiIndex({wikiFiles})).not.toContain('Archived')
+  })
+
+  it('still finds the header and the footer with the section present, and keeps a curated line with its page', () => {
+    // #given an index with operator header and footer prose and a curated line for the archived page
+    const existingIndex = [
+      '# Wiki Index',
+      '',
+      '> Operator note above the catalog.',
+      '',
+      '## Repos',
+      '',
+      '- [[example-org--lantern]] — A curated description.',
+      '',
+      '## Topics',
+      '',
+      '_No topic pages yet._',
+      '',
+      '## Entities',
+      '',
+      '_No entity pages yet._',
+      '',
+      '## Comparisons',
+      '',
+      '_No comparison pages yet._',
+      '',
+      '---',
+      '',
+      '_Custom footer._',
+      '',
+    ].join('\n')
+    const archived = Object.fromEntries([wiki(LANTERN, 'example-org/lantern', '2026-11-16')])
+
+    // #when it is rebuilt, rebuilt again, and rebuilt once the key is gone
+    const once = rebuildWikiIndex({existingIndex, wikiFiles: archived})
+    const twice = rebuildWikiIndex({existingIndex: once, wikiFiles: archived})
+    const back = rebuildWikiIndex({
+      existingIndex: once,
+      wikiFiles: Object.fromEntries([wiki(LANTERN, 'example-org/lantern')]),
+    })
+
+    // #then header, footer and the curated line survive, and the output is stable
+    expect(once.startsWith('# Wiki Index\n\n> Operator note above the catalog.\n\n## Repos')).toBe(true)
+    expect(once.endsWith('---\n\n_Custom footer._\n')).toBe(true)
+    expect(once.slice(once.indexOf('## Archived'))).toContain('- [[example-org--lantern]] — A curated description.')
+    expect(twice).toBe(once)
+
+    // #and with the key gone the line is back under Repos and the section is gone
+    expect(back).not.toContain('## Archived')
+    expect(back.slice(back.indexOf('## Repos'), back.indexOf('## Topics'))).toContain('A curated description.')
+    expect(back.endsWith('---\n\n_Custom footer._\n')).toBe(true)
+  })
+})
+
+describe('buildWikiIngestChanges (the archive marker survives a write)', () => {
+  const PATH = 'knowledge/wiki/repos/example-org--lantern.md'
+  const storedPage = (): string =>
+    [
+      '---',
+      'type: repo',
+      'title: example-org/lantern',
+      'created: 2026-04-16',
+      'updated: 2026-04-16',
+      'archived: 2026-11-16',
+      '---',
+      '',
+      '# example-org/lantern',
+      '',
+      ARCHIVE_NOTICE,
+      '',
+      'Old survey notes.',
+      '',
+    ].join('\n')
+  const existing = (): Record<string, string> => ({...createEmptyWikiFiles(), [PATH]: storedPage()})
+  const incoming = (body: string, archived?: string) => ({
+    path: PATH,
+    content: [
+      '---',
+      'type: repo',
+      'title: example-org/lantern',
+      'created: 2026-04-16',
+      'updated: 2026-11-17',
+      ...(archived === undefined ? [] : [`archived: ${archived}`]),
+      '---',
+      '',
+      body,
+      '',
+    ].join('\n'),
+  })
+  const build = (
+    operation: 'survey' | 'lint' | 'manual-edit',
+    page: {path: string; content: string},
+    files = existing(),
+  ) =>
+    buildWikiIngestChanges({
+      existingFiles: files,
+      operation,
+      target: 'repo:example-org/lantern',
+      summary: 'Wrote the page.',
+      timestamp: new Date('2026-11-17T12:00:00.000Z'),
+      sources: [],
+      pages: [page],
+    })
+
+  it('restores the archived key and the notice on a survey write that omits both', () => {
+    // #given a survey page with a new body and neither the key nor the notice
+    const result = build('survey', incoming('# example-org/lantern\n\nFresh survey notes.'))
+
+    // #when the writer has built the files
+    const written = parseFrontmatterDocument(result.files[PATH] ?? '')
+
+    // #then the key and the notice are back, and the new notes are kept
+    expect(written.values.archived).toBe('2026-11-16')
+    expect(written.body).toContain(`# example-org/lantern\n\n${ARCHIVE_NOTICE}\n\nFresh survey notes.`)
+
+    // #and the index still lists the page under Archived
+    const index = result.files['knowledge/index.md'] ?? ''
+    expect(index.slice(index.indexOf('## Archived'))).toContain('[[example-org--lantern]]')
+    expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).not.toContain('example-org--lantern')
+  })
+
+  it('restores the stored date when a write carries a different one, and a lint write the notice', () => {
+    const result = build('lint', incoming('# example-org/lantern\n\nRepaired.', '2030-01-01'))
+
+    expect(parseFrontmatterDocument(result.files[PATH] ?? '').values.archived).toBe('2026-11-16')
+    expect(result.files[PATH]).toContain(ARCHIVE_NOTICE)
+  })
+
+  it('refuses a dashboard-style save whose body lacks the notice, with its own error code', () => {
+    const save = () => build('manual-edit', incoming('# example-org/lantern\n\nEdited by hand.', '2026-11-16'))
+
+    expect(save).toThrow(WikiIngestError)
+    expect(save).toThrow(expect.objectContaining({code: 'ARCHIVE_NOTICE_MISSING'}))
+  })
+
+  it('accepts the same save with the notice present and keeps the key', () => {
+    const result = build(
+      'manual-edit',
+      incoming(`# example-org/lantern\n\n${ARCHIVE_NOTICE}\n\nEdited by hand.`, '2026-11-16'),
+    )
+
+    const written = parseFrontmatterDocument(result.files[PATH] ?? '')
+    expect(written.values.archived).toBe('2026-11-16')
+    expect(written.body).toContain('Edited by hand.')
+  })
+
+  it('leaves a page whose stored copy is not archived exactly as it was written', () => {
+    const files = {...createEmptyWikiFiles(), [PATH]: storedPage().replace('archived: 2026-11-16\n', '')}
+
+    const result = build('survey', incoming('# example-org/lantern\n\nFresh.'), files)
+
+    expect(result.files[PATH]).not.toContain('archived')
+    expect(result.files[PATH]).not.toContain(ARCHIVE_NOTICE)
+  })
+
+  describe('through a node-ID migration to a new path', () => {
+    const OLD = 'knowledge/wiki/repos/example-org--old-lantern.md'
+    const NODE = 'R_kgDOMigrate1'
+    const oldArchived = (): string =>
+      storedPage()
+        .replace('title: example-org/lantern', 'title: example-org/old-lantern')
+        .replace('updated: 2026-04-16', `updated: 2026-04-16\nnode_id: ${NODE}`)
+    const migrate = (operation: 'survey' | 'manual-edit', body: string, archived?: string) =>
+      buildWikiIngestChanges({
+        existingFiles: {...createEmptyWikiFiles(), [OLD]: oldArchived()},
+        operation,
+        target: 'repo:example-org/lantern',
+        summary: 'Moved the page.',
+        timestamp: new Date('2026-11-17T12:00:00.000Z'),
+        sources: [],
+        targetNodeId: NODE,
+        pages: [incoming(body, archived)],
+      })
+
+    it('gives the migrated page the date and the opening notice, and lists it under Archived', () => {
+      // #given an archived page stored under the old slug, and a survey page for the new slug that has neither marker
+      const result = migrate('survey', '# example-org/lantern\n\nFresh survey notes.')
+
+      // #when the writer migrates the page by its node ID
+      const moved = parseFrontmatterDocument(result.files[PATH] ?? '')
+
+      // #then the old page is deleted, and the new one carries the date and the notice under its heading
+      expect(result.deletedPaths).toEqual([OLD])
+      expect(moved.values.archived).toBe('2026-11-16')
+      expect(moved.body).toContain(`# example-org/lantern\n\n${ARCHIVE_NOTICE}\n\nFresh survey notes.`)
+      expect(moved.body.split(ARCHIVE_NOTICE)).toHaveLength(2)
+
+      // #and the index lists the new slug under Archived, not Repos
+      const index = result.files['knowledge/index.md'] ?? ''
+      expect(index.slice(index.indexOf('## Archived'))).toContain('[[example-org--lantern]]')
+      expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).not.toContain('example-org--lantern')
+    })
+
+    it('lets the migrated source decide, so an unarchived node does not inherit an archived page of another node', () => {
+      // #given an unarchived page for the node at the old path, and an archived page of ANOTHER node at the new path
+      const source = oldArchived().replace('archived: 2026-11-16\n', '').replace(`${ARCHIVE_NOTICE}\n\n`, '')
+      const other = storedPage().replace('updated: 2026-04-16', 'updated: 2026-04-16\nnode_id: R_kgDOOther9')
+
+      // #when the survey migrates the node's page onto that path
+      const result = buildWikiIngestChanges({
+        existingFiles: {...createEmptyWikiFiles(), [OLD]: source, [PATH]: other},
+        operation: 'survey',
+        target: 'repo:example-org/lantern',
+        summary: 'Moved the page.',
+        timestamp: new Date('2026-11-17T12:00:00.000Z'),
+        sources: [],
+        targetNodeId: NODE,
+        pages: [incoming('# example-org/lantern\n\nFresh survey notes.')],
+      })
+
+      // #then the result has no archive date and no notice, and the index lists it under Repos
+      const moved = parseFrontmatterDocument(result.files[PATH] ?? '')
+      expect(moved.values).not.toHaveProperty('archived')
+      expect(result.files[PATH]).not.toContain(ARCHIVE_NOTICE)
+      const index = result.files['knowledge/index.md'] ?? ''
+      expect(index).not.toContain('## Archived')
+      expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).toContain('[[example-org--lantern]]')
+    })
+
+    it('lets the destination page decide when no page was migrated', () => {
+      const result = build('survey', incoming('# example-org/lantern\n\nFresh.'))
+
+      expect(parseFrontmatterDocument(result.files[PATH] ?? '').values.archived).toBe('2026-11-16')
+    })
+
+    it('refuses a manual-edit migration whose body drops the notice', () => {
+      const save = () => migrate('manual-edit', '# example-org/lantern\n\nEdited by hand.', '2026-11-16')
+
+      expect(save).toThrow(expect.objectContaining({code: 'ARCHIVE_NOTICE_MISSING'}))
+    })
+
+    it('accepts a manual-edit migration that keeps the notice', () => {
+      const result = migrate('manual-edit', `# example-org/lantern\n\n${ARCHIVE_NOTICE}\n\nEdited by hand.`)
+
+      expect(parseFrontmatterDocument(result.files[PATH] ?? '').values.archived).toBe('2026-11-16')
+    })
   })
 })

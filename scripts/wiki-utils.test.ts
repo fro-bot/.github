@@ -10,6 +10,10 @@ const wikiUtilsModulePromise: Promise<{
   splitFrontmatter: typeof import('@fro.bot/wiki-write-core/wiki-utils').splitFrontmatter
   truncateToBytes: typeof import('@fro.bot/wiki-write-core/wiki-utils').truncateToBytes
   byteLength: typeof import('@fro.bot/wiki-write-core/wiki-utils').byteLength
+  ARCHIVE_NOTICE: typeof import('@fro.bot/wiki-write-core/wiki-utils').ARCHIVE_NOTICE
+  hasArchiveNotice: typeof import('@fro.bot/wiki-write-core/wiki-utils').hasArchiveNotice
+  withArchiveNotice: typeof import('@fro.bot/wiki-write-core/wiki-utils').withArchiveNotice
+  withoutArchiveNotice: typeof import('@fro.bot/wiki-write-core/wiki-utils').withoutArchiveNotice
 }> = import('@fro.bot/wiki-write-core/wiki-utils')
 const {
   buildWikiTargetIndex,
@@ -21,6 +25,10 @@ const {
   splitFrontmatter,
   truncateToBytes,
   byteLength,
+  ARCHIVE_NOTICE,
+  hasArchiveNotice,
+  withArchiveNotice,
+  withoutArchiveNotice,
 } = await wikiUtilsModulePromise
 
 describe('splitFrontmatter', () => {
@@ -368,5 +376,74 @@ describe('truncateToBytes', () => {
     expect(truncateToBytes('some longer content that must be truncated', 0)).toBe('')
     expect(truncateToBytes('some longer content that must be truncated', 1)).toBe('')
     expect(truncateToBytes('some longer content that must be truncated', 2)).toBe('')
+  })
+})
+
+describe('the archive notice helpers', () => {
+  // Each body in LF, and again with every line ending as CRLF.
+  const lfBodies: Record<string, string> = {
+    'one blank line': '# Repo\n\nNotes.\n',
+    'several blank lines': '# Repo\n\n\n\nNotes.\n\n\nMore.\n',
+    'no blank line': '# Repo\nNotes.',
+    'no blank line, trailing newline': '# Repo\nNotes.\nMore.\n',
+    'heading only, trailing newline': '# Repo\n',
+    'heading only, no trailing newline': '# Repo',
+    'text before the heading': 'Intro.\n\n# Repo\n\n\nNotes.\n',
+    'text before the heading, no blank line': 'Intro.\n# Repo\nNotes.',
+    'heading last, no trailing newline': 'Intro.\n\n# Repo',
+    'no heading': 'Notes only.\n',
+    'no heading, leading blank lines': '\n\nNotes only.',
+    'empty body': '',
+  }
+  const cases = Object.entries(lfBodies).flatMap(([label, body]): [string, string][] => [
+    [`${label} (LF)`, body],
+    [`${label} (CRLF)`, body.replaceAll('\n', '\r\n')],
+  ])
+
+  it.each(cases)('inserts and removes exactly, and recognises the notice: %s', (_label, body) => {
+    const marked = withArchiveNotice(body)
+
+    expect(marked).not.toBe(body)
+    expect(hasArchiveNotice(marked)).toBe(true)
+    expect(withoutArchiveNotice(marked)).toBe(body)
+    expect(withArchiveNotice(marked)).toBe(marked)
+  })
+
+  it('does not recognise the notice in a body that has none', () => {
+    for (const [, body] of cases) expect(hasArchiveNotice(body)).toBe(false)
+  })
+
+  // The fixed rule, by form. <eol> is the body's own line ending: CRLF when the body has one anywhere, else LF.
+  it.each([
+    // a heading with its line ending: <eol><NOTICE><eol> goes in right after that ending
+    ['# Repo\n\nNotes.', `# Repo\n\n${ARCHIVE_NOTICE}\n\nNotes.`],
+    ['# Repo\n\n\nNotes.', `# Repo\n\n${ARCHIVE_NOTICE}\n\n\nNotes.`],
+    ['# Repo\nNotes.', `# Repo\n\n${ARCHIVE_NOTICE}\nNotes.`],
+    ['# Repo\n', `# Repo\n\n${ARCHIVE_NOTICE}\n`],
+    ['# Repo\r\n\r\nNotes.', `# Repo\r\n\r\n${ARCHIVE_NOTICE}\r\n\r\nNotes.`],
+    ['# Repo\r\nNotes.', `# Repo\r\n\r\n${ARCHIVE_NOTICE}\r\nNotes.`],
+    // a heading that is the last line with no line ending: the ending it lacks, then <eol><NOTICE>, nothing after
+    ['# Repo', `# Repo\n\n${ARCHIVE_NOTICE}`],
+    ['Intro.\r\n# Repo', `Intro.\r\n# Repo\r\n\r\n${ARCHIVE_NOTICE}`],
+    // no heading: <NOTICE><eol> goes in at the start
+    ['Notes.', `${ARCHIVE_NOTICE}\nNotes.`],
+    ['', `${ARCHIVE_NOTICE}\n`],
+  ])('puts the notice into %j as %j', (body, expected) => {
+    expect(withArchiveNotice(body)).toBe(expected)
+  })
+
+  it('finds the notice only as the first paragraph under the heading', () => {
+    expect(hasArchiveNotice(`# Repo\n\nNotes.\n\n${ARCHIVE_NOTICE}\n`)).toBe(false)
+    expect(withoutArchiveNotice('# Repo\n\nNotes.')).toBe('# Repo\n\nNotes.')
+  })
+
+  it('still removes a notice that was written by hand with other spacing', () => {
+    const body = `# Repo\n\n\n${ARCHIVE_NOTICE}\n\nNotes.`
+
+    expect(hasArchiveNotice(body)).toBe(true)
+    const removed = withoutArchiveNotice(body)
+    expect(hasArchiveNotice(removed)).toBe(false)
+    expect(removed).not.toContain(ARCHIVE_NOTICE)
+    expect(removed).toContain('Notes.')
   })
 })
