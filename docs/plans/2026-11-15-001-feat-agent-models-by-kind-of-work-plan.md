@@ -253,6 +253,17 @@ The light and act values are never used for a review tier, and the reverse.
 - [ ] **Discussion comment (light tier).** Not yet run. No `discussion_comment` run has started since 02:31Z.
 - [ ] **Capture learnings, capture patterns, draft solutions.** Not yet run. None of the three workflows has started since 02:31Z. Their latest earlier runs were 2026-11-09 (capture learnings), 2026-11-03 (capture patterns, dispatched) and 2026-11-09 (draft solutions).
 
+**Results (2026-11-16 and later):**
+
+- [x] **Another pull request review.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) printed `Agent model: openai/gpt-6.1-sol (from FRO_BOT_MODEL_REVIEW)`.
+- [x] **Capture learnings.** The `Capture Learnings` run [43791294020](https://github.com/fro-bot/.github/actions/runs/43791294020) (scheduled, 2026-11-16, 02:17Z) printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)` in its agent job.
+- [x] **Draft solutions.** The scheduled `Draft Solutions` run [43889580298](https://github.com/fro-bot/.github/actions/runs/43889580298) (2026-11-16, 14:48Z, after the Monday 06:00Z cron slot) succeeded in all three jobs. The `Harvest uncovered learning proposals` job resolved the light tier (`AGENT_MODEL_TIER: light`, the light variable empty) and printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)`. In the `Draft solution docs` job the guard step `Require the resolved agent model` passed with `AGENT_MODEL: anthropic/claude-opus-5-5`, and the agent step after it succeeded.
+- [ ] **Issue and issue comment (light tier).** Still owed: no run that executes the agent has been seen.
+- [ ] **Discussion comment (light tier).** Still owed.
+- [ ] **Capture patterns.** Still owed.
+
+Unit 4 stays unticked until the three owed items are seen.
+
 ## System-Wide Impact
 
 - **Interaction graph:** five workflows and nine agent steps; the tracker and branding reach Observe and Remediate through `fro-bot.yaml`.

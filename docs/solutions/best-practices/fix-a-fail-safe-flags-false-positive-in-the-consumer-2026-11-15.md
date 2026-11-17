@@ -1,6 +1,7 @@
 ---
 title: Fix a fail-safe flag's false positive in the consumer
 date: 2026-11-15
+last_updated: 2026-11-17
 category: best-practices
 module: packages/privacy/src/check-private-leak.ts
 problem_type: best_practice
@@ -26,7 +27,7 @@ tags:
 
 When a check rejects a valid result because it relies on a conservative stored flag, have the check (the consumer of the flag) read the current fact directly, if it can do so reliably. Keep the stored flag as it is, and keep rejecting when the lookup fails. The alternative, a more precise stored value, must be kept correct by every code path that writes or preserves the record.
 
-Here `metadata/repos.yaml` stores one record per tracked repository. Reconcile writes `private: true` and redacts the name when it cannot confirm visibility: "Fail-safe: write `private: true` because we cannot reach the repo to confirm visibility" (`packages/registry/src/reconcile-plan.ts:1239`). It does the same for an archived repository, whatever its visibility (`:1299`), and gives the record the status `lost-access`, the status of a repository that was revoked, archived or deleted and whose record is kept for audit. The two leak scans (one in the promotion run, one on every pull request) each built a private name from every such record, so a public archived repository's name counted as private. A wiki page that linked to that repository's published page failed the promotion scan ([run 43663083818](https://github.com/fro-bot/.github/actions/runs/43663083818)).
+Here `metadata/repos.yaml` stores one record per tracked repository. Reconcile writes `private: true` and redacts the name when it cannot confirm visibility: "Fail-safe: write `private: true` because we cannot reach the repo to confirm visibility" (`packages/registry/src/reconcile-plan.ts:1313`). It does the same for a tracked repository that GitHub reports as archived, whatever its visibility (`:1354`), unless the operator archived the row first (see the second example), and gives the record the status `lost-access`, the status of a repository that was revoked, archived or deleted and whose record is kept for audit. The two leak scans (one in the promotion run, one on every pull request) each built a private name from every such record, so a public archived repository's name counted as private. A wiki page that linked to that repository's published page failed the promotion scan ([run 43663083818](https://github.com/fro-bot/.github/actions/runs/43663083818)).
 
 [#4251](https://github.com/fro-bot/.github/pull/4251) made the stored value precise: reconcile kept an archived public repository as a public, named record. Its review reproduced two sequences that left a private repository named, one through a name reused by another repository and one through a return path the change had not edited. The pull request was closed.
 
@@ -79,10 +80,13 @@ for (const nodeId of nodeIds) {
 
 The non-public values are a test table at `packages/privacy/src/check-private-leak.test.ts:5982`, and an equivalent table runs against the per-PR scan at `:6294`.
 
+A second case: [#4278](https://github.com/fro-bot/.github/pull/4278) had to say what reconcile does with rows that duplicate a row the operator archived. The plan records that special handling for them "produced a new failure in each of two designs" (`docs/plans/2026-11-15-003-feat-repo-lifecycle-archive-declared-rename-plan.md:98`). What shipped is the existing duplicate merge with one rule: when a group is merged, its first archived row survives exactly as stored (`packages/registry/src/reconcile-plan.ts:1055`). The `archive` action refuses a target when another row shares its node ID or database ID (`packages/registry/src/rename-tracked-repo.ts:1035`), so the case is stopped where the row is written.
+
 ## Related
 
 - [Privacy Gate Design for Data→Main Promotion Leak Prevention](privacy-gate-promotion-leak-prevention-2026-06-04.md): the scans this changes, and their fail-closed lookup rules.
 - [Private repo dispatch requires definitive public visibility](../security-issues/private-repo-dispatch-visibility-gate-2026-05-08.md): the same "public only on definite evidence" rule on the writer side.
 - [A status line must not mean two things](a-status-line-must-not-mean-two-things-2026-11-14.md): one signal read as a stronger claim than it makes.
 - [Replace copied parsers with one contract that returns a tagged result](replace-copied-parsers-with-one-contract-that-returns-a-tagged-result-2026-11-12.md): another change of approach after patches kept moving the defect.
+- [Weigh a review finding by whether its input can occur and what a miss costs](../workflow-issues/weigh-a-review-finding-by-whether-its-input-can-occur-2026-11-17.md): the same choice for review findings in general.
 - [#4251](https://github.com/fro-bot/.github/pull/4251), [#4256](https://github.com/fro-bot/.github/pull/4256).
