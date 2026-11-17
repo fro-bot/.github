@@ -10913,3 +10913,30 @@ list, directory listings, package manifests and workflows. The corrections
 context was empty.
 
 Sources: https://github.com/marcusrbrown/Presentations
+
+## [2026-11-17 14:34] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Repeat survey of public `main` at `69e1e2454982b4f575726e96d0439368870eb932`
+(head commit: `fro-bot/agent` bump to v0.145.0, #2989). Reads were limited to
+repo metadata, directory listings, the root README, `package.json`,
+`pnpm-workspace.yaml` and workflow files. No material change since 2026-11-03:
+default branch `main`, public, not archived, MIT; TypeScript/React/Vite 8 on
+pnpm; same build (`tsgo && vite build`) and `main.yaml` deploy-needs-build
+shape; Fro Bot and Renovate both still present. LangChain is still absent
+from the manifest. The README privacy and `VITE_CONNECT_SRC_EXTRA` text is
+unchanged. Version movement only (pnpm 11.28.12, Vite 8.3.8, Vitest 5.1.0,
+ESLint 10.15.0, Prettier 3.10.1, Playwright 1.65.1). No dated section was
+added.
+
+In [[marcusrbrown--gpt]], corrected four contradicted current-state statements
+where they stand: the Overview last-push line, the Overview pnpm version, the
+workflow-table Fro Bot trigger row, and the Fro Bot Integration lead sentence.
+The last two now describe one 03:30 UTC daily pass with `review`/`autoheal`
+dispatch instead of the former dual-cron, three-mode setup. Also added one
+Overview line for the current agent pin. Bumped `updated`, added no `sources`
+entry, and left the dated sections untouched. No topic or entity pages changed.
+The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/gpt
