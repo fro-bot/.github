@@ -10823,3 +10823,31 @@ Sources: https://github.com/fro-bot/space-bus
 Archived `marcusrbrown/copiloting`. Its page carries the archive date and notice; surveys skip it.
 
 Sources: none
+
+## [2026-11-17 04:53] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/marcusrbrown.com. `main` moved `9702a13` →
+`4f94a35d` (7 commits: 5 Renovate, 2 human — #610 `isolate-agent`, #611
+security-advisory package upgrades). Seven files changed, all workflow,
+manifest or lockfile; the 66-file tree is unchanged. No material change:
+default branch, visibility, language, build/test/release shape, Fro Bot and
+Renovate setup, and license are as recorded. Added one short current-state
+line near the top of [[marcusrbrown--marcusrbrown-com]] because the changed
+facts were only stated inside dated sections: agent v0.125.1 → v0.144.5 with
+`isolate-agent: 'true'` and `omo-providers` dropped, pnpm 11.28.6 → 11.28.12,
+preset `#5.2.14` → `#5.2.17`, `bfra-me/.github` v4.42.0 → v4.43.0,
+`pnpm/action-setup` v6.1.1, overrides 16 → 17 (`zod` added, `minimatch`
+range widened). The `updated` date was bumped. No sources entry was added and
+no dated section was edited. Confirmed and not restated: the prompts still say
+`marcusrbrown.github.io` / Vite 7, there is still no `output-mode`, and the
+fork preflight still uses `.head.repo.fork // "unknown"`. No topic, entity or
+comparison page needed changes. Fro Bot workflow present; no follow-up draft
+needed. Reads were limited to repo metadata, the compare listing, the
+directory listing, manifests and workflow files. The corrections context was
+empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/44019952567
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com
