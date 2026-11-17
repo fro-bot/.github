@@ -10851,3 +10851,25 @@ empty.
 Run: https://github.com/fro-bot/.github/actions/runs/44019952567
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-11-17 04:55] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Repeat survey of fro-bot/systematic. `gh-pages` moved `b3c99bc` → `be80aa1`
+(a deploy commit naming `marcusrbrown/systematic@v3.35.0`). Default branch,
+public visibility, unarchived state and no-license status are unchanged. Complete,
+non-truncated recursive directory listings show only additions: a
+`guides/cross-project-connections/` route, a `connections-researcher` agent
+reference route, a `ce-connect` skill reference route, and matching
+`components/` subtrees. Nothing was removed. The 17 root entries and the
+`schemas/{latest,v3}` tree persist. None of this is material, so there is no new
+dated section and no new `sources` entry. Added one short current-state
+statement near the top of [[fro-bot--systematic]] and bumped `updated`.
+There is still no `.github/` directory or committed workflow. Only the two
+GitHub-synthesized dynamic workflows exist. The page already records the
+missing Fro Bot workflow, so no new note was added. No topic pages changed.
+Reads were limited to repo metadata, the head commit, the workflow list and
+directory listings. The corrections context was empty.
+
+Sources: https://github.com/fro-bot/systematic
