@@ -10891,3 +10891,25 @@ Sources: https://github.com/fro-bot/agent/releases/tag/v0.145.0, https://github.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@9c11624e35d0e34798e47ebeeeb27a43f11e6284
+
+## [2026-11-17 14:31] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Repeat survey of the public `main` snapshot at
+`25ca8e0a8c98e2d88e774ad47eeb648c54557fda`. Default branch, visibility,
+archived state (`false`), language (Shell), license (none) and the toolchains
+are unchanged. The tree is still 53 entries and 42 blobs with the same three
+workflows. The 10 commits since `b174ddc2` touched only pins, lockfiles and the
+Renovate config. Nothing material changed, so there is no new dated section and
+no new `sources` entry. In [[marcusrbrown--presentations]] I corrected five
+current-state statements where they stand: the Deck 1 intro and stack now list
+`spectacle` 10.2.4, the Deck 2 stack lists `@slidev/theme-seriph` as exact
+`0.25.0`, and the structure table shows both reusable callers at
+`bfra-me/.github` v4.43.0. I also bumped `updated`. There is still no Fro Bot
+workflow. The page already records that, so no new note was added. No topic
+pages changed. Reads were limited to repo metadata, the commit comparison file
+list, directory listings, package manifests and workflows. The corrections
+context was empty.
+
+Sources: https://github.com/marcusrbrown/Presentations
