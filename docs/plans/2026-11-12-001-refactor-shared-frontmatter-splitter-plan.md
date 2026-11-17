@@ -480,7 +480,9 @@ What each site does with the three outcomes, after both PRs:
 - Second PR: #4203 merged on 2026-11-12 and cut no release. #4148 and #4183 closed.
 - Strict gate over `data`: the gate's CLI, run on the `data` tree after promotion #4204 with `main`'s pages as the unchanged set, reported no leaks across 33 repo pages. That run was local, before the merge.
 - First promotion with the strict gate: run 43543306120 (scheduled) on 2026-11-14 passed on the pinned `data` commit `0cfe4c0`. "Block private wiki pages" printed `no private wiki leaks detected`, "Block private repo names in promotion diff" printed `check-private-leak [promotion]: ok`, and "Qualify promotion at the pinned commit" passed. The run opened #4225 (`knowledge/` and `metadata/` paths only, 7 files, label `automerge`). The self-merge step approved it as `fro-bot` and squash-merged it at 01:59:18Z (`promotion-self-merge: MERGED`).
-- The knowledge tools in an agent run, a capture run and a metrics run: not yet run.
+- **Capture run (2026-11-16).** The `Capture Learnings` run [43791294020](https://github.com/fro-bot/.github/actions/runs/43791294020) (scheduled, 02:17Z) succeeded.
+- **Metrics run (2026-11-16).** The `Improvement Metrics` run [43793481768](https://github.com/fro-bot/.github/actions/runs/43793481768) (02:39Z) succeeded.
+- **The knowledge tools in an agent run: not shown.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) called `knowledge.solutions_search`, and its knowledge summary printed `| solutions_search | ok | 1 |`. The call log records one `<tool> <code>` line per call, written when the handler completes. It records that the handler completed, not whether it returned any results, and the run log does not show the returned content. The check "the knowledge tools still return results" is therefore not met, and Unit 7 stays unticked. What would settle it: an agent run whose log shows a returned page or solution from `wiki_search` or `solutions_search`.
 
 ## System-Wide Impact
 

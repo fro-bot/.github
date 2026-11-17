@@ -169,7 +169,7 @@ Leak-scan decision for one selected row:
 
 ### Phase 1: archive and unarchive
 
-- [ ] **Unit 1: the `archived` row state**
+- [x] **Unit 1: the `archived` row state**
 
 **Goal:** The registry schema accepts `archived`, so every reader on `main` parses a row that carries it.
 
@@ -195,7 +195,9 @@ Leak-scan decision for one selected row:
 
 **Verification:** the package check passes with the regenerated marker; nothing in the repository writes the state yet.
 
-- [ ] **Unit 2: active jobs skip an archived repository**
+**Result (2026-11-16):** merged as #4265 (2026-11-16T02:44:31Z); package release 0.5.0.
+
+- [x] **Unit 2: active jobs skip an archived repository**
 
 **Goal:** No survey, dispatch, survey-result write or attention item is produced for an archived row, and the digest counts it separately.
 
@@ -239,7 +241,9 @@ Leak-scan decision for one selected row:
 
 **Verification:** with a fixture registry holding one archived row, no planner selects it and the digest shows it as archived.
 
-- [ ] **Unit 3: privacy gates cover an archived repository**
+**Result (2026-11-16):** merged as #4270 (2026-11-16T05:28:51Z); package release 0.6.0.
+
+- [x] **Unit 3: privacy gates cover an archived repository**
 
 **Goal:** Every leak scan treats an archived repository as private unless GitHub confirms it public at scan time.
 
@@ -274,7 +278,9 @@ Leak-scan decision for one selected row:
 
 **Verification:** the mutation gate passes; the promotion scan run against a fixture with one archived row prints counts and no name.
 
-- [ ] **Unit 4: reconcile leaves an archived row alone**
+**Result (2026-11-16):** merged as #4273 (2026-11-16T18:22:04Z); package release 0.7.0.
+
+- [x] **Unit 4: reconcile leaves an archived row alone**
 
 **Goal:** No reconcile path changes an archived row, except a redaction when GitHub shows the repository private.
 
@@ -313,7 +319,9 @@ Leak-scan decision for one selected row:
 
 **Verification:** the whole-registry reconcile over a fixture with one archived row produces a plan with no change for that row.
 
-- [ ] **Unit 5: the page marker, the index section and marker survival**
+**Result (2026-11-16):** merged as #4278 (2026-11-16T22:02:53Z); it changes `packages/registry` only, so it published no package release.
+
+- [x] **Unit 5: the page marker, the index section and marker survival**
 
 **Goal:** A page can carry an archive date, the index groups such pages, and no permitted writer drops the marker.
 
@@ -345,7 +353,9 @@ Leak-scan decision for one selected row:
 
 **Verification:** rebuilding the index from current `data` produces no diff.
 
-- [ ] **Unit 6: `archive` and `unarchive` actions**
+**Result (2026-11-17):** merged as #4281 (2026-11-17T04:40:45Z), together with Unit 6; package release 0.8.0 (published 2026-11-17T04:43Z). The page marker and the Archived section are seen working live in Unit 7.
+
+- [x] **Unit 6: `archive` and `unarchive` actions**
 
 **Goal:** One dispatch archives or un-archives a tracked public repository in one commit.
 
@@ -390,6 +400,8 @@ Leak-scan decision for one selected row:
 
 **Verification:** a dry dispatch against a fixture produces the expected one-commit change set; the workflow test pins the new input and group.
 
+**Result (2026-11-17):** merged as #4281 (2026-11-17T04:40:45Z), together with Unit 5. `archive` is seen live in Unit 7; `unarchive` is covered by tests only.
+
 - [ ] **Unit 7: first live use and read-backs**
 
 **Goal:** `copiloting` is archived through the action, and each protection is seen working.
@@ -414,7 +426,23 @@ Leak-scan decision for one selected row:
 
 **Verification:** each read-back above is recorded with its run ID.
 
+**Results (2026-11-17), partial:**
+
+- [x] **Archive dispatched.** The `Rename Tracked Repo` run [44019346503](https://github.com/fro-bot/.github/actions/runs/44019346503) (2026-11-17, 04:45Z, two minutes after package 0.8.0 was published) succeeded and printed `{"action":"archive","result":"archived"}`.
+- [x] **The commit on `data`.** `11bf08c` (`chore(archive): archive marcusrbrown/copiloting`) changed `knowledge/index.md`, `knowledge/log.md`, the repo page and `metadata/repos.yaml`. The row for `marcusrbrown/copiloting` reads `onboarding_status: archived` with `private: false`, `node_id` and `database_id` stored. The page gained `archived: 2026-11-17` and the notice. The index lists the page under `## Archived` and not under Repos. The log has one entry. Side effect: the action re-serialized the page's frontmatter in the writer's standard layout (an inline tag list became a block list and the title lost its quotes); no value changed.
+- [x] **Next reconcile.** The `Reconcile Repos` run [44019864901](https://github.com/fro-bot/.github/actions/runs/44019864901) reported `committed: false`, `archived: 1` and `unchanged: 35`. The row was left alone.
+- [x] **Next promotion: both leak gates pass.** The `Merge Data Branch` run [44020147146](https://github.com/fro-bot/.github/actions/runs/44020147146) ran both gates on a `data` head that contains the archived row. `Block private wiki pages` printed `no private wiki leaks detected`; `Block private repo names in promotion diff` printed `check-private-leak [promotion]: ok (scanned 3 private node_id(s))`.
+- [ ] **The promotion merged.** Not yet. The run opened #4283 (label `automerge`), and its self-merge step ended `promotion-self-merge: STALE_HEAD` because two surveys committed to `data` during the wait. When this was written #4283 was open, `BEHIND` and still waiting for a review; a later promotion run or a merge of #4283 settles it.
+- [ ] **Dashboard on package 0.8.0.** Not seen. Until it runs the release, a dashboard save rebuilds the index without the Archived section and cannot enforce the notice. The plan's precondition for the first archive named this deploy, and the archive ran two minutes after the release was published, so it did not wait for it.
+- [ ] **A dashboard save of the archived page.** Not run, for the same reason.
+- [ ] **Seven days with no survey or dispatch for the archived row.** Not yet run. The window opens 2026-11-17.
+- **`unarchive`.** Proven by tests only, as the approach allowed; no real need has arisen.
+
+Unit 7 stays unticked until the promotion has merged, the dashboard check has run and the seven-day window has closed with no survey or dispatch for the row.
+
 ### Phase 2: declared rename
+
+Not built. Decided 2026-11-16: the feature is the archive and unarchive actions and archived pages; the existing rename workflow is unchanged.
 
 - [ ] **Unit 8: declare, replace and cancel**
 
@@ -580,6 +608,8 @@ Leak-scan decision for one selected row:
 ### Phase 1
 
 Units 1 to 5 are separate pull requests, each inert without the action. Units 1, 3 and 5 change the published package and each publishes a minor release. Unit 6 is the last pull request. Unit 7 is the live use.
+
+Phase 1 shipped as five pull requests: #4265 (Unit 1), #4270 (Unit 2), #4273 (Unit 3), #4278 (Unit 4) and #4281 (Units 5 and 6 together). Four of them changed the published package (0.5.0 to 0.8.0).
 
 ### Phase 2
 
