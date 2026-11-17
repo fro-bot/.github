@@ -10873,3 +10873,21 @@ Reads were limited to repo metadata, the head commit, the workflow list and
 directory listings. The corrections context was empty.
 
 Sources: https://github.com/fro-bot/systematic
+
+## [2026-11-17 07:40] manual-edit | repo:fro-bot/agent
+
+Daily oversight note: added one bullet to the `isolate-agent` git-trust section
+of [[fro-bot--agent]]. The residual ownership boundary is still present with
+fro-bot/.github pinned to `v0.145.0`: the isolated agent ran as
+`fro-bot-sandbox` on a `runner`-owned checkout and the
+`improvement-metrics-detect.test.ts` case still failed on ownership, re-run
+directly in this pass. Bumped `updated` and added the release commit as a
+source.
+
+Sources: https://github.com/fro-bot/agent/releases/tag/v0.145.0, https://github.com/fro-bot/.github/blob/9c11624/packages/reports/src/improvement-metrics-detect.test.ts
+
+## [2026-11-17 07:38] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9c11624e35d0e34798e47ebeeeb27a43f11e6284
