@@ -96,7 +96,7 @@ Everything in this package that reads text a pull request controls is linear in 
 | `@fro-bot/ci-checks/mutation-shard-lists` | `readMutationShards`, `parseMutationShards`, `findShardPartitionViolations` | Mutated. The `shards` key of `mutation-guards.json`: three ordered `mutate` lists, one per PR shard job. The reader checks the shape; `findShardPartitionViolations` checks that the lists are an exact partition of `mutate`. |
 | `@fro-bot/ci-checks/repository-root` | `findRepositoryRoot` | Mutated. |
 | `@fro-bot/ci-checks/check-md-links`, `-cli` | `checkMarkdownLinks`, `runCheckMarkdownLinks`; `checkMarkdownLinksCli`, `main` | Root-level `*.md`, `docs/**/*.md` and the root `llms.txt` of the working directory. |
-| `@fro-bot/ci-checks/check-override-floors`, `-cli` | `checkOverrideFloors`, `parseAuditOutput`, `runBunAudit`, `formatProblem`, `runCheckOverrideFloors`; `checkOverrideFloorsCli`, `main` | `bun audit --json`; anything it cannot interpret is a failure. |
+| `@fro-bot/ci-checks/check-override-floors`, `-cli` | `checkOverrideFloors`, `parseAuditOutput`, `runBunAudit`, `parseAcceptedAdvisories`, `readAcceptedAdvisories`, `formatProblem`, `formatSkippedAdvisory`, `formatUnmatchedAcceptance`, `runCheckOverrideFloors`; `checkOverrideFloorsCli`, `main` | `bun audit --json` and `accepted-advisories.json` at the repository root; anything it cannot interpret is a failure. |
 | `@fro-bot/ci-checks/check-solutions-examples`, `-cli` | `checkSolutionsExamples`, `extractCodeBlocks`, `findCommentSpans`, `runCheckSolutionsExamples`, ...; `checkSolutionsExamplesCli`, `main` | Imports `typescript`, so no barrel re-exports it. |
 | `@fro-bot/ci-checks/install-renovate`, `-cli` | `runInstallRenovate`; `installRenovateCli`, `main` | Runs under Node. |
 | `@fro-bot/ci-checks/renovate-runtime` | `readPinnedVersion`, `resolvePrefix`, `installRenovate`, `loadRenovateRuntime`, `assertRenovateInstalled`, ... | The pin lives in `env.RENOVATE_VERSION` of `main.yaml`. |
@@ -113,7 +113,7 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `mutation-shard` | The `.github/actions/mutation-shard` composite, once per shard job; no argv. Env: `MUTATION_SHARD`, `MUTATION_SHARD_EVENT_SHA`, `MUTATION_SHARD_OUTPUT_DIR` | `true` | Exit 0 once `manifest.json` (and, when applicable, `mutation.json`) is written, 1 on a usage error or an infrastructure failure, with the reason on stderr. Never judges a mutant. |
 | `mutation-merge` | The final job of `main.yaml`, `bun scripts/mutation-merge.ts`; no argv. Env: `MUTATION_ARTIFACT_DIR`, `MUTATION_EVENT_SHA`, `MUTATION_SHARD_<n>_RESULT` per shard | `true` | Exit `exitCodeFor(verdict)`, the same contract as `check-mutation-guards`. Stdout and the step summary carry the located mutants and the verdict once. |
 | `check-md-links` | `bun run check:md-links`, link one of `lint` (`&&`); no argv | `true` | Exit 1 with `path:line -> target` on stderr. |
-| `check-override-floors` | `bun run check:override-floors`, link two of `lint`; the agent prompt in `fro-bot.yaml` (`bun scripts/check-override-floors.ts`); no argv | `true` | Exit 1 on a high or critical advisory or on anything uninterpretable, `check-override-floors: ...` on stderr; 0 otherwise. The prompt acts on exit 0. |
+| `check-override-floors` | `bun run check:override-floors`, link two of `lint`; the agent prompt in `fro-bot.yaml` (`bun scripts/check-override-floors.ts`); no argv | `true` | Exit 1 on a high or critical advisory that no unexpired `accepted-advisories.json` entry matches, on an expired or invalid entry or on anything uninterpretable, `check-override-floors: ...` on stderr (skipped advisories and notices included); 0 otherwise. The prompt acts on exit 0. |
 | `check-solutions-examples` | `bun run check:solutions-examples`, link three of `lint`; no argv | `true` | Exit 1 with `path:line -> reason` on stderr; the `verify:` markers use `findSignature`. A marker must sit directly above its `ts`/`typescript`/`tsx` fence, and a detached marker (a blank line or text before the fence, end of file, another fence language) fails the check. |
 | `install-renovate` | `node scripts/install-renovate.ts`, first half of `check:renovate-config` (`&&`); no argv | `true` | Prefix on stdout, `install-renovate: ...` on stderr, exit 1 on failure. |
 | `check-renovate-config` | `node scripts/check-renovate-config.ts`, second half of `check:renovate-config`, and `main.yaml`; no argv | `true` | Exit 1; output goes straight to the process streams in the order the checks produce it. |
@@ -170,6 +170,7 @@ C4Component
   Rel(entrypoints, check_solutions_examples_cli, "main")
   Rel(entrypoints, install_renovate_cli, "main")
   Rel(check_md_links_cli, check_md_links, "imports")
+  Rel(check_override_floors, repository_root, "imports")
   Rel(check_mutation_guards, repository_root, "imports")
   Rel(check_mutation_guards_cli, check_mutation_guards, "imports")
   Rel(check_override_floors_cli, check_override_floors, "imports")

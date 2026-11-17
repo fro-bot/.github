@@ -1,4 +1,4 @@
-import type {AuditRunResult} from './check-override-floors.ts'
+import type {AcceptedAdvisoriesResult, AcceptedAdvisory, AuditRunResult} from './check-override-floors.ts'
 import process from 'node:process'
 import {runCli} from '@fro-bot/core/cli'
 import {afterEach, describe, expect, it, vi} from 'vitest'
@@ -9,8 +9,16 @@ afterEach(() => {
   process.exitCode = undefined
 })
 
-function audit(advisories: Record<string, unknown>): {runAudit: () => AuditRunResult} {
-  return {runAudit: () => ({ok: true, advisories})}
+// No test here reads the committed accepted-advisories file: its entry expires, and a CLI test must not.
+function audit(
+  advisories: Record<string, unknown>,
+  entries: readonly AcceptedAdvisory[] = [],
+): {runAudit: () => AuditRunResult; readAccepted: () => AcceptedAdvisoriesResult; now: () => Date} {
+  return {
+    runAudit: () => ({ok: true, advisories}),
+    readAccepted: () => ({ok: true, entries}),
+    now: () => new Date('2026-11-17T12:00:00.000Z'),
+  }
 }
 
 const record = (severity: string) => ({
@@ -71,6 +79,66 @@ describe('the exit code the lint chain and the agent prompt read', () => {
     const result = await runCli(checkOverrideFloorsCli(audit({a: [record('catastrophic')]})), {argv: [], env: {}})
     expect(result.exitCode).toBe(1)
     expect(result.stderr).toBe('check-override-floors: a: advisory 7 has an unrecognized severity "catastrophic"\n')
+  })
+})
+
+describe('the accepted advisories the gate reads', () => {
+  const entry: AcceptedAdvisory = {
+    package: 'left-pad',
+    advisory: 7,
+    ghsa: 'GHSA-aaaa-bbbb-cccc',
+    reason: 'No fixed version yet.',
+    expires: '2026-12-17',
+  }
+
+  it('exits 0 and names the skipped advisory on stderr when an unexpired entry matches it', async () => {
+    const result = await runCli(checkOverrideFloorsCli(audit({'left-pad': [record('high')]}, [entry])), {
+      argv: [],
+      env: {},
+    })
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: '',
+      stderr: 'check-override-floors: left-pad: advisory 7 (HIGH) accepted until 2026-12-17: No fixed version yet.\n',
+    })
+  })
+
+  it('exits 0 with a notice when an unexpired entry matches nothing reported', async () => {
+    const result = await runCli(checkOverrideFloorsCli(audit({}, [entry])), {argv: [], env: {}})
+    expect(result).toEqual({
+      exitCode: 0,
+      stdout: '',
+      stderr:
+        'check-override-floors: notice: left-pad: accepted advisory 7 (GHSA-aaaa-bbbb-cccc) matches no reported advisory; remove its entry from accepted-advisories.json once the fix has landed\n',
+    })
+  })
+
+  it('exits 1 and names the entry when it has expired', async () => {
+    const result = await runCli(checkOverrideFloorsCli(audit({}, [{...entry, expires: '2026-11-16'}])), {
+      argv: [],
+      env: {},
+    })
+    expect(result).toEqual({
+      exitCode: 1,
+      stdout: '',
+      stderr:
+        'check-override-floors: left-pad: accepted advisory 7 (GHSA-aaaa-bbbb-cccc) expired on 2026-11-16; remove its entry from accepted-advisories.json or renew it after review\n',
+    })
+  })
+
+  it('exits 1 when the accepted file cannot be read', async () => {
+    const result = await runCli(
+      checkOverrideFloorsCli({
+        runAudit: () => ({ok: true, advisories: {}}),
+        readAccepted: () => ({ok: false, reason: 'accepted-advisories.json must hold a JSON array of entries'}),
+      }),
+      {argv: [], env: {}},
+    )
+    expect(result).toEqual({
+      exitCode: 1,
+      stdout: '',
+      stderr: 'check-override-floors: accepted-advisories.json must hold a JSON array of entries\n',
+    })
   })
 })
 

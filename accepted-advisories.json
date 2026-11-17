@@ -1,0 +1,9 @@
+[
+  {
+    "package": "picomatch",
+    "advisory": 1247710,
+    "ghsa": "GHSA-fc5q-39xc-vjpf",
+    "reason": "Dev lint tooling only (@stylistic/eslint-plugin and tinyglobby under typescript-eslint), run on glob patterns from our own config, and picomatch 4.0.7 is the latest release with no fixed version yet (micromatch/picomatch#194).",
+    "expires": "2026-12-17"
+  }
+]

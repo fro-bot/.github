@@ -12,8 +12,9 @@ import {defineCommand, runCliMain, type CliConfig} from '@fro-bot/core/cli'
 import {runCheckOverrideFloors, type CheckOverrideFloorsOptions} from './check-override-floors.ts'
 
 /**
- * `options.runAudit` is the one effect a test replaces: the default runs `bun audit --json`. A function rather
- * than a top-level constant, so every mutant in the config is exercised when a test builds it.
+ * `options.runAudit`, `options.readAccepted` and `options.now` are the effects a test replaces: the defaults run
+ * `bun audit --json`, read `accepted-advisories.json` and read the clock. A function rather than a top-level
+ * constant, so every mutant in the config is exercised when a test builds it.
  */
 export function checkOverrideFloorsCli(options: CheckOverrideFloorsOptions = {}): CliConfig {
   return {
