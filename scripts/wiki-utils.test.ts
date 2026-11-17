@@ -380,41 +380,70 @@ describe('truncateToBytes', () => {
 })
 
 describe('the archive notice helpers', () => {
-  const bodies = {
+  // Each body in LF, and again with every line ending as CRLF.
+  const lfBodies: Record<string, string> = {
     'one blank line': '# Repo\n\nNotes.\n',
     'several blank lines': '# Repo\n\n\n\nNotes.\n\n\nMore.\n',
-    'CRLF line endings': '# Repo\r\n\r\n\r\nNotes.\r\n',
-    'no text after the heading': '# Repo\n',
-    'a heading and nothing else, no newline': '# Repo',
+    'no blank line': '# Repo\nNotes.',
+    'no blank line, trailing newline': '# Repo\nNotes.\nMore.\n',
+    'heading only, trailing newline': '# Repo\n',
+    'heading only, no trailing newline': '# Repo',
     'text before the heading': 'Intro.\n\n# Repo\n\n\nNotes.\n',
+    'text before the heading, no blank line': 'Intro.\n# Repo\nNotes.',
+    'heading last, no trailing newline': 'Intro.\n\n# Repo',
     'no heading': 'Notes only.\n',
+    'no heading, leading blank lines': '\n\nNotes only.',
+    'empty body': '',
   }
+  const cases = Object.entries(lfBodies).flatMap(([label, body]): [string, string][] => [
+    [`${label} (LF)`, body],
+    [`${label} (CRLF)`, body.replaceAll('\n', '\r\n')],
+  ])
 
-  it.each(Object.entries(bodies))(
-    'puts the notice first under the heading and gives the body back byte for byte: %s',
-    (_label, body) => {
-      const marked = withArchiveNotice(body)
+  it.each(cases)('inserts and removes exactly, and recognises the notice: %s', (_label, body) => {
+    const marked = withArchiveNotice(body)
 
-      expect(hasArchiveNotice(marked)).toBe(true)
-      expect(withoutArchiveNotice(marked)).toBe(body)
-      expect(withArchiveNotice(marked)).toBe(marked)
-    },
-  )
-
-  it('keeps the blank lines after the heading and puts exactly one blank line before the notice', () => {
-    expect(withArchiveNotice('# Repo\n\n\nNotes.')).toBe(`# Repo\n\n${ARCHIVE_NOTICE}\n\n\nNotes.`)
-    expect(withArchiveNotice('# Repo\r\n\r\n\r\nNotes.')).toBe(`# Repo\r\n\r\n${ARCHIVE_NOTICE}\r\n\r\n\r\nNotes.`)
+    expect(marked).not.toBe(body)
+    expect(hasArchiveNotice(marked)).toBe(true)
+    expect(withoutArchiveNotice(marked)).toBe(body)
+    expect(withArchiveNotice(marked)).toBe(marked)
   })
 
-  it('keeps the notice a paragraph of its own when the text follows the heading directly', () => {
-    const marked = withArchiveNotice('# Repo\nNotes.')
+  it('does not recognise the notice in a body that has none', () => {
+    for (const [, body] of cases) expect(hasArchiveNotice(body)).toBe(false)
+  })
 
-    expect(marked).toBe(`# Repo\n\n${ARCHIVE_NOTICE}\n\nNotes.`)
-    expect(hasArchiveNotice(marked)).toBe(true)
+  // The fixed rule, by form. <eol> is the body's own line ending: CRLF when the body has one anywhere, else LF.
+  it.each([
+    // a heading with its line ending: <eol><NOTICE><eol> goes in right after that ending
+    ['# Repo\n\nNotes.', `# Repo\n\n${ARCHIVE_NOTICE}\n\nNotes.`],
+    ['# Repo\n\n\nNotes.', `# Repo\n\n${ARCHIVE_NOTICE}\n\n\nNotes.`],
+    ['# Repo\nNotes.', `# Repo\n\n${ARCHIVE_NOTICE}\nNotes.`],
+    ['# Repo\n', `# Repo\n\n${ARCHIVE_NOTICE}\n`],
+    ['# Repo\r\n\r\nNotes.', `# Repo\r\n\r\n${ARCHIVE_NOTICE}\r\n\r\nNotes.`],
+    ['# Repo\r\nNotes.', `# Repo\r\n\r\n${ARCHIVE_NOTICE}\r\nNotes.`],
+    // a heading that is the last line with no line ending: the ending it lacks, then <eol><NOTICE>, nothing after
+    ['# Repo', `# Repo\n\n${ARCHIVE_NOTICE}`],
+    ['Intro.\r\n# Repo', `Intro.\r\n# Repo\r\n\r\n${ARCHIVE_NOTICE}`],
+    // no heading: <NOTICE><eol> goes in at the start
+    ['Notes.', `${ARCHIVE_NOTICE}\nNotes.`],
+    ['', `${ARCHIVE_NOTICE}\n`],
+  ])('puts the notice into %j as %j', (body, expected) => {
+    expect(withArchiveNotice(body)).toBe(expected)
   })
 
   it('finds the notice only as the first paragraph under the heading', () => {
     expect(hasArchiveNotice(`# Repo\n\nNotes.\n\n${ARCHIVE_NOTICE}\n`)).toBe(false)
     expect(withoutArchiveNotice('# Repo\n\nNotes.')).toBe('# Repo\n\nNotes.')
+  })
+
+  it('still removes a notice that was written by hand with other spacing', () => {
+    const body = `# Repo\n\n\n${ARCHIVE_NOTICE}\n\nNotes.`
+
+    expect(hasArchiveNotice(body)).toBe(true)
+    const removed = withoutArchiveNotice(body)
+    expect(hasArchiveNotice(removed)).toBe(false)
+    expect(removed).not.toContain(ARCHIVE_NOTICE)
+    expect(removed).toContain('Notes.')
   })
 })

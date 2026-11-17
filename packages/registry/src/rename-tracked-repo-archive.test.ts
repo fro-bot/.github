@@ -313,6 +313,8 @@ describe('lifecycleTrackedRepo: archive', () => {
       'several blank lines': `# ${REPOSITORY}\n\n\n\nSurvey notes.\n\n\nMore notes.`,
       'CRLF line endings': `# ${REPOSITORY}\r\n\r\n\r\nSurvey notes.\r\nMore.`,
       'no text after the heading': `# ${REPOSITORY}`,
+      'no blank line after the heading': `# ${REPOSITORY}\nSurvey notes.\nMore notes.`,
+      'no blank line after the heading, CRLF': `# ${REPOSITORY}\r\nSurvey notes.\r\nMore notes.`,
     }
     const withBody = (body: string): string => page().replace(/\n---\n\n[\s\S]*$/u, `\n---\n\n${body}\n`)
 

@@ -350,37 +350,78 @@ export function hasArchiveNotice(body: string): boolean {
   return line !== undefined && (line.endsWith('\r') ? line.slice(0, -1) : line) === ARCHIVE_NOTICE
 }
 
+/** Where the first top-level heading's text ends, and where its line, line ending included, ends. */
+interface HeadingSpan {
+  readonly textEnd: number
+  readonly lineEnd: number
+}
+
+function findHeading(body: string): HeadingSpan | undefined {
+  let position = 0
+  while (position <= body.length) {
+    const newline = body.indexOf('\n', position)
+    const end = newline === -1 ? body.length : newline
+    if (body.startsWith('# ', position)) {
+      return {
+        textEnd: newline !== -1 && body[end - 1] === '\r' ? end - 1 : end,
+        lineEnd: newline === -1 ? end : end + 1,
+      }
+    }
+    if (newline === -1) return undefined
+    position = newline + 1
+  }
+  return undefined
+}
+
+/** The body's own line ending: CRLF when it has one anywhere, else LF. Inserting the notice cannot change it. */
+function bodyEol(body: string): string {
+  return body.includes('\r\n') ? '\r\n' : '\n'
+}
+
 /**
- * The body with the notice as the first paragraph under its top heading (at the start when there is no heading).
- * Only the notice and one blank line are added, in the body's own line ending, directly after the heading: every
- * other byte of the body stays where it was, so `withoutArchiveNotice` gives the original back. A body that
- * already has the notice is returned as it is.
+ * The body with the archive notice, by one fixed rule, so that `withoutArchiveNotice` is its exact inverse for
+ * every body and no other byte moves. With `<eol>` the body's own line ending:
+ * - a heading with a line ending: `<eol><NOTICE><eol>` goes in immediately after that ending, so
+ *   `# Repo\n\nNotes.` becomes `# Repo\n\n<NOTICE>\n\nNotes.` and `# Repo\nNotes.` becomes
+ *   `# Repo\n\n<NOTICE>\nNotes.` (there the notice shares a paragraph with the text that follows);
+ * - a heading that is the last line, with no line ending: the ending it lacks, then `<eol><NOTICE>`, and
+ *   nothing after, so `# Repo` becomes `# Repo\n\n<NOTICE>`;
+ * - no heading: `<NOTICE><eol>` goes in at the start.
+ * A body that already has the notice is returned as it is.
  */
 export function withArchiveNotice(body: string): string {
   if (hasArchiveNotice(body)) return body
-  const lines = body.split('\n')
-  const cr = body.includes('\r\n') ? '\r' : ''
-  const heading = topHeadingIndex(lines)
-  const next = lines[heading + 1]
-  let inserted: string[]
-  if (heading === -1) inserted = [`${ARCHIVE_NOTICE}${cr}`, cr]
-  else if (next === undefined || next.trim() === '') inserted = [cr, `${ARCHIVE_NOTICE}${cr}`]
-  else inserted = [cr, `${ARCHIVE_NOTICE}${cr}`, cr]
-  lines.splice(heading + 1, 0, ...inserted)
-  return lines.join('\n')
+  const eol = bodyEol(body)
+  const heading = findHeading(body)
+  if (heading === undefined) return `${ARCHIVE_NOTICE}${eol}${body}`
+  if (heading.lineEnd === heading.textEnd) return `${body}${eol}${eol}${ARCHIVE_NOTICE}`
+  return `${body.slice(0, heading.lineEnd)}${eol}${ARCHIVE_NOTICE}${eol}${body.slice(heading.lineEnd)}`
 }
 
-/** The body without the notice paragraph and the one blank line that `withArchiveNotice` put beside it. */
+/**
+ * The body without the notice: exactly the span `withArchiveNotice` inserted, in each of its three forms. A notice
+ * written by hand with other spacing is removed as its own line plus one blank line before it.
+ */
 export function withoutArchiveNotice(body: string): string {
   if (!hasArchiveNotice(body)) return body
+  const eol = bodyEol(body)
+  const heading = findHeading(body)
+  if (heading === undefined) {
+    if (body.startsWith(`${ARCHIVE_NOTICE}${eol}`)) return body.slice(ARCHIVE_NOTICE.length + eol.length)
+  } else if (body.startsWith(`${eol}${ARCHIVE_NOTICE}`, heading.lineEnd)) {
+    const after = heading.lineEnd + eol.length + ARCHIVE_NOTICE.length
+    if (body.startsWith(eol, after)) return body.slice(0, heading.lineEnd) + body.slice(after + eol.length)
+    // The heading was the last line: the inserted span runs from its text to the end of the body.
+    if (after === body.length) return body.slice(0, heading.textEnd)
+  }
+  return withoutHandWrittenNotice(body)
+}
+
+function withoutHandWrittenNotice(body: string): string {
   const lines = body.split('\n')
   const heading = topHeadingIndex(lines)
   const notice = firstParagraphIndex(lines, heading)
-  if (notice - 1 > heading) {
-    lines.splice(notice - 1, 2)
-  } else {
-    const after = lines[notice + 1]
-    lines.splice(notice, after !== undefined && after.trim() === '' ? 2 : 1)
-  }
+  const blankBefore = notice - 1 > heading && (lines[notice - 1] ?? '').trim() === ''
+  lines.splice(blankBefore ? notice - 1 : notice, blankBefore ? 2 : 1)
   return lines.join('\n')
 }
