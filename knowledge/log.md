@@ -10817,3 +10817,9 @@ Reads limited to repo metadata, compare listing, directory listings, README,
 manifest and workflow files. Corrections context was empty.
 
 Sources: https://github.com/fro-bot/space-bus
+
+## [2026-11-17 04:45] manual-edit | repo:marcusrbrown/copiloting
+
+Archived `marcusrbrown/copiloting`. Its page carries the archive date and notice; surveys skip it.
+
+Sources: none
