@@ -1,7 +1,7 @@
 ---
 title: Enumerate every no-match path before narrowing a row matcher
 date: 2026-10-10
-last_updated: 2026-10-10
+last_updated: 2026-11-17
 verified: 2026-10-10
 category: best-practices
 module: packages/registry/src/repos-metadata.ts
@@ -42,6 +42,7 @@ Before #3977 the mutator was `mutator: current => addRepoEntry(current, entryInp
 2. **Keep the transform on the write path and gate only the outward effect.** A caller must not short-circuit the helper's transform to avoid a no-op write. The early return should suppress the survey dispatch, not the redaction.
 3. **Make "name held by another identity" its own predicate**, separate from the node match, so a caller can suppress an effect without changing the write.
 4. **Make asymmetries visible in code.** If one caller keeps the old fallback chain, say so in a comment and test it. `resetSurveyResult` (`packages/registry/src/repos-metadata.ts:555`) still calls `findRepoEntryIndex` without `identityOnly`, so it keeps the full chain. "Match by node ID only" is true for write-backs, not for the module.
+5. **Read a fact that a dropped record carries before the filter that drops it.** A filter, a merge by name or a default can each remove the record, or the fact, before a later stage asks for it. Collect the fact from the raw response and pass it on as its own input.
 
 ## Why This Matters
 
@@ -119,6 +120,21 @@ The regression tests in `packages/registry/src/handle-invitation.test.ts`:
 - `leaves the file unchanged and dispatches no survey, so the old node's page is never written into` (`:1429`).
 - `still adds and surveys the recreated node when its name is free` (`:1450`), the guard against over-blocking.
 
+### Evidence read before the filters (#4278)
+
+The same shape appeared in [#4278](https://github.com/fro-bot/.github/pull/4278). Reconcile redacts a row the operator archived only when GitHub reports that row's repository as private, exactly. Three steps between the raw response and the planner could each lose that fact:
+
+- **A guard.** The collaborator listing skips an entry with a null owner. The first review found the skip ran before the flag was read. The evidence line now sits above the guard (`packages/registry/src/reconcile-discovery.ts:50`, guard at `:51`), with a test (`packages/registry/src/reconcile-repos.test.ts:12005`). The owned and contributed listings read it before their own filters (`:544`, `:612`).
+- **A default.** The listing stores `private: r.private !== false` (`packages/registry/src/reconcile-discovery.ts:56`), which turns a missing flag into private. That is the safe default for the access list and is not evidence, so only an exact `true` is collected.
+- **A merge.** `mergeAccessChannels` keeps one entry per name, owned over contributed over collaborator (`packages/registry/src/reconcile-discovery.ts:716`), so a public entry can replace a private one for the same name.
+
+The three channels' sets are joined by `collectExplicitPrivateNodeIds` (`packages/registry/src/reconcile-discovery.ts:77`) and passed to the planner separately from the merged list (`packages/registry/src/reconcile-handler.ts:284`):
+
+<!-- verify: collectExplicitPrivateNodeIds from packages/registry/src/reconcile-discovery.ts -->
+```ts
+const explicitPrivateNodeIds = collectExplicitPrivateNodeIds({collab, owned, contrib})
+```
+
 ## Related
 
 - [Make failure boundaries and shared predicates explicit](make-failure-boundaries-and-predicates-explicit-2026-08-25.md) covers the neighboring rule: one nullable result must not carry two meanings.
@@ -126,4 +142,5 @@ The regression tests in `packages/registry/src/handle-invitation.test.ts`:
 - [Survey workflow-side privacy gate](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md)
 - [Anchor Identity Guards on a Stable Scalar Fallback, Captured Defensively](identity-guard-stable-scalar-fallback-2026-06-22.md) is the contrast: that change adds a fallback, this one removes one.
 - [An identity probe that follows redirects cannot detect a repo rename](../integration-issues/identity-probe-follows-redirects-hides-repo-renames-2026-10-10.md) is the change that motivated the narrowing.
-- PR #3977 (merge `8792b53`).
+- [Fix a fail-safe flag's false positive in the consumer](fix-a-fail-safe-flags-false-positive-in-the-consumer-2026-11-15.md): a fail-safe default is not evidence.
+- PR #3977 (merge `8792b53`), [#4278](https://github.com/fro-bot/.github/pull/4278).
