@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.com
 created: 2026-07-13
-updated: 2026-11-01
+updated: 2026-11-17
 node_id: R_kgDOPOkk2A
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.com
@@ -60,6 +60,8 @@ related:
 # marcusrbrown/marcusrbrown.com
 
 Personal brand site for Marcus R. Brown ("Principal Software Engineer"). Single-page React 19 landing site deployed to [[github-pages]] at [marcusrbrown.com](https://marcusrbrown.com). Simpler than [[marcusrbrown--marcusrbrown-github-io]] (the full developer portfolio at mrbro.dev) — no routing, no theme system, no blog.
+
+**Current state:** `main` at `4f94a35d`; Fro Bot pinned to `fro-bot/agent` **v0.144.5** (`f334bf90`) with `isolate-agent: 'true'` and no `omo-providers` input; pnpm **11.28.12**; Renovate preset `#5.2.17` via `bfra-me/.github` **v4.43.0**; `pnpm/action-setup` v6.1.1; the workspace declares **17** overrides (adds `zod@<4.6.6`; `minimatch` range widened to `>=7.0.0 <11.0.1`).
 
 ## Bounded source snapshot (2026-11-01)
 

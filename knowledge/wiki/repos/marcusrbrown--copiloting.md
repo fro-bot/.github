@@ -1,6 +1,6 @@
 ---
 type: repo
-title: "marcusrbrown/copiloting"
+title: marcusrbrown/copiloting
 created: 2026-04-18
 updated: 2026-04-23
 sources:
@@ -13,13 +13,28 @@ sources:
   - url: https://github.com/marcusrbrown/copiloting
     sha: dcd661f3a403edc7ffe338a742680847aca38b19
     accessed: 2026-04-23
-tags: [python, typescript, langchain, openai, flask, sveltekit, pnpm, poetry, ai, llm, monorepo]
-aliases: [copiloting]
+tags:
+  - python
+  - typescript
+  - langchain
+  - openai
+  - flask
+  - sveltekit
+  - pnpm
+  - poetry
+  - ai
+  - llm
+  - monorepo
+aliases:
+  - copiloting
 related:
   - marcusrbrown--ha-config
+archived: 2026-11-17
 ---
 
 # marcusrbrown/copiloting
+
+This repository is archived and no longer surveyed; its page is kept for reference.
 
 Polyglot AI/LLM experimentation monorepo. LangChain-based copilot experiments, a Flask + SvelteKit PDF chat application, and standalone tutorial scripts. Course/exploration code, not a shipped product.
 

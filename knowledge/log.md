@@ -10817,3 +10817,126 @@ Reads limited to repo metadata, compare listing, directory listings, README,
 manifest and workflow files. Corrections context was empty.
 
 Sources: https://github.com/fro-bot/space-bus
+
+## [2026-11-17 04:45] manual-edit | repo:marcusrbrown/copiloting
+
+Archived `marcusrbrown/copiloting`. Its page carries the archive date and notice; surveys skip it.
+
+Sources: none
+
+## [2026-11-17 04:53] ingest | repo:marcusrbrown/marcusrbrown.com
+
+Surveyed marcusrbrown/marcusrbrown.com and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/marcusrbrown.com. `main` moved `9702a13` →
+`4f94a35d` (7 commits: 5 Renovate, 2 human — #610 `isolate-agent`, #611
+security-advisory package upgrades). Seven files changed, all workflow,
+manifest or lockfile; the 66-file tree is unchanged. No material change:
+default branch, visibility, language, build/test/release shape, Fro Bot and
+Renovate setup, and license are as recorded. Added one short current-state
+line near the top of [[marcusrbrown--marcusrbrown-com]] because the changed
+facts were only stated inside dated sections: agent v0.125.1 → v0.144.5 with
+`isolate-agent: 'true'` and `omo-providers` dropped, pnpm 11.28.6 → 11.28.12,
+preset `#5.2.14` → `#5.2.17`, `bfra-me/.github` v4.42.0 → v4.43.0,
+`pnpm/action-setup` v6.1.1, overrides 16 → 17 (`zod` added, `minimatch`
+range widened). The `updated` date was bumped. No sources entry was added and
+no dated section was edited. Confirmed and not restated: the prompts still say
+`marcusrbrown.github.io` / Vite 7, there is still no `output-mode`, and the
+fork preflight still uses `.head.repo.fork // "unknown"`. No topic, entity or
+comparison page needed changes. Fro Bot workflow present; no follow-up draft
+needed. Reads were limited to repo metadata, the compare listing, the
+directory listing, manifests and workflow files. The corrections context was
+empty.
+
+Run: https://github.com/fro-bot/.github/actions/runs/44019952567
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.com
+
+## [2026-11-17 04:55] ingest | repo:fro-bot/systematic
+
+Surveyed fro-bot/systematic and updated the control-plane wiki.
+
+Repeat survey of fro-bot/systematic. `gh-pages` moved `b3c99bc` → `be80aa1`
+(a deploy commit naming `marcusrbrown/systematic@v3.35.0`). Default branch,
+public visibility, unarchived state and no-license status are unchanged. Complete,
+non-truncated recursive directory listings show only additions: a
+`guides/cross-project-connections/` route, a `connections-researcher` agent
+reference route, a `ce-connect` skill reference route, and matching
+`components/` subtrees. Nothing was removed. The 17 root entries and the
+`schemas/{latest,v3}` tree persist. None of this is material, so there is no new
+dated section and no new `sources` entry. Added one short current-state
+statement near the top of [[fro-bot--systematic]] and bumped `updated`.
+There is still no `.github/` directory or committed workflow. Only the two
+GitHub-synthesized dynamic workflows exist. The page already records the
+missing Fro Bot workflow, so no new note was added. No topic pages changed.
+Reads were limited to repo metadata, the head commit, the workflow list and
+directory listings. The corrections context was empty.
+
+Sources: https://github.com/fro-bot/systematic
+
+## [2026-11-17 07:40] manual-edit | repo:fro-bot/agent
+
+Daily oversight note: added one bullet to the `isolate-agent` git-trust section
+of [[fro-bot--agent]]. The residual ownership boundary is still present with
+fro-bot/.github pinned to `v0.145.0`: the isolated agent ran as
+`fro-bot-sandbox` on a `runner`-owned checkout and the
+`improvement-metrics-detect.test.ts` case still failed on ownership, re-run
+directly in this pass. Bumped `updated` and added the release commit as a
+source.
+
+Sources: https://github.com/fro-bot/agent/releases/tag/v0.145.0, https://github.com/fro-bot/.github/blob/9c11624/packages/reports/src/improvement-metrics-detect.test.ts
+
+## [2026-11-17 07:38] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@9c11624e35d0e34798e47ebeeeb27a43f11e6284
+
+## [2026-11-17 14:31] ingest | repo:marcusrbrown/Presentations
+
+Surveyed marcusrbrown/Presentations and updated the control-plane wiki.
+
+Repeat survey of the public `main` snapshot at
+`25ca8e0a8c98e2d88e774ad47eeb648c54557fda`. Default branch, visibility,
+archived state (`false`), language (Shell), license (none) and the toolchains
+are unchanged. The tree is still 53 entries and 42 blobs with the same three
+workflows. The 10 commits since `b174ddc2` touched only pins, lockfiles and the
+Renovate config. Nothing material changed, so there is no new dated section and
+no new `sources` entry. In [[marcusrbrown--presentations]] I corrected five
+current-state statements where they stand: the Deck 1 intro and stack now list
+`spectacle` 10.2.4, the Deck 2 stack lists `@slidev/theme-seriph` as exact
+`0.25.0`, and the structure table shows both reusable callers at
+`bfra-me/.github` v4.43.0. I also bumped `updated`. There is still no Fro Bot
+workflow. The page already records that, so no new note was added. No topic
+pages changed. Reads were limited to repo metadata, the commit comparison file
+list, directory listings, package manifests and workflows. The corrections
+context was empty.
+
+Sources: https://github.com/marcusrbrown/Presentations
+
+## [2026-11-17 14:34] ingest | repo:marcusrbrown/gpt
+
+Surveyed marcusrbrown/gpt and updated the control-plane wiki.
+
+Repeat survey of public `main` at `69e1e2454982b4f575726e96d0439368870eb932`
+(head commit: `fro-bot/agent` bump to v0.145.0, #2989). Reads were limited to
+repo metadata, directory listings, the root README, `package.json`,
+`pnpm-workspace.yaml` and workflow files. No material change since 2026-11-03:
+default branch `main`, public, not archived, MIT; TypeScript/React/Vite 8 on
+pnpm; same build (`tsgo && vite build`) and `main.yaml` deploy-needs-build
+shape; Fro Bot and Renovate both still present. LangChain is still absent
+from the manifest. The README privacy and `VITE_CONNECT_SRC_EXTRA` text is
+unchanged. Version movement only (pnpm 11.28.12, Vite 8.3.8, Vitest 5.1.0,
+ESLint 10.15.0, Prettier 3.10.1, Playwright 1.65.1). No dated section was
+added.
+
+In [[marcusrbrown--gpt]], corrected four contradicted current-state statements
+where they stand: the Overview last-push line, the Overview pnpm version, the
+workflow-table Fro Bot trigger row, and the Fro Bot Integration lead sentence.
+The last two now describe one 03:30 UTC daily pass with `review`/`autoheal`
+dispatch instead of the former dual-cron, three-mode setup. Also added one
+Overview line for the current agent pin. Bumped `updated`, added no `sources`
+entry, and left the dated sections untouched. No topic or entity pages changed.
+The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/gpt

@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/systematic
 created: 2026-05-07
-updated: 2026-11-02
+updated: 2026-11-17
 node_id: R_kgDORLx6ew
 sources:
   - url: https://github.com/fro-bot/systematic
@@ -75,6 +75,8 @@ related:
 # fro-bot/systematic
 
 Documentation deployment target for [[marcusrbrown--systematic]]. Hosts the Starlight/Astro docs site for `@fro.bot/systematic` at **https://fro.bot/systematic/**.
+
+As of 2026-11-17, `gh-pages` is at `be80aa18ede7a1f95ef7bdeb8b8c84f42dd13748` (commit message: deploy from `marcusrbrown/systematic@v3.35.0`). Compared with the 2026-11-02 listing, the only directory changes are additions: `guides/cross-project-connections/`, `reference/agents/connections-researcher/`, `reference/skills/ce-connect/`, and the `components/agent-connections-researcher/` and `components/ce-connect/` subtrees. Nothing was removed.
 
 ## Published route additions, not a measured registry expansion (2026-11-02)
 

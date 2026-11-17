@@ -55,13 +55,16 @@ repos:
   - owner: marcusrbrown
     name: copiloting
     added: 2026-04-18
-    onboarding_status: lost-access
+    onboarding_status: archived
     last_survey_at: 2026-04-23
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: 2026-05-25
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkzODIzNjk3MDA=
+    database_id: 382369700
   - owner: marcusrbrown
     name: esphome.life
     added: 2026-04-18
@@ -92,11 +95,11 @@ repos:
     name: gpt
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-11-03
+    last_survey_at: 2026-11-17
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-12-03
+    next_survey_eligible_at: 2026-12-19
     discovery_channel: collab
     private: false
     node_id: R_kgDOK0Z5CA
@@ -248,12 +251,12 @@ repos:
     name: systematic
     added: 2026-05-07
     onboarding_status: onboarded
-    last_survey_at: 2026-11-02
+    last_survey_at: 2026-11-17
     last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: false
     discovery_channel: owned
-    next_survey_eligible_at: 2026-11-19
+    next_survey_eligible_at: 2026-12-01
     private: false
     node_id: R_kgDORLx6ew
     database_id: 1153202811
@@ -404,12 +407,12 @@ repos:
     name: marcusrbrown.com
     added: 2026-07-13
     onboarding_status: onboarded
-    last_survey_at: 2026-11-01
+    last_survey_at: 2026-11-17
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-12-04
+    next_survey_eligible_at: 2026-12-20
     private: false
     node_id: R_kgDOPOkk2A
     database_id: 1021912280
@@ -430,12 +433,12 @@ repos:
     name: Presentations
     added: 2026-08-04
     onboarding_status: onboarded
-    last_survey_at: 2026-11-02
-    last_survey_status: failure
+    last_survey_at: 2026-11-17
+    last_survey_status: success
     has_fro_bot_workflow: false
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-12-03
+    next_survey_eligible_at: 2026-12-19
     private: false
     node_id: MDEwOlJlcG9zaXRvcnk4MjcxMzM5Ng==
     database_id: 82713396
