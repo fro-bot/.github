@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-16
+updated: 2026-11-17
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: b70e54edc0333fbf97ca4d4204775ce33158b3b3
+    accessed: 2026-11-17
   - url: https://github.com/fro-bot/agent
     sha: b3d5cd8de673ba285160777aa1eab3d4e5c0b03a
     accessed: 2026-11-16
@@ -208,6 +211,11 @@ and one consumer test, not a full survey.
   that call either; only matching ownership between the agent and the checkout
   does. Treat a local test failure of this shape inside an isolated step as an
   environment signal, not a code regression.
+- **Still open at `v0.145.0` (`b70e54ed`, re-checked 2026-11-17).** With
+  fro-bot/.github pinned to that release, the isolated agent ran as
+  `fro-bot-sandbox` against a checkout owned by `runner`, and the same test
+  (unchanged at `9c11624`) still failed on ownership. CI on the same commit
+  stayed green.
 
 ## `isolate-agent` gets a read-only filesystem view and the runner's toolchains (2026-11-15 oversight note)
 

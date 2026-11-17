@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/Presentations
 created: 2026-08-05
-updated: 2026-10-18
+updated: 2026-11-17
 sources:
   - url: https://github.com/marcusrbrown/Presentations
     sha: 34321a4c4a38c99c4bd8b683f267ddba05cd6fe4
@@ -270,8 +270,8 @@ Each presentation is a self-contained subtree. There is no root `package.json` �
 | Path | Purpose | First seen |
 | --- | --- | --- |
 | `.github/workflows/ci.yaml` | CI: build + test + **assemble and deploy both decks to Pages** (deploy half added 2026-08-05, `#60`) | 2026-08-05 |
-| `.github/workflows/renovate.yaml` | Renovate runner (reusable from `bfra-me/.github@v4.23.0`) | 2026-08-05 |
-| `.github/workflows/update-repo-settings.yaml` | Probot settings sync (reusable from `bfra-me/.github@v4.23.0`) | 2026-08-05 |
+| `.github/workflows/renovate.yaml` | Renovate runner (reusable from `bfra-me/.github@v4.43.0`) | 2026-08-05 |
+| `.github/workflows/update-repo-settings.yaml` | Probot settings sync (reusable from `bfra-me/.github@v4.43.0`) | 2026-08-05 |
 | `.github/settings.yml` | Probot settings, extends `.github:common-settings.yaml` | 2026-08-05 |
 | `.github/renovate.json5` | Renovate config (extends `marcusrbrown/renovate-config#5.2.12`) | 2026-08-05 |
 | `.editorconfig`, `.gitignore` | Editor / VCS hygiene (root `.gitignore` is now OpenCode-aware — see below) | 2026-08-05 |
@@ -304,9 +304,9 @@ An ignore-everything-then-allowlist pattern for an agent workspace, plus `.workt
 
 ### Blockchain-Meetup-Feb-2017 (Deck 1)
 
-The founding artifact. A **Create React App** single-page slide deck built on **Spectacle 10.2.3** (React presentation framework).
+The founding artifact. A **Create React App** single-page slide deck built on **Spectacle 10.2.4** (React presentation framework).
 
-- **Stack:** React 18.3.1 + ReactDOM 18.3.1, `react-scripts` 5.0.1, `spectacle` 10.2.3, `gh-pages` 6.3.0 for deploy
+- **Stack:** React 18.3.1 + ReactDOM 18.3.1, `react-scripts` 5.0.1, `spectacle` 10.2.4, `gh-pages` 6.3.0 for deploy
 - **Package manager:** Yarn (`yarn.lock`, `yarn install --frozen-lockfile` in CI)
 - **Scripts:** `start`/`build`/`test`/`eject` (CRA defaults) + `predeploy`/`deploy` (gh-pages to `build/`)
 - **Structure:** `src/{App,Demo,Introduction,Overview,renderSlideSet}.js` — slides composed as React components; `public/{index,404}.html`
@@ -317,7 +317,7 @@ The founding artifact. A **Create React App** single-page slide deck built on **
 
 Added 2026-08-04 (`chore: add 2026-08-04 presentation (#49)`). Working title on the slide subtree: **"$200 Intelligence on a $10 Budget"** — a talk for the "Cracked Claude Cowork and Codex Club" (Aug 4 & 5, 2026). A nine-year jump in toolchain from Deck 1.
 
-- **Stack:** [Slidev](https://sli.dev) — `@slidev/cli` ^52.1.0 + `@slidev/theme-seriph` ^0.25.0. Markdown-driven slides (`slides.md`), not React components.
+- **Stack:** [Slidev](https://sli.dev) — `@slidev/cli` ^52.1.0 + `@slidev/theme-seriph` 0.25.0. Markdown-driven slides (`slides.md`), not React components.
 - **Package manager:** **Bun** (`bun.lock`, `bun install` / `bun run dev|build|export`) — diverges from Deck 1's Yarn and from the pnpm norm elsewhere in Marcus's ecosystem.
 - **Layout:** `Cheap-LLMs-Meetup-Aug-2026/slides/{slides.md, package.json, bun.lock, public/images/*}`. Assets include `aa-intelligence-vs-cost.png` and a `repo-qr.png`.
 - **Workflow:** `bun run dev` presents at `localhost:3030` (presenter mode `/presenter`); `bun run build` emits a static SPA in `dist/`; `bun run export` renders PDF via playwright-chromium. Speaker notes are inline HTML comments in `slides.md`.
