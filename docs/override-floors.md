@@ -1,6 +1,6 @@
 # Override Floors
 
-The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the six that have one: brace-expansion, fast-uri, qs, source-map-js, undici and zod.
+The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the six that have one: brace-expansion, fast-uri, qs, source-map-js, undici and zod. It also describes `accepted-advisories.json`, the reviewed exception list for an advisory that has no fixed version, and records its one entry, picomatch.
 
 ## `brace-expansion`
 
@@ -43,3 +43,27 @@ Remove this floor only when all parent ranges exclude the affected versions.
 GHSA-mrhx-c7xc-m3w5 (high) affects zod <4.6.6; 4.6.6 is the first patched release. `@fro-bot/core` depends on zod directly, pinned at `4.6.7`, which satisfies the `>=4.6.6` floor, for the goke option schemas in `@fro-bot/core/cli`. Stryker brings a second requester: `@stryker-mutator/core` depends on `mutation-server-protocol`, which requires `zod ^4.1.12` (its lock entry asks for 4.5.4, and the floor lifts it). Every requester resolves to the one copy.
 
 The key is `zod@4` so the floor can never apply to a zod 3 copy (no patched 3.x exists). Remove this floor when the Stryker/`mutation-server-protocol` release in use pins `zod >=4.6.6` and core's own pin is at or above it.
+
+## Accepted advisories
+
+`bun run check:override-floors` fails on any high or critical advisory in the locked tree. [`accepted-advisories.json`](../accepted-advisories.json) at the repository root is the one way past it: a temporary exception for an advisory that has no fixed version, so a floor cannot clear it. It is a JSON array; each entry has five fields, all required:
+
+- `package`: the exact package name `bun audit` reports.
+- `advisory`: the `bun audit` advisory `id`, a number. The gate matches this, not the GHSA.
+- `ghsa`: the GHSA id, for people.
+- `reason`: one sentence naming why the advisory is accepted while no fix exists.
+- `expires`: the last valid day, `YYYY-MM-DD`, judged in UTC. The expiry day itself still counts; the day after, the entry fails the gate.
+
+An entry skips a blocking advisory only when `package` and `advisory` both match and the entry has not expired; the gate prints one `accepted until <date>: <reason>` line for each skip. Everything else keeps failing: a different advisory id on the same package, the same id on a different package, an unknown severity and unparseable audit output.
+
+The file fails closed. A missing file is an empty list; text that is not JSON, a top level that is not an array, an entry with a missing or mistyped field, an invalid date or a repeated package and advisory fails the gate. An expired entry fails it too, even when the advisory is no longer reported, so a stale entry gets removed. An unexpired entry that matches no reported advisory prints a `notice:` line and does not fail: remove it once the fix has landed.
+
+Do not use the file to silence an advisory that has a fixed version: raise a floor in `overrides` instead. Pick the expiry to force a review, not to push the problem away; renewing an entry takes a new look at the advisory and a reason that still holds.
+
+## `picomatch`
+
+GHSA-fc5q-39xc-vjpf (bun audit id 1247710, high): ReDoS through single-branch repeated extglobs. It affects picomatch <=4.0.7, and 4.0.7 is the latest release, so no fixed version exists (upstream fix: micromatch/picomatch#194, open).
+
+The locked copy, 4.0.4, comes only through the dev lint stack (`@stylistic/eslint-plugin` and `tinyglobby` under typescript-eslint). It runs lint tooling on glob patterns from our own configuration and never sees untrusted input, so the repository accepts the advisory in `accepted-advisories.json` until 2026-12-17 instead of leaving `main`'s Lint check red.
+
+Remove the entry when a fixed picomatch release exists and the lockfile resolves to it, or when the lint stack no longer locks picomatch. If neither has happened by the expiry, review the advisory again and renew the entry with a reason that still holds.

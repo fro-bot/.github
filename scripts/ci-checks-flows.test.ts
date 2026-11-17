@@ -248,6 +248,14 @@ describe('scripts/check-md-links.ts', () => {
 // ---------------------------------------------------------------------------------------------------------------------
 
 describe('scripts/check-override-floors.ts', () => {
+  // The entrypoint reads the committed accepted-advisories.json, whose picomatch entry matches none of these fake
+  // audits, so it prints its one notice line. These cases are about the audit, so that line is taken out.
+  const withoutAcceptedNotice = (stderr: string) =>
+    stderr
+      .split('\n')
+      .filter(line => !line.startsWith('check-override-floors: notice: picomatch: '))
+      .join('\n')
+
   const advisory = (severity: string) =>
     JSON.stringify({'left-pad': [{id: 1, severity, vulnerable_versions: '<1.2.3', url: 'https://example.invalid/1'}]})
 
@@ -279,15 +287,23 @@ describe('scripts/check-override-floors.ts', () => {
     })
     expect(result.exitCode).toBe(expected)
     expect(result.stdout).toBe('')
-    if (expected === 0) expect(result.stderr).toBe('')
-    else expect(result.stderr).toMatch(/^check-override-floors: /u)
+    if (expected === 0) expect(withoutAcceptedNotice(result.stderr)).toBe('')
+    else expect(withoutAcceptedNotice(result.stderr)).toMatch(/^check-override-floors: /u)
+  })
+
+  it('prints the notice for the committed picomatch entry when no audit reports it', async () => {
+    const result = await run('check-override-floors', 'bun', {env: {FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}})
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe(
+      'check-override-floors: notice: picomatch: accepted advisory 1247710 (GHSA-fc5q-39xc-vjpf) matches no reported advisory; remove its entry from accepted-advisories.json once the fix has landed\n',
+    )
   })
 
   it('names a high advisory with its package, id, severity, range and advisory URL', async () => {
     const result = await run('check-override-floors', 'bun', {
       env: {FAKE_AUDIT_JSON: advisory('high'), FAKE_AUDIT_EXIT: '1'},
     })
-    expect(result.stderr).toBe(
+    expect(withoutAcceptedNotice(result.stderr)).toBe(
       'check-override-floors: left-pad: advisory 1 (HIGH) affects an installed version in vulnerable range "<1.2.3"; advisory: https://example.invalid/1\n',
     )
   })
