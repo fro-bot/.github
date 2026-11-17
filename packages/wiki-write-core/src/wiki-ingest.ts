@@ -22,7 +22,7 @@ import {parseFrontmatterDocument} from './frontmatter.ts'
 import {findIndexEntryLines} from './line-scanners.ts'
 import {assertReposFile} from './schemas.ts'
 import {computeRepoSlug} from './wiki-slug.ts'
-import {collectWikilinks, hasArchiveNotice, withArchiveNotice} from './wiki-utils.ts'
+import {collectWikilinks, hasArchiveNotice, withArchiveNotice, withoutArchiveNotice} from './wiki-utils.ts'
 
 const DEFAULT_OWNER = 'fro-bot'
 const DEFAULT_REPO = '.github'
@@ -285,7 +285,11 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
     const prepared = prepareWikiPage(inputPage, nextFiles, params, deletedPaths, migrations)
     const page = {
       path: prepared.path,
-      content: keepArchiveMarker(prepared, params.existingFiles[prepared.path], params.operation),
+      content: keepArchiveMarker(
+        prepared,
+        [prepared.migratedFrom, params.existingFiles[prepared.path]],
+        params.operation,
+      ),
     }
     assertWikiPagePath(page.path)
     const normalized = normalizeText(validateWikiPage(page.path, page.content))
@@ -1197,7 +1201,7 @@ function prepareWikiPage(
   params: BuildWikiIngestChangesParams,
   deletedPaths: string[],
   migrations: {oldSlug: string; newSlug: string}[],
-): WikiPageInput {
+): WikiPageInput & {migratedFrom?: string} {
   if (!isRepoPagePath(page.path)) return page
 
   const incomingFrontmatter = parseFrontmatter(page.path, page.content)
@@ -1235,6 +1239,8 @@ function prepareWikiPage(
     migrations.push({oldSlug: nodeMatch.slug, newSlug: pageSlug})
     return {
       path: page.path,
+      // The page the node ID matched: its archive marker follows the identity to the new path.
+      migratedFrom: nodeMatch.content,
       content: mergeRepoPageContent(page.content, historicalPages, {
         nodeId: identity.nodeId,
         title: repoTargetTitle(params.target) ?? incomingFrontmatter.title,
@@ -1255,16 +1261,18 @@ function prepareWikiPage(
  * written keeps the date, and keeps the notice under its top heading: a survey, repair or other write that leaves
  * either out gets it back. A `manual-edit` write (a save of the page by a person) that leaves the notice out is
  * refused instead, because the person asked for that text and silently overriding it would hide the edit.
+ *
+ * `stored` lists the pages the written page replaces, identity-matched source first: the page a node-ID
+ * migration moved here, then the page already at this path. The first one that carries a date decides.
  */
-function keepArchiveMarker(page: WikiPageInput, stored: string | undefined, operation: WikiOperation): string {
-  if (stored === undefined || !isRepoPagePath(page.path)) return page.content
-  let storedDate: unknown
-  try {
-    storedDate = parseFrontmatterDocument(stored).values.archived
-  } catch {
-    return page.content
-  }
-  if (typeof storedDate !== 'string' || storedDate === '') return page.content
+function keepArchiveMarker(
+  page: WikiPageInput,
+  stored: readonly (string | undefined)[],
+  operation: WikiOperation,
+): string {
+  if (!isRepoPagePath(page.path)) return page.content
+  const storedDate = stored.map(archivedDateOf).find((date): date is string => date !== undefined)
+  if (storedDate === undefined) return page.content
 
   const document = parseFrontmatterDocument(page.content)
   const noticePresent = hasArchiveNotice(document.body)
@@ -1278,6 +1286,17 @@ function keepArchiveMarker(page: WikiPageInput, stored: string | undefined, oper
     })
   }
   return renderFrontmatterDocument({...document.values, archived: storedDate}, withArchiveNotice(document.body))
+}
+
+/** The `archived` date of a stored page, or `undefined` when it has none or cannot be parsed. */
+function archivedDateOf(content: string | undefined): string | undefined {
+  if (content === undefined) return undefined
+  try {
+    const date = parseFrontmatterDocument(content).values.archived
+    return typeof date === 'string' && date !== '' ? date : undefined
+  } catch {
+    return undefined
+  }
 }
 
 function resolvePageIdentity(params: {
@@ -1342,7 +1361,8 @@ function mergeRepoPageContent(
 
   let body = incoming.body.trim()
   for (const page of historical) {
-    const historicalBody = page.body.trim()
+    // The old page's archive notice is not body text to keep: the write restores it under the heading.
+    const historicalBody = withoutArchiveNotice(page.body).trim()
     if (historicalBody !== '' && !body.includes(historicalBody)) {
       body = body === '' ? historicalBody : `${body}\n\n${historicalBody}`
     }

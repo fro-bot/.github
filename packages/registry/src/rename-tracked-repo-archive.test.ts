@@ -685,6 +685,20 @@ describe('lifecycleTrackedRepo: unarchive', () => {
     expectNoWrite(fake, head)
   })
 
+  it.each([
+    ['another row with the same node ID', (): Row[] => [row({onboarding_status: 'archived'}), row({name: 'twin'})]],
+    [
+      'another row that shares the database ID',
+      (): Row[] => [row({onboarding_status: 'archived'}), row({name: 'twin', node_id: 'R_kgDOTwin5'})],
+    ],
+  ])('is refused as duplicate-identity for %s, without writing', async (_label, makeRows) => {
+    const fake = createGitDataFake({files: archivedWorld([...makeRows(), ...otherRows()])})
+    const head = fake.head()
+
+    expect(await run(fake, 'unarchive')).toEqual({result: 'blocked', reason: 'duplicate-identity'})
+    expectNoWrite(fake, head)
+  })
+
   it('writes the row and the log but no page when the page does not exist', async () => {
     const before: Record<string, string> = {...archivedWorld(), [INDEX_PATH]: INDEX_WITHOUT_PAGE}
     delete before[PAGE_PATH]

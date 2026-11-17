@@ -1029,13 +1029,15 @@ export async function lifecycleTrackedRepo(deps: LifecycleDeps): Promise<Lifecyc
       if (redacted) return blockedOutcome('row-not-public')
       if (!facts.isPublic) return blockedOutcome('repository-private')
       if (facts.isArchived) return blockedOutcome('repository-archived')
-    } else {
-      if (!facts.isPublic) return blockedOutcome(redacted ? 'row-not-public' : 'repository-private')
-      const sharesIdentity = view.rows.some(
-        other => other !== target && (other.node_id === deps.nodeId || other.database_id === (facts?.databaseId ?? -1)),
-      )
-      if (sharesIdentity) return blockedOutcome('duplicate-identity')
+    } else if (!facts.isPublic) {
+      return blockedOutcome(redacted ? 'row-not-public' : 'repository-private')
     }
+    // Both actions: another row that shares the node ID or the database ID makes the target ambiguous.
+    const {databaseId} = facts
+    const sharesIdentity = view.rows.some(
+      other => other !== target && (other.node_id === deps.nodeId || other.database_id === databaseId),
+    )
+    if (sharesIdentity) return blockedOutcome('duplicate-identity')
 
     const after = lifecycleRow(deps.action, target, facts)
     const pagePath = pagePathFor(after.owner, after.name)

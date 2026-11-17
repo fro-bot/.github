@@ -4781,4 +4781,55 @@ describe('buildWikiIngestChanges (the archive marker survives a write)', () => {
     expect(result.files[PATH]).not.toContain('archived')
     expect(result.files[PATH]).not.toContain(ARCHIVE_NOTICE)
   })
+
+  describe('through a node-ID migration to a new path', () => {
+    const OLD = 'knowledge/wiki/repos/example-org--old-lantern.md'
+    const NODE = 'R_kgDOMigrate1'
+    const oldArchived = (): string =>
+      storedPage()
+        .replace('title: example-org/lantern', 'title: example-org/old-lantern')
+        .replace('updated: 2026-04-16', `updated: 2026-04-16\nnode_id: ${NODE}`)
+    const migrate = (operation: 'survey' | 'manual-edit', body: string, archived?: string) =>
+      buildWikiIngestChanges({
+        existingFiles: {...createEmptyWikiFiles(), [OLD]: oldArchived()},
+        operation,
+        target: 'repo:example-org/lantern',
+        summary: 'Moved the page.',
+        timestamp: new Date('2026-11-17T12:00:00.000Z'),
+        sources: [],
+        targetNodeId: NODE,
+        pages: [incoming(body, archived)],
+      })
+
+    it('gives the migrated page the date and the opening notice, and lists it under Archived', () => {
+      // #given an archived page stored under the old slug, and a survey page for the new slug that has neither marker
+      const result = migrate('survey', '# example-org/lantern\n\nFresh survey notes.')
+
+      // #when the writer migrates the page by its node ID
+      const moved = parseFrontmatterDocument(result.files[PATH] ?? '')
+
+      // #then the old page is deleted, and the new one carries the date and the notice under its heading
+      expect(result.deletedPaths).toEqual([OLD])
+      expect(moved.values.archived).toBe('2026-11-16')
+      expect(moved.body).toContain(`# example-org/lantern\n\n${ARCHIVE_NOTICE}\n\nFresh survey notes.`)
+      expect(moved.body.split(ARCHIVE_NOTICE)).toHaveLength(2)
+
+      // #and the index lists the new slug under Archived, not Repos
+      const index = result.files['knowledge/index.md'] ?? ''
+      expect(index.slice(index.indexOf('## Archived'))).toContain('[[example-org--lantern]]')
+      expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).not.toContain('example-org--lantern')
+    })
+
+    it('refuses a manual-edit migration whose body drops the notice', () => {
+      const save = () => migrate('manual-edit', '# example-org/lantern\n\nEdited by hand.', '2026-11-16')
+
+      expect(save).toThrow(expect.objectContaining({code: 'ARCHIVE_NOTICE_MISSING'}))
+    })
+
+    it('accepts a manual-edit migration that keeps the notice', () => {
+      const result = migrate('manual-edit', `# example-org/lantern\n\n${ARCHIVE_NOTICE}\n\nEdited by hand.`)
+
+      expect(parseFrontmatterDocument(result.files[PATH] ?? '').values.archived).toBe('2026-11-16')
+    })
+  })
 })
