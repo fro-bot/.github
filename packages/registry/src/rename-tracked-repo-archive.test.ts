@@ -307,6 +307,53 @@ describe('lifecycleTrackedRepo: archive', () => {
     expect(log).toContain(`manual-edit | repo:${REPOSITORY}`)
   })
 
+  describe('a page body with its own spacing', () => {
+    const bodies = {
+      'one blank line': `# ${REPOSITORY}\n\nSurvey notes.`,
+      'several blank lines': `# ${REPOSITORY}\n\n\n\nSurvey notes.\n\n\nMore notes.`,
+      'CRLF line endings': `# ${REPOSITORY}\r\n\r\n\r\nSurvey notes.\r\nMore.`,
+      'no text after the heading': `# ${REPOSITORY}`,
+    }
+    const withBody = (body: string): string => page().replace(/\n---\n\n[\s\S]*$/u, `\n---\n\n${body}\n`)
+
+    it.each(Object.entries(bodies))(
+      'archives in one commit with no other body change, and unarchives to the same body: %s',
+      async (_label, body) => {
+        const original = withBody(body)
+        const fake = createGitDataFake({files: worldFiles([row(), ...otherRows()], {[PAGE_PATH]: original})})
+        const head = fake.head()
+
+        // #when it is archived
+        const archived = await run(fake, 'archive')
+
+        // #then one commit lands, and the body differs only by the notice paragraph and one blank line
+        expect(archived).toMatchObject({result: 'archived', attempts: 1, page: 'edited'})
+        expect(fake.parentsOf(fake.head())).toEqual([head])
+        const marked = pageParts(fake.files()[PAGE_PATH])
+        expect(marked.body).toContain(ARCHIVE_NOTICE)
+
+        // #when it is unarchived again
+        const unarchived = await run(fake, 'unarchive')
+
+        // #then the body is the original, byte for byte
+        expect(unarchived).toMatchObject({result: 'unarchived'})
+        expect(pageParts(fake.files()[PAGE_PATH]).body).toBe(body)
+        expect(pageParts(fake.files()[PAGE_PATH]).values).toEqual(pageParts(original).values)
+      },
+    )
+
+    it('adds only the notice paragraph: the lines of the page are the original lines plus the notice', async () => {
+      const original = withBody(bodies['several blank lines'])
+      const fake = createGitDataFake({files: worldFiles([row(), ...otherRows()], {[PAGE_PATH]: original})})
+
+      await run(fake, 'archive')
+
+      const originalLines = pageParts(original).body.split('\n')
+      const markedLines = pageParts(fake.files()[PAGE_PATH]).body.split('\n')
+      expect(markedLines).toEqual([originalLines[0], '', ARCHIVE_NOTICE, ...originalLines.slice(1)])
+    })
+  })
+
   it('writes the date as the UTC calendar day of the run', async () => {
     const fake = createGitDataFake({files: worldFiles([row(), ...otherRows()])})
 
@@ -908,15 +955,37 @@ describe('runCli: the archive and unarchive actions', () => {
   })
 
   it('runs the rename, not a lifecycle action, when ACTION is omitted, empty or apply', async () => {
+    // #given a row that still holds the old name, GitHub showing the new one, and the page at the old slug
+    const oldName = 'old-lantern'
+    const renameWorld = (): Record<string, string> =>
+      worldFiles([row({name: oldName}), ...otherRows()], {
+        [PAGE_PATH]: null,
+        [`knowledge/wiki/repos/${OWNER}--${oldName}.md`]: page({title: `${OWNER}/${oldName}`}),
+      })
+
     for (const action of [undefined, '', 'apply']) {
-      const fake = createGitDataFake({files: worldFiles([row(), ...otherRows()])})
+      const fake = createGitDataFake({files: renameWorld()})
       const io = cliIo(fake)
+      const byId = vi.fn(async () => ({
+        id: DATABASE_ID,
+        node_id: NODE_ID,
+        name: NAME,
+        owner: {login: OWNER},
+        private: false,
+      }))
+      const transport = {...transportFor(), getRepositoryById: byId}
 
-      // no NODE_ID: the rename path's own validation answers
-      const code = await runCli({...env, ACTION: action, NODE_ID: undefined}, io.deps)
+      // #when the CLI runs with valid identity evidence
+      const code = await runCli({...env, ACTION: action}, {...io.deps, createTransport: () => transport})
 
-      expect(code).toBe(1)
-      expect(io.stderr.join('')).toBe('::error::rename-tracked-repo: INVALID_INPUT (field=node_id)\n')
+      // #then the rename ran: it read the repository by database ID, never by node, and moved the page
+      expect(code).toBe(0)
+      expect(byId).toHaveBeenCalledWith(DATABASE_ID)
+      expect(transport.byNode).not.toHaveBeenCalled()
+      expect(JSON.parse(io.stdout.join(''))).toMatchObject({result: 'renamed', page: 'moved', attempts: 1})
+      expect(lanternRow(fake.files())?.name).toBe(NAME)
+      expect(fake.files()[PAGE_PATH]).toContain(`node_id: ${NODE_ID}`)
+      expect(fake.files()[`knowledge/wiki/repos/${OWNER}--${oldName}.md`]).toBeUndefined()
     }
   })
 

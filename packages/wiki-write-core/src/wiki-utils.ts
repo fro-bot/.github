@@ -345,33 +345,42 @@ function firstParagraphIndex(lines: readonly string[], heading: number): number 
 
 /** Whether the first paragraph under the page's top heading is exactly the archive notice. */
 export function hasArchiveNotice(body: string): boolean {
-  const lines = body.replaceAll('\r\n', '\n').split('\n')
-  return lines[firstParagraphIndex(lines, topHeadingIndex(lines))] === ARCHIVE_NOTICE
+  const lines = body.split('\n')
+  const line = lines[firstParagraphIndex(lines, topHeadingIndex(lines))]
+  return line !== undefined && (line.endsWith('\r') ? line.slice(0, -1) : line) === ARCHIVE_NOTICE
 }
 
 /**
  * The body with the notice as the first paragraph under its top heading (at the start when there is no heading).
- * A body that already has it is returned as it is.
+ * Only the notice and one blank line are added, in the body's own line ending, directly after the heading: every
+ * other byte of the body stays where it was, so `withoutArchiveNotice` gives the original back. A body that
+ * already has the notice is returned as it is.
  */
 export function withArchiveNotice(body: string): string {
   if (hasArchiveNotice(body)) return body
-  const lines = body.replaceAll('\r\n', '\n').split('\n')
+  const lines = body.split('\n')
+  const cr = body.includes('\r\n') ? '\r' : ''
   const heading = topHeadingIndex(lines)
-  const rest = lines.slice(firstParagraphIndex(lines, heading))
-  const head = lines.slice(0, heading + 1)
-  return [...head, ...(heading === -1 ? [] : ['']), ARCHIVE_NOTICE, ...(rest.length === 0 ? [] : ['', ...rest])].join(
-    '\n',
-  )
+  const next = lines[heading + 1]
+  let inserted: string[]
+  if (heading === -1) inserted = [`${ARCHIVE_NOTICE}${cr}`, cr]
+  else if (next === undefined || next.trim() === '') inserted = [cr, `${ARCHIVE_NOTICE}${cr}`]
+  else inserted = [cr, `${ARCHIVE_NOTICE}${cr}`, cr]
+  lines.splice(heading + 1, 0, ...inserted)
+  return lines.join('\n')
 }
 
-/** The body without the notice paragraph and the blank line that separates it. A body without it is returned as it is. */
+/** The body without the notice paragraph and the one blank line that `withArchiveNotice` put beside it. */
 export function withoutArchiveNotice(body: string): string {
   if (!hasArchiveNotice(body)) return body
-  const lines = body.replaceAll('\r\n', '\n').split('\n')
+  const lines = body.split('\n')
   const heading = topHeadingIndex(lines)
-  const noticeAt = firstParagraphIndex(lines, heading)
-  const rest = lines.slice(noticeAt + 1)
-  while (rest.length > 0 && (rest[0] ?? '').trim() === '') rest.shift()
-  const head = lines.slice(0, heading + 1)
-  return [...head, ...(heading === -1 || rest.length === 0 ? [] : ['']), ...rest].join('\n')
+  const notice = firstParagraphIndex(lines, heading)
+  if (notice - 1 > heading) {
+    lines.splice(notice - 1, 2)
+  } else {
+    const after = lines[notice + 1]
+    lines.splice(notice, after !== undefined && after.trim() === '' ? 2 : 1)
+  }
+  return lines.join('\n')
 }

@@ -285,9 +285,11 @@ export function buildWikiIngestChanges(params: BuildWikiIngestChangesParams): Bu
     const prepared = prepareWikiPage(inputPage, nextFiles, params, deletedPaths, migrations)
     const page = {
       path: prepared.path,
+      // A migrated source is the page's identity: its archive state, including having none, decides. The
+      // page already at the path may belong to another node, so it decides only when nothing was migrated.
       content: keepArchiveMarker(
         prepared,
-        [prepared.migratedFrom, params.existingFiles[prepared.path]],
+        prepared.migratedFrom ?? params.existingFiles[prepared.path],
         params.operation,
       ),
     }
@@ -1262,16 +1264,12 @@ function prepareWikiPage(
  * either out gets it back. A `manual-edit` write (a save of the page by a person) that leaves the notice out is
  * refused instead, because the person asked for that text and silently overriding it would hide the edit.
  *
- * `stored` lists the pages the written page replaces, identity-matched source first: the page a node-ID
- * migration moved here, then the page already at this path. The first one that carries a date decides.
+ * `stored` is the page the written page continues: the page a node-ID migration moved here, or, with no
+ * migration, the page already at this path.
  */
-function keepArchiveMarker(
-  page: WikiPageInput,
-  stored: readonly (string | undefined)[],
-  operation: WikiOperation,
-): string {
+function keepArchiveMarker(page: WikiPageInput, stored: string | undefined, operation: WikiOperation): string {
   if (!isRepoPagePath(page.path)) return page.content
-  const storedDate = stored.map(archivedDateOf).find((date): date is string => date !== undefined)
+  const storedDate = archivedDateOf(stored)
   if (storedDate === undefined) return page.content
 
   const document = parseFrontmatterDocument(page.content)

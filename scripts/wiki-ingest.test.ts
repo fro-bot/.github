@@ -4820,6 +4820,38 @@ describe('buildWikiIngestChanges (the archive marker survives a write)', () => {
       expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).not.toContain('example-org--lantern')
     })
 
+    it('lets the migrated source decide, so an unarchived node does not inherit an archived page of another node', () => {
+      // #given an unarchived page for the node at the old path, and an archived page of ANOTHER node at the new path
+      const source = oldArchived().replace('archived: 2026-11-16\n', '').replace(`${ARCHIVE_NOTICE}\n\n`, '')
+      const other = storedPage().replace('updated: 2026-04-16', 'updated: 2026-04-16\nnode_id: R_kgDOOther9')
+
+      // #when the survey migrates the node's page onto that path
+      const result = buildWikiIngestChanges({
+        existingFiles: {...createEmptyWikiFiles(), [OLD]: source, [PATH]: other},
+        operation: 'survey',
+        target: 'repo:example-org/lantern',
+        summary: 'Moved the page.',
+        timestamp: new Date('2026-11-17T12:00:00.000Z'),
+        sources: [],
+        targetNodeId: NODE,
+        pages: [incoming('# example-org/lantern\n\nFresh survey notes.')],
+      })
+
+      // #then the result has no archive date and no notice, and the index lists it under Repos
+      const moved = parseFrontmatterDocument(result.files[PATH] ?? '')
+      expect(moved.values).not.toHaveProperty('archived')
+      expect(result.files[PATH]).not.toContain(ARCHIVE_NOTICE)
+      const index = result.files['knowledge/index.md'] ?? ''
+      expect(index).not.toContain('## Archived')
+      expect(index.slice(index.indexOf('## Repos'), index.indexOf('## Topics'))).toContain('[[example-org--lantern]]')
+    })
+
+    it('lets the destination page decide when no page was migrated', () => {
+      const result = build('survey', incoming('# example-org/lantern\n\nFresh.'))
+
+      expect(parseFrontmatterDocument(result.files[PATH] ?? '').values.archived).toBe('2026-11-16')
+    })
+
     it('refuses a manual-edit migration whose body drops the notice', () => {
       const save = () => migrate('manual-edit', '# example-org/lantern\n\nEdited by hand.', '2026-11-16')
 

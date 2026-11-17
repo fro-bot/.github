@@ -10,6 +10,10 @@ const wikiUtilsModulePromise: Promise<{
   splitFrontmatter: typeof import('@fro.bot/wiki-write-core/wiki-utils').splitFrontmatter
   truncateToBytes: typeof import('@fro.bot/wiki-write-core/wiki-utils').truncateToBytes
   byteLength: typeof import('@fro.bot/wiki-write-core/wiki-utils').byteLength
+  ARCHIVE_NOTICE: typeof import('@fro.bot/wiki-write-core/wiki-utils').ARCHIVE_NOTICE
+  hasArchiveNotice: typeof import('@fro.bot/wiki-write-core/wiki-utils').hasArchiveNotice
+  withArchiveNotice: typeof import('@fro.bot/wiki-write-core/wiki-utils').withArchiveNotice
+  withoutArchiveNotice: typeof import('@fro.bot/wiki-write-core/wiki-utils').withoutArchiveNotice
 }> = import('@fro.bot/wiki-write-core/wiki-utils')
 const {
   buildWikiTargetIndex,
@@ -21,6 +25,10 @@ const {
   splitFrontmatter,
   truncateToBytes,
   byteLength,
+  ARCHIVE_NOTICE,
+  hasArchiveNotice,
+  withArchiveNotice,
+  withoutArchiveNotice,
 } = await wikiUtilsModulePromise
 
 describe('splitFrontmatter', () => {
@@ -368,5 +376,45 @@ describe('truncateToBytes', () => {
     expect(truncateToBytes('some longer content that must be truncated', 0)).toBe('')
     expect(truncateToBytes('some longer content that must be truncated', 1)).toBe('')
     expect(truncateToBytes('some longer content that must be truncated', 2)).toBe('')
+  })
+})
+
+describe('the archive notice helpers', () => {
+  const bodies = {
+    'one blank line': '# Repo\n\nNotes.\n',
+    'several blank lines': '# Repo\n\n\n\nNotes.\n\n\nMore.\n',
+    'CRLF line endings': '# Repo\r\n\r\n\r\nNotes.\r\n',
+    'no text after the heading': '# Repo\n',
+    'a heading and nothing else, no newline': '# Repo',
+    'text before the heading': 'Intro.\n\n# Repo\n\n\nNotes.\n',
+    'no heading': 'Notes only.\n',
+  }
+
+  it.each(Object.entries(bodies))(
+    'puts the notice first under the heading and gives the body back byte for byte: %s',
+    (_label, body) => {
+      const marked = withArchiveNotice(body)
+
+      expect(hasArchiveNotice(marked)).toBe(true)
+      expect(withoutArchiveNotice(marked)).toBe(body)
+      expect(withArchiveNotice(marked)).toBe(marked)
+    },
+  )
+
+  it('keeps the blank lines after the heading and puts exactly one blank line before the notice', () => {
+    expect(withArchiveNotice('# Repo\n\n\nNotes.')).toBe(`# Repo\n\n${ARCHIVE_NOTICE}\n\n\nNotes.`)
+    expect(withArchiveNotice('# Repo\r\n\r\n\r\nNotes.')).toBe(`# Repo\r\n\r\n${ARCHIVE_NOTICE}\r\n\r\n\r\nNotes.`)
+  })
+
+  it('keeps the notice a paragraph of its own when the text follows the heading directly', () => {
+    const marked = withArchiveNotice('# Repo\nNotes.')
+
+    expect(marked).toBe(`# Repo\n\n${ARCHIVE_NOTICE}\n\nNotes.`)
+    expect(hasArchiveNotice(marked)).toBe(true)
+  })
+
+  it('finds the notice only as the first paragraph under the heading', () => {
+    expect(hasArchiveNotice(`# Repo\n\nNotes.\n\n${ARCHIVE_NOTICE}\n`)).toBe(false)
+    expect(withoutArchiveNotice('# Repo\n\nNotes.')).toBe('# Repo\n\nNotes.')
   })
 })
