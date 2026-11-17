@@ -55,13 +55,16 @@ repos:
   - owner: marcusrbrown
     name: copiloting
     added: 2026-04-18
-    onboarding_status: lost-access
+    onboarding_status: archived
     last_survey_at: 2026-04-23
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
     next_survey_eligible_at: 2026-05-25
+    private: false
+    node_id: MDEwOlJlcG9zaXRvcnkzODIzNjk3MDA=
+    database_id: 382369700
   - owner: marcusrbrown
     name: esphome.life
     added: 2026-04-18
