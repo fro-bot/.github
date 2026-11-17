@@ -64,7 +64,18 @@ interface MockOverrides {
     per_page?: number
   }) => Promise<unknown>
   paginate?: (fn: unknown, opts: unknown) => Promise<unknown[]>
+  getBranch?: (params: {owner: string; repo: string; branch: string}) => Promise<unknown>
+  updatePullRequest?: (params: {
+    owner: string
+    repo: string
+    pull_number: number
+    state: 'open' | 'closed'
+  }) => Promise<unknown>
+  createComment?: (params: {owner: string; repo: string; issue_number: number; body: string}) => Promise<unknown>
+  listComments?: (params: {owner: string; repo: string; issue_number: number; per_page?: number}) => Promise<unknown>
 }
+
+const MAIN_TIP = 'c'.repeat(40)
 
 function mockOctokit(overrides?: MockOverrides): OctokitClient {
   const listForRepo = overrides?.listForRepo ?? (async () => ({data: []}))
@@ -93,6 +104,7 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
           })),
         listPullRequestsAssociatedWithCommit:
           overrides?.listPullRequestsAssociatedWithCommit ?? (async () => ({data: []})),
+        getBranch: overrides?.getBranch ?? (async () => ({data: {commit: {sha: MAIN_TIP}}})),
       },
       pulls: {
         list: overrides?.listPullRequests ?? (async () => ({data: []})),
@@ -107,6 +119,7 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
             data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42'},
           })),
         updateBranch: overrides?.updateBranch ?? (async () => ({data: {}})),
+        update: overrides?.updatePullRequest ?? (async () => ({data: {}})),
       },
       issues: {
         addLabels: overrides?.addLabels ?? (async () => ({data: {labels: [{name: 'automerge'}]}})),
@@ -117,6 +130,8 @@ function mockOctokit(overrides?: MockOverrides): OctokitClient {
             data: {number: 99, html_url: 'https://github.com/fro-bot/.github/issues/99'},
           })),
         listForRepo,
+        createComment: overrides?.createComment ?? (async () => ({data: {}})),
+        listComments: overrides?.listComments ?? (async () => ({data: []})),
       },
     },
   } as unknown as OctokitClient
@@ -2467,5 +2482,327 @@ describe('runMergeDataPr outputs', () => {
     await expect(runMergeDataPr({...io, env, append})).rejects.toThrow(
       'PROMOTION_PIN must be a 40-character commit SHA',
     )
+  })
+})
+
+describe('mergeDataPr: an open promotion PR whose merge base moved', () => {
+  const OLD_BASE = 'd'.repeat(40)
+  const stalePull = (number: number, baseSha = OLD_BASE) => ({
+    number,
+    html_url: `https://github.com/fro-bot/.github/pull/${number}`,
+    state: 'open',
+    head: {ref: 'data'},
+    base: {ref: 'main', sha: baseSha},
+  })
+  const byState = (open: unknown[], closedPulls: unknown[]) => async (params: unknown) => ({
+    data: (params as {state: string}).state === 'open' ? open : closedPulls,
+  })
+  const botComment = (body: string) => ({user: {type: 'Bot'}, body})
+  const duplicate422 = () =>
+    Object.assign(new Error('Validation Failed'), {
+      status: 422,
+      response: {
+        data: {message: 'Validation Failed', errors: [{message: 'A pull request already exists for fro-bot:data.'}]},
+      },
+    })
+
+  /** An Octokit that records the calls that matter, in order, with a commit lookup that finds `found`. */
+  function replacing(overrides: Parameters<typeof mockOctokit>[0] = {}, order: string[] = []) {
+    const createComment = vi.fn(async (_params: {issue_number: number; body: string}) => {
+      order.push('comment')
+      return {data: {}}
+    })
+    const updatePullRequest = vi.fn(async (_params: {pull_number: number; state: 'open' | 'closed'}) => {
+      order.push('close')
+      return {data: {}}
+    })
+    const createPullRequest = vi.fn(async (_params: CreatePullRequestParams) => {
+      order.push('create')
+      return {data: {number: 42, html_url: 'https://github.com/fro-bot/.github/pull/42', head: {sha: PIN}}}
+    })
+    const addLabels = vi.fn(async (_params: {issue_number: number; labels: string[]}) => ({data: []}))
+    const octokit = pinnedOctokit({
+      listPullRequestsAssociatedWithCommit: async () => ({data: [stalePull(55)]}),
+      createComment,
+      updatePullRequest,
+      createPullRequest,
+      addLabels,
+      ...overrides,
+    })
+    return {octokit, createComment, updatePullRequest, createPullRequest, addLabels, order}
+  }
+
+  it('closes the PR with a fixed comment and opens a fresh one (found by commit)', async () => {
+    const logger = mockLogger()
+    const {octokit, createComment, updatePullRequest, createPullRequest, addLabels, order} = replacing()
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger})
+
+    expect(order).toEqual(['comment', 'close', 'create'])
+    expect(createComment).toHaveBeenCalledTimes(1)
+    expect(createComment.mock.calls[0]?.[0]).toMatchObject({owner: 'fro-bot', repo: '.github', issue_number: 55})
+    expect(createComment.mock.calls[0]?.[0].body).toContain(
+      'A fresh promotion PR replaces this one: its merge base moved',
+    )
+    expect(updatePullRequest).toHaveBeenCalledExactlyOnceWith({
+      owner: 'fro-bot',
+      repo: '.github',
+      pull_number: 55,
+      state: 'closed',
+    })
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+    expect(addLabels).toHaveBeenCalledExactlyOnceWith({
+      owner: 'fro-bot',
+      repo: '.github',
+      issue_number: 42,
+      labels: ['automerge'],
+    })
+    expect(result).toMatchObject({
+      createdPullRequest: true,
+      pullRequestNumber: 42,
+      pullRequestUrl: 'https://github.com/fro-bot/.github/pull/42',
+      label: 'automerge',
+      headSha: PIN,
+      replacedPullRequestNumber: 55,
+      closedPullRequestKept: false,
+    })
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith('replaced #55 with #42: its merge base moved')
+  })
+
+  it('reads the tip of the base branch once and compares it to the base the PR recorded', async () => {
+    const getBranch = vi.fn(async (_params: {owner: string; repo: string; branch: string}) => ({
+      data: {commit: {sha: OLD_BASE}},
+    }))
+    const {octokit, createPullRequest} = replacing({getBranch})
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
+
+    expect(getBranch).toHaveBeenCalledExactlyOnceWith({owner: 'fro-bot', repo: '.github', branch: 'main'})
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(result.pullRequestNumber).toBe(55)
+  })
+
+  it('replaces a PR found by branch, and does not apply the closed-PR rule to its own closure', async () => {
+    const listPullRequests = vi.fn(
+      byState(
+        [stalePull(77)],
+        [{number: 77, state: 'closed', merged_at: null, head: {ref: 'data'}, base: {ref: 'main'}}],
+      ),
+    )
+    const {octokit, updatePullRequest, createPullRequest, addLabels} = replacing({
+      listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+      listPullRequests,
+    })
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+
+    expect(updatePullRequest).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({pull_number: 77}))
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+    expect(addLabels).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({issue_number: 42}))
+    expect(result).toMatchObject({pullRequestNumber: 42, replacedPullRequestNumber: 77, closedPullRequestKept: false})
+    expect(listPullRequests.mock.calls.filter(([params]) => (params as {state: string}).state === 'closed')).toEqual([])
+  })
+
+  it('replaces a needs-review PR as well, and labels the fresh one needs-review', async () => {
+    const {octokit, createPullRequest, addLabels} = replacing()
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: false})
+
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+    expect(addLabels).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({issue_number: 42, labels: ['needs-review']}),
+    )
+    expect(result).toMatchObject({replacedPullRequestNumber: 55, label: 'needs-review'})
+  })
+
+  it('replaces the PR on a refresh-review run too', async () => {
+    const {octokit, updatePullRequest, createPullRequest} = replacing()
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: true})
+    expect(updatePullRequest).toHaveBeenCalledTimes(1)
+    expect(createPullRequest).toHaveBeenCalledTimes(1)
+    expect(result.replacedPullRequestNumber).toBe(55)
+  })
+
+  it.each([
+    ['found by commit', {}],
+    [
+      'found by branch',
+      {listPullRequestsAssociatedWithCommit: async () => ({data: []}), listPullRequests: byState([stalePull(55)], [])},
+    ],
+  ])('reuses a PR whose base is the current tip, untouched (%s)', async (_name, found) => {
+    const current = stalePull(55, MAIN_TIP)
+    const {octokit, createComment, updatePullRequest, createPullRequest, addLabels} = replacing(
+      'listPullRequests' in found
+        ? {...found, listPullRequests: byState([current], [])}
+        : {listPullRequestsAssociatedWithCommit: async () => ({data: [current]})},
+    )
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+
+    expect(createComment).not.toHaveBeenCalled()
+    expect(updatePullRequest).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(addLabels).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({issue_number: 55}))
+    expect(result).toMatchObject({pullRequestNumber: 55, replacedPullRequestNumber: null})
+  })
+
+  it.each([
+    [
+      'the tip cannot be read',
+      {
+        getBranch: async () => {
+          throw statusError(500, 'down')
+        },
+      },
+    ],
+    [
+      'the PR records no base',
+      {listPullRequestsAssociatedWithCommit: async () => ({data: [{...stalePull(55), base: {ref: 'main'}}]})},
+    ],
+  ])('reuses the PR and logs a fixed line when %s', async (_name, overrides) => {
+    const logger = mockLogger()
+    const {octokit, createComment, updatePullRequest, createPullRequest} = replacing(overrides)
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger})
+
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith('could not compare the merge base of PR #55; reusing it.')
+    expect(createComment).not.toHaveBeenCalled()
+    expect(updatePullRequest).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(result).toMatchObject({pullRequestNumber: 55, replacedPullRequestNumber: null})
+  })
+
+  it('fails without opening a PR when the comment fails', async () => {
+    const {octokit, updatePullRequest, createPullRequest} = replacing({
+      createComment: async () => {
+        throw statusError(403, 'no')
+      },
+    })
+    await expect(mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})).rejects.toThrow(
+      'GitHub API error while commenting on PR #55: no',
+    )
+    expect(updatePullRequest).not.toHaveBeenCalled()
+    expect(createPullRequest).not.toHaveBeenCalled()
+  })
+
+  it('fails without opening a PR when the close fails', async () => {
+    const {octokit, createPullRequest, addLabels} = replacing({
+      updatePullRequest: async () => {
+        throw statusError(500, 'down')
+      },
+    })
+    await expect(mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})).rejects.toThrow(
+      'GitHub API error while closing PR #55: down',
+    )
+    expect(createPullRequest).not.toHaveBeenCalled()
+    expect(addLabels).not.toHaveBeenCalled()
+  })
+
+  it('fails as it does for any new PR when the create fails after the close', async () => {
+    const {octokit, updatePullRequest, addLabels} = replacing({
+      createPullRequest: async () => {
+        throw statusError(500, 'down')
+      },
+    })
+    await expect(mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})).rejects.toThrow(
+      'GitHub API error while creating data -> main pull request: down',
+    )
+    expect(updatePullRequest).toHaveBeenCalledTimes(1)
+    expect(addLabels).not.toHaveBeenCalled()
+  })
+
+  it('settles the PR that won the race when the create reports a duplicate', async () => {
+    const fresh = stalePull(90, MAIN_TIP)
+    const {octokit, addLabels} = replacing({
+      createPullRequest: async () => {
+        throw duplicate422()
+      },
+      listPullRequests: async () => ({data: [fresh]}),
+    })
+    const logger = mockLogger()
+
+    const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger})
+
+    expect(addLabels).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({issue_number: 90}))
+    expect(result).toMatchObject({pullRequestNumber: 90, replacedPullRequestNumber: 55})
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith('replaced #55 with #90: its merge base moved')
+  })
+
+  describe('a later run', () => {
+    const closedUnmerged = {number: 55, state: 'closed', merged_at: null, head: {ref: 'data'}, base: {ref: 'main'}}
+
+    it('opens a PR when the newest closed PR is the one a run replaced', async () => {
+      // #given a run replaced PR #55 and its create then failed, so no fresh PR exists
+      const first = replacing({
+        createPullRequest: async () => {
+          throw statusError(500, 'down')
+        },
+      })
+      await expect(mergeDataPr({octokit: first.octokit, now: NOW, pin: PIN, qualifies: true})).rejects.toThrow()
+      const posted = first.createComment.mock.calls[0]?.[0].body ?? ''
+
+      // #when the next run sees it as the newest closed PR, with the comment the first run left (by the App)
+      const listComments = vi.fn(async (_params: {issue_number: number}) => ({data: [botComment(posted)]}))
+      const second = replacing({
+        listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+        listPullRequests: byState([], [closedUnmerged]),
+        listComments,
+      })
+      const result = await mergeDataPr({
+        octokit: second.octokit,
+        now: NOW,
+        pin: PIN,
+        qualifies: true,
+        recreateClosedPullRequest: false,
+      })
+
+      // #then it is not read as the operator's closure
+      expect(listComments).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({issue_number: 55, per_page: 100}))
+      expect(second.createPullRequest).toHaveBeenCalledTimes(1)
+      expect(result).toMatchObject({closedPullRequestKept: false, pullRequestNumber: 42})
+    })
+
+    it('keeps a PR the operator closed closed', async () => {
+      const {octokit, createPullRequest} = replacing({
+        listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+        listPullRequests: byState([], [closedUnmerged]),
+        listComments: async () => ({data: [botComment('Reviewed, thanks.')]}),
+      })
+      const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+      expect(createPullRequest).not.toHaveBeenCalled()
+      expect(result.closedPullRequestKept).toBe(true)
+    })
+
+    it('does not accept the marker from a comment that is not by a bot', async () => {
+      const first = replacing({
+        createPullRequest: async () => {
+          throw statusError(500, 'down')
+        },
+      })
+      await expect(mergeDataPr({octokit: first.octokit, now: NOW, pin: PIN, qualifies: true})).rejects.toThrow()
+      const posted = first.createComment.mock.calls[0]?.[0].body ?? ''
+
+      const {octokit, createPullRequest} = replacing({
+        listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+        listPullRequests: byState([], [closedUnmerged]),
+        listComments: async () => ({data: [{user: {type: 'User'}, body: posted}]}),
+      })
+      const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false})
+      expect(createPullRequest).not.toHaveBeenCalled()
+      expect(result.closedPullRequestKept).toBe(true)
+    })
+
+    it('fails when the comments of the newest closed PR cannot be read', async () => {
+      const {octokit} = replacing({
+        listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+        listPullRequests: byState([], [closedUnmerged]),
+        listComments: async () => {
+          throw statusError(500, 'down')
+        },
+      })
+      await expect(
+        mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, recreateClosedPullRequest: false}),
+      ).rejects.toThrow('GitHub API error while looking up the newest closed data -> main pull request')
+    })
   })
 })
