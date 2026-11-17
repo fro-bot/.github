@@ -95,11 +95,11 @@ repos:
     name: gpt
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-11-03
+    last_survey_at: 2026-11-17
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-12-03
+    next_survey_eligible_at: 2026-12-19
     discovery_channel: collab
     private: false
     node_id: R_kgDOK0Z5CA
