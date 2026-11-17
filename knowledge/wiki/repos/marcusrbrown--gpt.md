@@ -3,7 +3,7 @@ type: repo
 title: marcusrbrown/gpt
 node_id: R_kgDOK0Z5CA
 created: 2026-04-18
-updated: 2026-11-03
+updated: 2026-11-17
 sources:
   - url: https://github.com/marcusrbrown/gpt
     sha: 383b8cdafa8bb9911147028fce6e524c2739db93
@@ -88,13 +88,14 @@ Local-first, privacy-focused GPT creation and management platform. Mirrors core 
 - **Default branch:** `main`
 - **Created:** 2023-12-01
 - **Repo id / node_id:** `726038792` / `R_kgDOK0Z5CA`
-- **Last push:** 2026-09-19 (HEAD commit `9a2b6e14`, `chore(dev): update dependency prettier to v3.9.7 (#2775)`); prior 2026-09-03 `556bc73`
+- **Last push:** 2026-11-17 (HEAD commit `69e1e245`, `chore(deps): update fro-bot/agent to v0.145.0 (#2989)`); prior 2026-09-19 `9a2b6e14`, 2026-09-03 `556bc73`
+- **Fro Bot pin:** `fro-bot/agent` **v0.145.0** (SHA `b70e54ed`) as of 2026-11-17; `output-mode` still `branch-pr` for the daily pass, `working-dir` otherwise
 - **Homepage:** https://gpt.mrbro.dev (GitHub Pages)
 - **License:** MIT
 - **Topics:** `chatgpt`, `gpt`, `gpt-4`, `nlp`, `transformers`
 - **Size / tree:** ~13.1 MB, **342 blobs / 66 trees** (2026-09-20) — byte-for-byte the same blob/tree counts as 2026-09-03 and 2026-08-08
 - **Node.js:** 24.18.0 (`.tool-versions`) — unchanged since 2026-06-30, and now *explained*: `node` sits inside blocked Renovate PR #2662 (see the 2026-09-20 section). Renovate detects `24.21.0`
-- **Package manager:** pnpm 11.11.0 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`. Last modified `d4dfd58`, **2026-08-24**
+- **Package manager:** pnpm 11.28.12 (was 11.9.0) — major cutover from 10.34.4 landed 2026-07 (PR #2620); `pnpm-workspace.yaml` carries `overrides`, `allowBuilds`, `minimumReleaseAgeExclude`, and pnpm settings previously inlined in `package.json`. Last modified `d4dfd58`, **2026-08-24**
 - **Counts (2026-09-20):** 1 star, 0 forks, `open_issues_count` 38 = **23 issues + 15 PRs** — the identical queue to 2026-09-03, same numbers, same members (see the measurement correction below)
 
 ## 2026-11-03 bounded source recheck
@@ -549,7 +550,7 @@ UI code never imports LLM SDKs directly; all access goes through the provider ab
 | Workflow | File | Trigger | Purpose |
 | --- | --- | --- | --- |
 | Main | `main.yaml` | push/PR to `main`, dispatch | Lint + test + build + deploy |
-| Fro Bot | `fro-bot.yaml` | PR, issues, comments, schedule (03:30 + 15:30 UTC), dispatch | Three-mode single-file workflow: review / maintenance / autoheal |
+| Fro Bot | `fro-bot.yaml` | PR, issues, comments, schedule (03:30 UTC), dispatch | Single-file workflow: review / daily oversight + autoheal pass |
 | Renovate | `renovate.yaml` | issues, PR, push, dispatch, `workflow_run` | Dependency updates (via `bfra-me/.github` reusable workflow); job `Renovate` |
 | Update Repo Settings | `update-repo-settings.yaml` | push to `main`, cron `23 */12 * * *`, dispatch | Probot settings sync (18 lines) |
 | Test Coverage | `test-coverage.yaml` | push, PR, dispatch | **Runs the E2E suite** (`pnpm run test:e2e`) behind a `dorny/paths-filter` gate; jobs `Prepare`, `E2E Test Coverage`, `E2E Test Report` |
@@ -601,7 +602,7 @@ Vite build injects a CSP `<meta>` tag restricting:
 
 ## Fro Bot Integration
 
-**Full Fro Bot integration detected.** Single consolidated workflow — `fro-bot.yaml` — handling three modes via a `workflow_dispatch` `mode` input plus dual cron schedules (03:30 UTC autoheal, 15:30 UTC maintenance):
+**Full Fro Bot integration detected.** Single consolidated workflow — `fro-bot.yaml` — handling modes via a `workflow_dispatch` `mode` input (now `review`/`autoheal` only) plus one 03:30 UTC daily schedule that combines oversight and autoheal; the 15:30 UTC maintenance cron described below is gone (see the 2026-11-03 section):
 
 - **review** — PR reviews (structured verdict format: PASS/CONDITIONAL/REJECT) and issue/discussion triage (triggered by `@fro-bot` mention from OWNER/MEMBER/COLLABORATOR); manual dispatch requires a custom `prompt` input (validated, fails fast if absent)
 - **maintenance** (15:30 UTC cron) — daily maintenance → rolling "Daily Maintenance Report" issue. Includes an **Upstream Modernization Watch** (Sundays UTC only) that surveys OpenCode/Fro Bot runtime docs but MUST NOT bump pinned agent SHAs
