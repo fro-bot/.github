@@ -353,7 +353,7 @@ Leak-scan decision for one selected row:
 
 **Verification:** rebuilding the index from current `data` produces no diff.
 
-**Result (2026-11-17):** merged as #4281 (2026-11-17T04:40:45Z), together with Unit 6; package release 0.8.0 (published 2026-11-17T04:43Z). The page marker and the Archived section are seen working live in Unit 7.
+**Result (2026-11-17):** merged as #4281 (2026-11-17T04:40:45Z), together with Unit 6; package release 0.8.0 (published 2026-11-17T04:43Z). The page marker and the Archived section are seen working live in Unit 7. The index rebuild over `data` was compared before the merge and showed no difference; no run records that comparison.
 
 - [x] **Unit 6: `archive` and `unarchive` actions**
 

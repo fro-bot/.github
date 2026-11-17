@@ -42,7 +42,7 @@ Before #3977 the mutator was `mutator: current => addRepoEntry(current, entryInp
 2. **Keep the transform on the write path and gate only the outward effect.** A caller must not short-circuit the helper's transform to avoid a no-op write. The early return should suppress the survey dispatch, not the redaction.
 3. **Make "name held by another identity" its own predicate**, separate from the node match, so a caller can suppress an effect without changing the write.
 4. **Make asymmetries visible in code.** If one caller keeps the old fallback chain, say so in a comment and test it. `resetSurveyResult` (`packages/registry/src/repos-metadata.ts:555`) still calls `findRepoEntryIndex` without `identityOnly`, so it keeps the full chain. "Match by node ID only" is true for write-backs, not for the module.
-5. **Read a fact that a dropped record carries before the filter that drops it.** A filter, a merge by name or a default can each remove the record, or the fact, before a later stage asks for it. Collect the fact from the raw response and pass it on as its own input.
+5. **Collect evidence a later stage needs before filtering, defaulting or merging the records.** Each of those steps can remove the record or the fact. Take the fact from the raw response and pass it on as its own input.
 
 ## Why This Matters
 
@@ -122,13 +122,13 @@ The regression tests in `packages/registry/src/handle-invitation.test.ts`:
 
 ### Evidence read before the filters (#4278)
 
-The same shape appeared in [#4278](https://github.com/fro-bot/.github/pull/4278). Reconcile redacts a row the operator archived only when GitHub reports that row's repository as private, exactly. Three steps between the raw response and the planner could each lose that fact:
+In [#4278](https://github.com/fro-bot/.github/pull/4278), reconcile (the job that syncs the tracked-repository rows with GitHub) redacts a row the operator archived only when GitHub reports that row's repository as private, exactly. It reads three listings: collaborator, owned and contributed. Three steps between the raw response and the planner could each lose that fact:
 
 - **A guard.** The collaborator listing skips an entry with a null owner. The first review found the skip ran before the flag was read. The evidence line now sits above the guard (`packages/registry/src/reconcile-discovery.ts:50`, guard at `:51`), with a test (`packages/registry/src/reconcile-repos.test.ts:12005`). The owned and contributed listings read it before their own filters (`:544`, `:612`).
 - **A default.** The listing stores `private: r.private !== false` (`packages/registry/src/reconcile-discovery.ts:56`), which turns a missing flag into private. That is the safe default for the access list and is not evidence, so only an exact `true` is collected.
 - **A merge.** `mergeAccessChannels` keeps one entry per name, owned over contributed over collaborator (`packages/registry/src/reconcile-discovery.ts:716`), so a public entry can replace a private one for the same name.
 
-The three channels' sets are joined by `collectExplicitPrivateNodeIds` (`packages/registry/src/reconcile-discovery.ts:77`) and passed to the planner separately from the merged list (`packages/registry/src/reconcile-handler.ts:284`):
+The sets from the three listings are joined by `collectExplicitPrivateNodeIds` (`packages/registry/src/reconcile-discovery.ts:77`) and passed to the planner separately from the merged list (`packages/registry/src/reconcile-handler.ts:284`):
 
 <!-- verify: collectExplicitPrivateNodeIds from packages/registry/src/reconcile-discovery.ts -->
 ```ts

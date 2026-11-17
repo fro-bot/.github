@@ -80,7 +80,7 @@ for (const nodeId of nodeIds) {
 
 The non-public values are a test table at `packages/privacy/src/check-private-leak.test.ts:5982`, and an equivalent table runs against the per-PR scan at `:6294`.
 
-A second case, two days later, went the same way. [#4278](https://github.com/fro-bot/.github/pull/4278) had to say what reconcile does with rows that duplicate a row the operator archived. Two designs gave those rows special handling, and the plan records that each "produced a new failure" (`docs/plans/2026-11-15-003-feat-repo-lifecycle-archive-declared-rename-plan.md:98`). What shipped is the existing duplicate merge with one rule: the first archived row of a group survives exactly as stored (`packages/registry/src/reconcile-plan.ts:1055`). The `archive` action refuses when another row shares the node ID or the database ID (`packages/registry/src/rename-tracked-repo.ts:1035`), so the case is stopped where the row is written.
+A second case: [#4278](https://github.com/fro-bot/.github/pull/4278) had to say what reconcile does with rows that duplicate a row the operator archived. The plan records that special handling for them "produced a new failure in each of two designs" (`docs/plans/2026-11-15-003-feat-repo-lifecycle-archive-declared-rename-plan.md:98`). What shipped is the existing duplicate merge with one rule: when a group is merged, its first archived row survives exactly as stored (`packages/registry/src/reconcile-plan.ts:1055`). The `archive` action refuses a target when another row shares its node ID or database ID (`packages/registry/src/rename-tracked-repo.ts:1035`), so the case is stopped where the row is written.
 
 ## Related
 

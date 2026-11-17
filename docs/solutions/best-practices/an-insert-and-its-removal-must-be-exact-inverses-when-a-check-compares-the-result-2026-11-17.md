@@ -23,9 +23,9 @@ tags:
 
 ## Context
 
-When one function adds a marker to a text and another removes it, and any check compares the text before and after, the two must be exact inverses: removing what was inserted gives back the original, byte for byte, for every input. If they are only close, the check refuses valid inputs.
+When a check compares a text before and after a marker is added or removed, removing the marker must give back exactly the text it was added to. Test that round trip for every shape of input that has no marker yet. If the two functions are only close, the check refuses valid inputs.
 
-The `archive` action of the lifecycle workflow adds a one-sentence notice under a wiki page's heading, and `unarchive` removes it. Before either action commits, `assertLifecyclePolicy` (`packages/registry/src/rename-tracked-repo.ts:922`) checks that the action changed nothing else. It removes the notice from the page as it was and from the page as it will be, and compares the rest (`packages/registry/src/rename-tracked-repo.ts:963`). A difference stops the action with `PATH_POLICY`.
+The `archive` action of the lifecycle workflow adds a one-sentence notice under a wiki page's heading, and `unarchive` removes it. Before either action commits, `assertLifecyclePolicy` (`packages/registry/src/rename-tracked-repo.ts:922`) checks that the action changed nothing else in the page body. It removes the notice from the body as it was and from the body as it will be, trims the outer whitespace of each, and compares them (`packages/registry/src/rename-tracked-repo.ts:963`). A difference stops the action with `PATH_POLICY`.
 
 Review of [#4281](https://github.com/fro-bot/.github/pull/4281) found two bodies the action could not archive:
 
@@ -34,11 +34,10 @@ Review of [#4281](https://github.com/fro-bot/.github/pull/4281) found two bodies
 
 ## Guidance
 
-1. **Define the insert as one fixed span and the removal as exactly that span.** `withArchiveNotice` puts the body's own line ending, the notice and the line ending again directly after the heading's line ending, and moves no other byte (`packages/wiki-write-core/src/wiki-utils.ts:392`). `withoutArchiveNotice` removes that span (`packages/wiki-write-core/src/wiki-utils.ts:405`). Each special form (a heading that is the last line, a body with no heading) has its own fixed span.
-2. **Do not tidy whitespace on one side only.** A helper that normalises blank lines when it inserts must have a removal that restores them, which it cannot do. Leave the surrounding text alone.
-3. **Take the line ending from the text.** `bodyEol` returns CRLF when the body has one and LF otherwise (`packages/wiki-write-core/src/wiki-utils.ts:377`), so the inserted span matches the page.
-4. **Test the round trip over every shape you can name, not the insert alone.** The table at `scripts/wiki-utils.test.ts:384` holds twelve body shapes, each in LF and CRLF, and asserts that removing after inserting returns the original.
-5. **Keep the comparing check strict.** The fix made the helpers exact. The check was not loosened.
+1. **Insert one known span without changing the text around it, and remove that same span.** A helper that tidies blank lines when it inserts cannot have a removal that restores them. `withArchiveNotice` puts the body's own line ending, the notice and the line ending again directly after the heading's line ending, and moves no other byte (`packages/wiki-write-core/src/wiki-utils.ts:392`). `withoutArchiveNotice` removes that span (`packages/wiki-write-core/src/wiki-utils.ts:405`). Each special form (a heading that is the last line, a body with no heading) has its own fixed span.
+2. **Take the line ending from the text.** `bodyEol` returns CRLF when the body has one and LF otherwise (`packages/wiki-write-core/src/wiki-utils.ts:377`), so the inserted span matches the page.
+3. **Test the round trip over every shape you can name, not the insert alone.** The table at `scripts/wiki-utils.test.ts:384` holds twelve body shapes, each in LF and CRLF, and asserts that removing after inserting returns the original.
+4. **Fix the helpers, not the check.** The comparison was left as it was.
 
 ## Why This Matters
 
@@ -52,17 +51,7 @@ A pair that is nearly inverse fails only on inputs its author did not think of. 
 
 ## Examples
 
-The property, for the body that failed last:
-
-<!-- verify: withArchiveNotice from packages/wiki-write-core/src/wiki-utils.ts -->
-<!-- verify: withoutArchiveNotice from packages/wiki-write-core/src/wiki-utils.ts -->
-```ts
-const body = '# Repo\nNotes.'
-const marked = withArchiveNotice(body)
-if (withoutArchiveNotice(marked) !== body) throw new Error('not an inverse')
-```
-
-The same property over several shapes and both line endings:
+The round trip over several shapes, including the two that failed, in both line endings:
 
 <!-- verify: withArchiveNotice from packages/wiki-write-core/src/wiki-utils.ts -->
 <!-- verify: withoutArchiveNotice from packages/wiki-write-core/src/wiki-utils.ts -->
