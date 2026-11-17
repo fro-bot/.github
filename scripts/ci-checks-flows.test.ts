@@ -12,6 +12,11 @@
  *   `check:renovate-config` chain (`install-renovate && check-renovate-config`), each stopping at the first non-zero exit.
  * - `fro-bot.yaml`: the agent prompt acts on the exit code of `bun scripts/check-override-floors.ts`.
  *
+ * The override-floors gate reads `accepted-advisories.json` from its repository root and the real clock, and the production path
+ * has no setting that points it elsewhere. Every case that runs it, the `lint` chain included, therefore runs it from a
+ * test-owned copy of the package that holds its own accepted file, so no case here depends on the committed file's entries or
+ * on today's date.
+ *
  * The mutation gate resolves its repository root from where its module lives. Every case that would reach a Stryker spawn, and
  * with it the `rmSync` of the report, runs against a copy of the package in a test-owned directory, so the real checkout's
  * `reports/mutation/mutation.json` is never at risk. The cases that run against the real root stop before the spawn
@@ -122,6 +127,8 @@ function checkout(files: Readonly<Record<string, string>> = {}): string {
 }
 
 interface RunOptions {
+  /** The directory holding the entrypoint (default: the real `scripts/`); a test-owned copy of a gate passes its own. */
+  readonly scriptsDirectory?: string
   readonly argv?: readonly string[]
   readonly cwd?: string
   readonly env?: Readonly<Record<string, string | undefined>>
@@ -134,7 +141,7 @@ function childEnv(extra: Readonly<Record<string, string | undefined>> = {}): Rec
 
 async function run(script: string, runtime: 'bun' | 'node', options: RunOptions = {}): Promise<SpawnEntrypointResult> {
   return spawnEntrypoint({
-    entrypoint: resolve(repoRoot, 'scripts', `${script}.ts`),
+    entrypoint: resolve(options.scriptsDirectory ?? resolve(repoRoot, 'scripts'), `${script}.ts`),
     runtime,
     ...(runtime === 'bun' ? {executable: realBun, runtimeArgs: ['--no-install', '--no-env-file']} : {}),
     argv: options.argv,
@@ -152,7 +159,12 @@ async function shell(
 ): Promise<SpawnEntrypointResult> {
   return spawnEntrypoint({
     entrypoint: script,
-    argv: ['_', resolve(repoRoot, 'scripts', `${entrypoint}.ts`), realBun, ...(options.argv ?? [])],
+    argv: [
+      '_',
+      resolve(options.scriptsDirectory ?? resolve(repoRoot, 'scripts'), `${entrypoint}.ts`),
+      realBun,
+      ...(options.argv ?? []),
+    ],
     executable: 'bash',
     runtimeArgs: [...flags, '-c'],
     cwd: options.cwd ?? checkout(),
@@ -247,17 +259,57 @@ describe('scripts/check-md-links.ts', () => {
 // check-override-floors
 // ---------------------------------------------------------------------------------------------------------------------
 
+/**
+ * A test-owned copy of the override-floors gate: the entrypoint and `packages/ci-checks` (its non-test source), with
+ * `node_modules/@fro-bot/ci-checks` linked to the copy and `@fro-bot/core` to the real package, so the gate's repository
+ * root (three levels above `packages/ci-checks/src`) is the copy. `accepted` is the content of the copy's own
+ * `accepted-advisories.json`, or `undefined` for none. The production path has no seam for this: the gate always reads
+ * the committed file, so a test that needs another acceptance policy runs the gate from a copy that holds it. No case here
+ * reads the committed `accepted-advisories.json`, so expiring, renewing or removing its entry cannot change one.
+ * Returns the copy's `scripts/` directory. The copies are memoized per content.
+ */
+const overrideFloorsCopies = new Map<string, string>()
+function overrideFloorsScripts(accepted: string | undefined): string {
+  const key = accepted ?? '<missing>'
+  const cached = overrideFloorsCopies.get(key)
+  if (cached !== undefined) return cached
+  const copy = checkout(accepted === undefined ? {} : {'accepted-advisories.json': accepted})
+  mkdirSync(join(copy, 'scripts'))
+  cpSync(join(repoRoot, 'scripts', 'check-override-floors.ts'), join(copy, 'scripts', 'check-override-floors.ts'))
+  cpSync(join(repoRoot, 'packages', 'ci-checks'), join(copy, 'packages', 'ci-checks'), {
+    recursive: true,
+    filter: source => !source.endsWith('.test.ts'),
+  })
+  mkdirSync(join(copy, 'node_modules', '@fro-bot'), {recursive: true})
+  symlinkSync(join(copy, 'packages', 'ci-checks'), join(copy, 'node_modules', '@fro-bot', 'ci-checks'))
+  symlinkSync(join(repoRoot, 'packages', 'core'), join(copy, 'node_modules', '@fro-bot', 'core'))
+  const scripts = join(copy, 'scripts')
+  overrideFloorsCopies.set(key, scripts)
+  return scripts
+}
+
+const EMPTY_ACCEPTANCE = '[]'
+
 describe('scripts/check-override-floors.ts', () => {
-  // The entrypoint reads the committed accepted-advisories.json, whose picomatch entry matches none of these fake
-  // audits, so it prints its one notice line. These cases are about the audit, so that line is taken out.
-  const withoutAcceptedNotice = (stderr: string) =>
-    stderr
-      .split('\n')
-      .filter(line => !line.startsWith('check-override-floors: notice: picomatch: '))
-      .join('\n')
+  // Every case runs the gate from a copy that holds a test-owned `accepted-advisories.json` (empty unless the case says
+  // otherwise), under the real clock: the entries that matter use the far-future day 9999-12-31 or a long-past day.
+  const runFloors = async (
+    env: Record<string, string>,
+    options: {readonly accepted?: string | undefined; readonly argv?: readonly string[]} = {},
+  ) =>
+    run('check-override-floors', 'bun', {
+      scriptsDirectory: overrideFloorsScripts('accepted' in options ? options.accepted : EMPTY_ACCEPTANCE),
+      argv: options.argv,
+      env,
+    })
 
   const advisory = (severity: string) =>
     JSON.stringify({'left-pad': [{id: 1, severity, vulnerable_versions: '<1.2.3', url: 'https://example.invalid/1'}]})
+
+  const leftPad = (expires: string) =>
+    JSON.stringify([
+      {package: 'left-pad', advisory: 1, ghsa: 'GHSA-aaaa-bbbb-cccc', reason: 'No fixed version yet.', expires},
+    ])
 
   // The agent prompt in fro-bot.yaml acts on exit 0; the lint chain stops on anything else. `bun audit` exits non-zero
   // whenever any advisory exists, so the audit's own exit code is deliberately set to 1 for every advisory case.
@@ -282,41 +334,70 @@ describe('scripts/check-override-floors.ts', () => {
     ['a package map whose entry is not an array', '{"a": {"id": 1}}', 1, 1],
     ['an advisory with an unrecognized severity', advisory('catastrophic'), 1, 1],
   ])('for %s the entrypoint exits %#d as the prompt reads it', async (_name, audit, auditExit, expected) => {
-    const result = await run('check-override-floors', 'bun', {
-      env: {FAKE_AUDIT_JSON: audit, FAKE_AUDIT_EXIT: String(auditExit)},
-    })
+    const result = await runFloors({FAKE_AUDIT_JSON: audit, FAKE_AUDIT_EXIT: String(auditExit)})
     expect(result.exitCode).toBe(expected)
     expect(result.stdout).toBe('')
-    if (expected === 0) expect(withoutAcceptedNotice(result.stderr)).toBe('')
-    else expect(withoutAcceptedNotice(result.stderr)).toMatch(/^check-override-floors: /u)
-  })
-
-  it('prints the notice for the committed picomatch entry when no audit reports it', async () => {
-    const result = await run('check-override-floors', 'bun', {env: {FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}})
-    expect(result.exitCode).toBe(0)
-    expect(result.stderr).toBe(
-      'check-override-floors: notice: picomatch: accepted advisory 1247710 (GHSA-fc5q-39xc-vjpf) matches no reported advisory; remove its entry from accepted-advisories.json once the fix has landed\n',
-    )
+    if (expected === 0) expect(result.stderr).toBe('')
+    else expect(result.stderr).toMatch(/^check-override-floors: /u)
   })
 
   it('names a high advisory with its package, id, severity, range and advisory URL', async () => {
-    const result = await run('check-override-floors', 'bun', {
-      env: {FAKE_AUDIT_JSON: advisory('high'), FAKE_AUDIT_EXIT: '1'},
-    })
-    expect(withoutAcceptedNotice(result.stderr)).toBe(
+    const result = await runFloors({FAKE_AUDIT_JSON: advisory('high'), FAKE_AUDIT_EXIT: '1'})
+    expect(result.stderr).toBe(
       'check-override-floors: left-pad: advisory 1 (HIGH) affects an installed version in vulnerable range "<1.2.3"; advisory: https://example.invalid/1\n',
     )
   })
 
+  it('treats a missing accepted-advisories.json as an empty list: the high advisory still fails', async () => {
+    const result = await runFloors({FAKE_AUDIT_JSON: advisory('high'), FAKE_AUDIT_EXIT: '1'}, {accepted: undefined})
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toContain('check-override-floors: left-pad: advisory 1 (HIGH) affects')
+  })
+
+  it('skips the advisory an unexpired entry names, prints the accepted line and exits 0', async () => {
+    const result = await runFloors(
+      {FAKE_AUDIT_JSON: advisory('high'), FAKE_AUDIT_EXIT: '1'},
+      {accepted: leftPad('9999-12-31')},
+    )
+    expect(result.exitCode).toBe(0)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toBe(
+      'check-override-floors: left-pad: advisory 1 (HIGH) accepted until 9999-12-31: No fixed version yet.\n',
+    )
+  })
+
+  it('prints a notice and exits 0 for an unexpired entry that matches nothing reported', async () => {
+    const result = await runFloors({FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}, {accepted: leftPad('9999-12-31')})
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe(
+      'check-override-floors: notice: left-pad: accepted advisory 1 (GHSA-aaaa-bbbb-cccc) matches no reported advisory; remove its entry from accepted-advisories.json once the fix has landed\n',
+    )
+  })
+
+  it('fails on an expired entry under the real clock, even when the audit is clean', async () => {
+    const result = await runFloors({FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}, {accepted: leftPad('2000-01-01')})
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toBe(
+      'check-override-floors: left-pad: accepted advisory 1 (GHSA-aaaa-bbbb-cccc) expired on 2000-01-01; remove its entry from accepted-advisories.json or renew it after review\n',
+    )
+  })
+
+  it('fails on an accepted file it cannot parse', async () => {
+    const result = await runFloors({FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}, {accepted: '{'})
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr).toMatch(/^check-override-floors: accepted-advisories\.json did not parse as JSON: /u)
+  })
+
   it('reports the exit code the agent prompt reads, as a shell step sees it', async () => {
     const result = await shell(['+e'], '"$2" "$1"; echo "prompt-exit=$?"', 'check-override-floors', {
+      scriptsDirectory: overrideFloorsScripts(EMPTY_ACCEPTANCE),
       env: {FAKE_AUDIT_JSON: advisory('critical'), FAKE_AUDIT_EXIT: '1'},
     })
     expect(result.stdout).toBe('prompt-exit=1\n')
   })
 
   it.each(USAGE_ARGV)('%j is a usage error that runs no audit', async (...argv) => {
-    const result = await run('check-override-floors', 'bun', {argv, env: {FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}})
+    const result = await runFloors({FAKE_AUDIT_JSON: '{}', FAKE_AUDIT_EXIT: '0'}, {argv})
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
     expect(result.stderr).toContain('Usage')
@@ -396,7 +477,13 @@ describe('the package.json lint chain', () => {
       scripts: Object.fromEntries(
         ['check:md-links', 'check:override-floors', 'check:solutions-examples', 'lint'].map(name => [
           name,
-          pointAtScriptsDirectory(scripts[name] ?? '').replace(/&& eslint$/u, '&& echo reached-eslint'),
+          pointAtScriptsDirectory(scripts[name] ?? '')
+            .replace(/&& eslint$/u, '&& echo reached-eslint')
+            // The override-floors link runs from a copy that holds a test-owned, empty accepted-advisories.json.
+            .replaceAll(
+              '"$SCRIPTS_DIR"/check-override-floors.ts',
+              '"$OVERRIDE_FLOORS_SCRIPTS_DIR"/check-override-floors.ts',
+            ),
         ]),
       ),
     }
@@ -411,7 +498,11 @@ describe('the package.json lint chain', () => {
       executable: realBun,
       runtimeArgs: ['--no-install', '--no-env-file'],
       cwd,
-      env: childEnv({...SCRIPTS_DIRECTORY_ENV, ...env}),
+      env: childEnv({
+        ...SCRIPTS_DIRECTORY_ENV,
+        OVERRIDE_FLOORS_SCRIPTS_DIR: overrideFloorsScripts(EMPTY_ACCEPTANCE),
+        ...env,
+      }),
     })
   }
 
