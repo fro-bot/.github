@@ -39,7 +39,7 @@ Requirement IDs are the origin document's.
 ### Deferred to Separate Tasks
 
 - Adding up the per-run cost shown in job summaries, and choosing the light model from it.
-- An independent review of Remediate's own pull requests.
+- An independent review of Remediate's own pull requests. Addressed: the `fro-bot` job now reviews pull requests by the `fro-bot` user on the review tier (`opened` and each push); `[bot]` authors stay excluded.
 
 ## Context & Research
 
