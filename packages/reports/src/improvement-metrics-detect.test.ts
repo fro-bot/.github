@@ -813,6 +813,12 @@ describe('loadGitAddDates runs git with the env it is given', () => {
           PATH: process.env.PATH,
           GIT_CONFIG_GLOBAL: '/dev/null',
           GIT_CONFIG_SYSTEM: '/dev/null',
+          // Without GIT_DIR git discovers the checkout from the cwd. An isolated agent step runs as another
+          // account than the checkout's owner, and the two config files above are off, so trust exactly this
+          // path through the environment. The assertion is about GIT_DIR, not ownership.
+          GIT_CONFIG_COUNT: '1',
+          GIT_CONFIG_KEY_0: 'safe.directory',
+          GIT_CONFIG_VALUE_0: process.cwd(),
         }),
       ).toThrow(/no git add-date resolvable for x\.md/u)
     } finally {
