@@ -1,3 +1,14 @@
+/**
+ * Opens or reuses the `data` -> `main` promotion PR and labels it `automerge` or `needs-review`.
+ *
+ * An open promotion PR is reused only while the base it recorded is the merge base of the pinned `data` commit and
+ * `main`, the `main` commit this run's merge-back absorbed. A PR with another base is closed with a marker comment
+ * and replaced by a fresh PR in the same run, because the merge-back moved its merge base and GitHub then dismisses
+ * an approval given to it. A PR that carries `hold-merge` is never replaced, so no replacement has a hold to lose.
+ * A closed, unmerged PR keeps the promotion closed unless a bot left the marker comment on it and a bot closed it
+ * (the operator closed any other).
+ */
+
 import type {Octokit} from '@octokit/rest'
 import type {RegistryIo} from './registry-io.ts'
 
@@ -17,6 +28,13 @@ const MERGEABLE_STATE_RETRY_DELAY_MS = 1000
 const REDISCOVER_PULL_REQUEST_RETRY_COUNT = 1
 const REDISCOVER_PULL_REQUEST_RETRY_DELAY_MS = 1000
 const CONFLICT_ALERT_TITLE_PREFIX = 'Conflicted data promotion PR:'
+/** The label that stops the self-merge step; `promotion-self-merge.ts` reads the same name. */
+const HOLD_MERGE_LABEL = 'hold-merge'
+/**
+ * The first line of the comment a run leaves on a promotion PR it closes because its merge base moved. A later run
+ * reads it, on a comment by a bot, to tell that closure from the operator's.
+ */
+const REPLACED_PULL_REQUEST_MARKER = '<!-- merge-data-pr: replaced, merge base moved -->'
 type MergeLabel = 'automerge' | 'needs-review'
 
 export interface MergeDataPrParams {
@@ -68,6 +86,8 @@ export interface MergeDataPrResult {
   headMovedFromPin: boolean
   /** True when a pin was given and the PR head could not be freshly read, so the labels were left as they were. */
   headUnverified: boolean
+  /** The number of the open PR this run closed because its merge base moved and replaced with `pullRequestNumber`, or null. */
+  replacedPullRequestNumber: number | null
 }
 
 /**
@@ -150,23 +170,35 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
     commitSha: comparison.data.commits.at(-1)?.sha,
   })
 
-  if (existingPullRequest !== null) {
-    return settlePullRequest(settle, existingPullRequest)
-  }
+  // An open PR is reused unless its base is not the merge base of the pin and `baseBranch`; then the run closes it
+  // and falls through to the create below, so the fresh PR is created after this run's merge-back like any new one.
+  const mergeBaseSha = comparison.data.merge_base_commit?.sha ?? null
+  let replacedPullRequestNumber: number | null = null
 
-  if (params.recreateClosedPullRequest === false) {
+  if (existingPullRequest !== null) {
+    if (!(await replacePullRequestWithStaleBase({...settle, mergeBaseSha}, existingPullRequest))) {
+      return settlePullRequest(settle, existingPullRequest)
+    }
+    replacedPullRequestNumber = existingPullRequest.number
+  } else if (params.recreateClosedPullRequest === false) {
     // The commit lookup can miss an open PR, so look by branch before the closed-PR rule can hide it.
     const openByBranch = await findExistingPullRequestByBranch({octokit, owner, repo, headBranch, baseBranch})
-    if (openByBranch !== null) {
-      return settlePullRequest(settle, openByBranch)
-    }
-
-    // A closed, unmerged promotion PR is the operator's decision: only a run that asked for a review
-    // refresh opens another.
-    if (await newestClosedPullRequestWasUnmerged({octokit, owner, repo, headBranch, baseBranch})) {
-      return {...emptyResult({label: null, staleAlertIssueNumber}), closedPullRequestKept: true}
+    if (openByBranch === null) {
+      // A closed, unmerged promotion PR is the operator's decision: only a run that asked for a review
+      // refresh opens another. A PR this code closed for a moved merge base is not (see the marker).
+      const newestClosed = await readNewestClosedPullRequest({octokit, owner, repo, headBranch, baseBranch, logger})
+      if (newestClosed.closedByOperator) {
+        return {...emptyResult({label: null, staleAlertIssueNumber}), closedPullRequestKept: true}
+      }
+    } else {
+      if (!(await replacePullRequestWithStaleBase({...settle, mergeBaseSha}, openByBranch))) {
+        return settlePullRequest(settle, openByBranch)
+      }
+      replacedPullRequestNumber = openByBranch.number
     }
   }
+
+  const settleNew = {...settle, replacedPullRequestNumber}
 
   try {
     const pullRequest = await octokit.rest.pulls.create({
@@ -178,7 +210,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       body: createPullRequestBody({baseBranch, headBranch, changedFiles: files}),
     })
 
-    return await settlePullRequest(settle, {
+    return await settlePullRequest(settleNew, {
       number: pullRequest.data.number,
       html_url: pullRequest.data.html_url,
       headSha: pullRequest.data.head?.sha ?? null,
@@ -194,7 +226,7 @@ export async function mergeDataPr(params: MergeDataPrParams = {}): Promise<Merge
       })
 
       if (pullRequest !== null) {
-        return settlePullRequest(settle, pullRequest)
+        return settlePullRequest(settleNew, pullRequest)
       }
     }
 
@@ -229,6 +261,7 @@ function emptyResult(params: {label: MergeLabel | null; staleAlertIssueNumber: n
     closedPullRequestKept: false,
     headMovedFromPin: false,
     headUnverified: false,
+    replacedPullRequestNumber: null,
   }
 }
 
@@ -244,10 +277,16 @@ async function settlePullRequest(
     label: MergeLabel
     staleAlertIssueNumber: number | null
     pin: string | undefined
+    /** The PR this run closed for a moved merge base, when `pullRequest` replaces one. */
+    replacedPullRequestNumber?: number | null
   },
   pullRequest: {number: number; html_url: string; headSha?: string | null},
 ): Promise<MergeDataPrResult> {
   const {octokit, owner, repo, headBranch, baseBranch, logger} = context
+  const replacedPullRequestNumber = context.replacedPullRequestNumber ?? null
+  if (replacedPullRequestNumber !== null) {
+    logger.warn(`replaced #${replacedPullRequestNumber} with #${pullRequest.number}: its merge base moved`)
+  }
   const state = await maybeUpdateBehindPullRequest({
     octokit,
     owner,
@@ -310,6 +349,7 @@ async function settlePullRequest(
     closedPullRequestKept: false,
     headMovedFromPin: headMoved,
     headUnverified,
+    replacedPullRequestNumber,
   }
 }
 
@@ -580,7 +620,7 @@ async function findExistingPullRequest(params: {
   headBranch: string
   baseBranch: string
   commitSha: string | undefined
-}): Promise<{number: number; html_url: string} | null> {
+}): Promise<FoundPullRequest | null> {
   if (params.commitSha === undefined) {
     return null
   }
@@ -601,7 +641,7 @@ async function findExistingPullRequest(params: {
       )
     })
 
-    return pullRequest === undefined ? null : {number: pullRequest.number, html_url: pullRequest.html_url}
+    return pullRequest === undefined ? null : toFoundPullRequest(pullRequest)
   } catch (error: unknown) {
     throw toMergeDataPrError(error, `discovering existing pull requests for ${params.commitSha}`)
   }
@@ -613,7 +653,7 @@ async function findExistingPullRequestByBranch(params: {
   repo: string
   headBranch: string
   baseBranch: string
-}): Promise<{number: number; html_url: string} | null> {
+}): Promise<FoundPullRequest | null> {
   try {
     const response = await params.octokit.rest.pulls.list({
       owner: params.owner,
@@ -628,10 +668,106 @@ async function findExistingPullRequestByBranch(params: {
       return candidate.head?.ref === params.headBranch && candidate.base?.ref === params.baseBranch
     })
 
-    return pullRequest === undefined ? null : {number: pullRequest.number, html_url: pullRequest.html_url}
+    return pullRequest === undefined ? null : toFoundPullRequest(pullRequest)
   } catch (error: unknown) {
     throw toMergeDataPrError(error, `discovering existing ${params.headBranch} -> ${params.baseBranch} pull request`)
   }
+}
+
+/** An open promotion PR a lookup found. `baseSha` is the base branch commit the PR recorded when it was opened. */
+interface FoundPullRequest {
+  number: number
+  html_url: string
+  baseSha: string | null
+}
+
+function toFoundPullRequest(pullRequest: {
+  number: number
+  html_url: string
+  base?: {sha?: string} | null
+}): FoundPullRequest {
+  return {number: pullRequest.number, html_url: pullRequest.html_url, baseSha: pullRequest.base?.sha ?? null}
+}
+
+/**
+ * Closes an open promotion PR whose recorded base is not `mergeBaseSha`, the merge base of the pinned head and
+ * `baseBranch`, and returns whether it did.
+ *
+ * A merge-back brings `baseBranch` commits into the head, which changes the PR's merge base after a review was
+ * given, and GitHub then dismisses that review ("The merge-base changed after approval."). The merge base of the
+ * pin and `baseBranch` is the commit the merge-back absorbed, and `baseBranch` advancing after the merge-back does
+ * not change it; a PR opened after the merge-back records it as its base and keeps its approval. This applies to
+ * `automerge` and `needs-review` PRs alike, except one that carries `hold-merge`: that PR stays open, so the hold
+ * is never moved to another PR, and once the operator removes the label the next run replaces it.
+ *
+ * Only a base that can be compared decides. When the merge base, or the PR's base, is missing the PR is reused and
+ * the run logs one fixed line: the check protects the approval, and a missing value does not stop a promotion that
+ * would otherwise proceed (the self-merge step still refuses to merge without a standing approval). A failure to read
+ * the labels, or to comment on or close the PR, throws, so a stale PR never reaches the approval step as if it had
+ * been replaced.
+ */
+async function replacePullRequestWithStaleBase(
+  context: {
+    octokit: OctokitClient
+    owner: string
+    repo: string
+    logger: MergeDataPrLogger
+    mergeBaseSha: string | null
+  },
+  pullRequest: FoundPullRequest,
+): Promise<boolean> {
+  const {octokit, owner, repo, logger, mergeBaseSha} = context
+  if (mergeBaseSha === null || pullRequest.baseSha === null) {
+    logger.warn(`could not compare the merge base of PR #${pullRequest.number}; reusing it.`)
+    return false
+  }
+  if (pullRequest.baseSha === mergeBaseSha) return false
+
+  // The labels are read before anything is written: a held PR is left as it is.
+  let labels
+  try {
+    labels = await octokit.paginate(octokit.rest.issues.listLabelsOnIssue, {
+      owner,
+      repo,
+      issue_number: pullRequest.number,
+      per_page: 100,
+    })
+  } catch (error: unknown) {
+    throw toMergeDataPrError(error, `reading the labels of PR #${pullRequest.number}`)
+  }
+  if (labels.some(label => label.name === HOLD_MERGE_LABEL)) {
+    logger.warn(
+      `PR #${pullRequest.number} carries ${HOLD_MERGE_LABEL}; its merge base moved, so it stays open and is not replaced while held.`,
+    )
+    return false
+  }
+
+  // The comment goes first: a close without the marker would read as the operator's closure on a later run, and a
+  // marker on a PR whose close failed counts only with a bot as the closing actor (see the closed-PR rule).
+  try {
+    await octokit.rest.issues.createComment({
+      owner,
+      repo,
+      issue_number: pullRequest.number,
+      body: createReplacedPullRequestComment(),
+    })
+  } catch (error: unknown) {
+    throw toMergeDataPrError(error, `commenting on PR #${pullRequest.number}`)
+  }
+  try {
+    await octokit.rest.pulls.update({owner, repo, pull_number: pullRequest.number, state: 'closed'})
+  } catch (error: unknown) {
+    throw toMergeDataPrError(error, `closing PR #${pullRequest.number}`)
+  }
+
+  return true
+}
+
+function createReplacedPullRequestComment(): string {
+  return [
+    REPLACED_PULL_REQUEST_MARKER,
+    'A fresh promotion PR replaces this one: its merge base moved, and GitHub would dismiss an approval on it.',
+  ].join('\n')
 }
 
 async function waitForExistingPullRequestByBranch(params: {
@@ -640,7 +776,7 @@ async function waitForExistingPullRequestByBranch(params: {
   repo: string
   headBranch: string
   baseBranch: string
-}): Promise<{number: number; html_url: string} | null> {
+}): Promise<FoundPullRequest | null> {
   return retry(async () => findExistingPullRequestByBranch(params), {
     attempts: REDISCOVER_PULL_REQUEST_RETRY_COUNT + 1,
     delayMs: () => REDISCOVER_PULL_REQUEST_RETRY_DELAY_MS,
@@ -686,13 +822,20 @@ async function replaceLabel(params: {
   }
 }
 
-async function newestClosedPullRequestWasUnmerged(params: {
+/**
+ * Reads the newest closed promotion PR. `closedByOperator` is true for a closed, unmerged PR that this code did not
+ * close for a moved merge base. The code's own closure needs both signs: the marker comment by a bot and a bot as
+ * the actor of the latest `closed` event, so a PR that was marked but then closed by the operator stays closed.
+ * An unreadable event list counts as the operator's closure.
+ */
+async function readNewestClosedPullRequest(params: {
   octokit: OctokitClient
   owner: string
   repo: string
   headBranch: string
   baseBranch: string
-}): Promise<boolean> {
+  logger: MergeDataPrLogger
+}): Promise<{closedByOperator: boolean}> {
   try {
     const response = await params.octokit.rest.pulls.list({
       owner: params.owner,
@@ -705,13 +848,61 @@ async function newestClosedPullRequestWasUnmerged(params: {
       per_page: 1,
     })
     const newest = response.data[0]
+    if (newest === undefined || newest.merged_at !== null) return {closedByOperator: false}
 
-    return newest !== undefined && newest.merged_at === null
+    const target = {octokit: params.octokit, owner: params.owner, repo: params.repo, pullRequestNumber: newest.number}
+    if (!(await hasReplacedMarker(target)) || !(await wasClosedByBot({...target, logger: params.logger}))) {
+      return {closedByOperator: true}
+    }
+
+    return {closedByOperator: false}
   } catch (error: unknown) {
     throw toMergeDataPrError(
       error,
       `looking up the newest closed ${params.headBranch} -> ${params.baseBranch} pull request`,
     )
+  }
+}
+
+async function hasReplacedMarker(params: {
+  octokit: OctokitClient
+  owner: string
+  repo: string
+  pullRequestNumber: number
+}): Promise<boolean> {
+  const comments = await params.octokit.paginate(params.octokit.rest.issues.listComments, {
+    owner: params.owner,
+    repo: params.repo,
+    issue_number: params.pullRequestNumber,
+    per_page: 100,
+  })
+
+  return comments.some(
+    comment => comment.user?.type === 'Bot' && comment.body?.startsWith(REPLACED_PULL_REQUEST_MARKER),
+  )
+}
+
+async function wasClosedByBot(params: {
+  octokit: OctokitClient
+  owner: string
+  repo: string
+  pullRequestNumber: number
+  logger: MergeDataPrLogger
+}): Promise<boolean> {
+  try {
+    const events = await params.octokit.paginate(params.octokit.rest.issues.listEvents, {
+      owner: params.owner,
+      repo: params.repo,
+      issue_number: params.pullRequestNumber,
+      per_page: 100,
+    })
+
+    return events.findLast(event => event.event === 'closed')?.actor?.type === 'Bot'
+  } catch {
+    params.logger.warn(
+      `could not read the closing event of PR #${params.pullRequestNumber}; treating it as closed by the operator.`,
+    )
+    return false
   }
 }
 
