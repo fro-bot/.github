@@ -11012,3 +11012,9 @@ the artifact-chained status publishing pattern, a Repos list entry, a source,
 and a `related` entry. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/infra
+
+## [2026-11-18 17:03] manual-edit | knowledge/wiki/repos/marcusrbrown--copiloting.md
+
+Manual correction to knowledge/wiki/repos/marcusrbrown--copiloting.md
+
+Sources: none
