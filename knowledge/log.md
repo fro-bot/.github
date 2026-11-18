@@ -10988,3 +10988,27 @@ left as is. No topic or entity pages changed. The corrections context was
 empty.
 
 Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-11-18 14:09] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Repeat survey of public `main` at `1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7`.
+Reads were limited to repo metadata, tree listings, the root README, manifests
+and workflow files. The repo is still public, MIT, on default branch `main`,
+with Bun + TypeScript, and Fro Bot (agent v0.145.1 in both jobs) and Renovate
+still present. The material change is a new public docs and status site:
+`apps/docs` (Astro + Starlight, #1757) publishes to GitHub Pages at
+mrbro.dev/infra/ through the new `site.yaml`. It is fed by the half-hourly
+`status-snapshot.yaml` artifact chain. Also new: `opencode-go-privacy.yaml`, a
+daily OpenCode Go privacy-snapshot PR for cliproxy's OpenCode Go routing.
+Workflows went from 21 to 24, apps from 8 to 9, and the CLI manifest from 0.26.0
+to 0.28.1. The root README tables omit the docs app and the three new workflows.
+
+In [[marcusrbrown--infra]], added one current-state line near the top and one
+dated 2026-11-18 section. Bumped `updated`, added no `sources` entry, and left
+earlier dated sections unchanged. In [[github-pages]], added a dated section on
+the artifact-chained status publishing pattern, a Repos list entry, a source,
+and a `related` entry. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/infra

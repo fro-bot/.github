@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Pages
 created: 2026-04-18
-updated: 2026-11-07
+updated: 2026-11-18
 sources:
+  - url: https://github.com/marcusrbrown/infra/blob/1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7/.github/workflows/site.yaml
+    sha: 1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7
+    accessed: 2026-11-18
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io/blob/8a1567dfedb1258675e4cfa39d2e5c1854dc3487/.github/workflows/performance.yaml
     sha: 8a1567dfedb1258675e4cfa39d2e5c1854dc3487
     accessed: 2026-11-07
@@ -93,11 +96,36 @@ related:
   - marcusrbrown--presentations
   - fro-bot--systematic
   - fro-bot--fro-bot-github-io
+  - marcusrbrown--infra
 ---
 
 # GitHub Pages
 
 Static site hosting via GitHub. Deployment patterns observed across the Fro Bot ecosystem.
+
+## Artifact-chained status publishing (2026-11-18)
+
+[[marcusrbrown--infra]] added `apps/docs`, an Astro + Starlight docs and status
+site published at `mrbro.dev/infra/` (#1757, 2026-11-02). Its status data has
+no committed history. A half-hourly `Status Snapshot` workflow downloads the
+previous `status-history` artifact and appends to it. It re-uploads the result
+with 7-day retention, and Pages publishes off `workflow_run` from that snapshot.
+Two guards make the chain fail closed:
+
+- Push and dispatch builds locate the latest usable artifact first and fail
+  when none exists, instead of publishing an empty status page. Pull requests
+  build from a committed fixture.
+- `workflow_run` publishes only after a *successful* snapshot from a
+  `schedule` or `workflow_dispatch` run on `main`. A skipped trigger gets a
+  unique concurrency group, so it cannot cancel a real publish.
+
+The site build also runs redaction gates on both the source and `dist`. The
+trade-off is that this history is ephemeral: if the snapshot schedule stops for
+more than seven days, the chain needs a manual `bootstrap` dispatch. That is a
+declared design, not an observed failure.
+
+Sources: [site workflow](https://github.com/marcusrbrown/infra/blob/1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7/.github/workflows/site.yaml),
+[status snapshot](https://github.com/marcusrbrown/infra/blob/1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7/.github/workflows/status-snapshot.yaml).
 
 ## Local Lighthouse evidence is not production monitoring (2026-11-07)
 
@@ -396,6 +424,7 @@ Sources: [brand-site README](https://github.com/marcusrbrown/marcusrbrown.com/bl
 - [[fro-bot--systematic]] — Starlight/Astro docs site for `@fro.bot/systematic`, deployed to `gh-pages` branch at fro.bot/systematic/
 - [[marcusrbrown--presentations]] — multi-deck slide archive (CRA/Spectacle + Slidev), assembled from two independent toolchains into one `_site/` and deployed via the Pages artifact API (2026-08-05, `#60`)
 - [[fro-bot--fro-bot-github-io]] — org-level custom-domain holder for `fro.bot`; a single `CNAME` blob, legacy build from `main:/`, no content of its own
+- [[marcusrbrown--infra]] — Astro/Starlight infra docs and status site (`apps/docs`) at mrbro.dev/infra/, deployed via the Pages artifact API from `site.yaml` (2026-11-18)
 
 ## Deployment Patterns Observed
 
