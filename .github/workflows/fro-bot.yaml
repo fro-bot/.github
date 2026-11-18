@@ -17,8 +17,11 @@ on:
     types: [created]
   issues:
     types: [opened, edited]
+  # Any other PR is reviewed when CODEOWNERS requests fro-bot (review_requested) and on each push. GitHub
+  # cannot request a review from a PR's own author, so a PR by the fro-bot user is reviewed on opened and on
+  # each push instead; the fro-bot job admits `opened` for that author only, so no other PR starts twice.
   pull_request:
-    types: [synchronize, ready_for_review, reopened, review_requested]
+    types: [opened, synchronize, ready_for_review, reopened, review_requested]
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -718,7 +721,16 @@ jobs:
         (
           github.event_name == 'pull_request' &&
           !endsWith(github.event.pull_request.user.login || '', '[bot]') &&
-          (github.event.pull_request.user.login || '') != 'fro-bot'
+          (
+            (
+              (github.event.pull_request.user.login || '') == 'fro-bot' &&
+              contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action)
+            ) ||
+            (
+              (github.event.pull_request.user.login || '') != 'fro-bot' &&
+              github.event.action != 'opened'
+            )
+          )
         ) ||
         (
           (github.event_name == 'issue_comment' ||
