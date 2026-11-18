@@ -2782,84 +2782,60 @@ describe('mergeDataPr: an open promotion PR whose merge base moved', () => {
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith('replaced #55 with #90: its merge base moved')
   })
 
-  describe('hold-merge', () => {
+  describe('a PR that carries hold-merge', () => {
     const held = {listLabelsOnIssue: async () => ({data: [{name: 'automerge'}, {name: 'hold-merge'}]})}
-    const holdCalls = (addLabels: {mock: {calls: [{issue_number: number; labels: string[]}][]}}) =>
-      addLabels.mock.calls.filter(([params]) => params.labels.includes('hold-merge')).map(([params]) => params)
+    const HOLD_LOG = 'PR #55 carries hold-merge; its merge base moved, so it stays open and is not replaced while held.'
 
-    it('carries to the fresh PR before the module returns', async () => {
-      const {octokit, addLabels, order} = replacing(held, [])
-      addLabels.mockImplementation(async params => {
-        order.push(`label ${params.labels.join(',')}`)
-        return {data: []}
+    it.each([
+      ['found by commit', {}, undefined],
+      [
+        'found by branch',
+        {
+          listPullRequestsAssociatedWithCommit: async () => ({data: []}),
+          listPullRequests: byState([stalePull(55)], []),
+        },
+        false,
+      ],
+      ['on a refresh-review run', {}, true],
+    ])('is reused, not replaced, although its base moved (%s)', async (_name, found, recreateClosedPullRequest) => {
+      const logger = mockLogger()
+      const {octokit, createComment, updatePullRequest, createPullRequest, addLabels} = replacing({...held, ...found})
+
+      const result = await mergeDataPr({
+        octokit,
+        now: NOW,
+        pin: PIN,
+        qualifies: true,
+        recreateClosedPullRequest,
+        logger,
       })
 
-      await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
-
-      expect(holdCalls(addLabels)).toEqual([
-        {owner: 'fro-bot', repo: '.github', issue_number: 42, labels: ['hold-merge']},
-      ])
-      expect(order).toEqual(['comment', 'close', 'create', 'label hold-merge', 'label automerge'])
+      expect(createComment).not.toHaveBeenCalled()
+      expect(updatePullRequest).not.toHaveBeenCalled()
+      expect(createPullRequest).not.toHaveBeenCalled()
+      expect(addLabels).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({issue_number: 55}))
+      expect(result).toMatchObject({pullRequestNumber: 55, replacedPullRequestNumber: null})
+      expect(vi.mocked(logger.warn)).toHaveBeenCalledWith(HOLD_LOG)
     })
 
-    it('reads the labels of the PR it closes, once, before the comment and the close', async () => {
-      const listLabelsOnIssue = vi.fn(async (_params: {issue_number: number; per_page?: number}) => ({data: []}))
-      const {octokit, createComment} = replacing({listLabelsOnIssue})
+    it('is replaced when the label is not on it, after its labels were read once, before any write', async () => {
+      const listLabelsOnIssue = vi.fn(async (_params: {issue_number: number; per_page?: number}) => ({
+        data: [{name: 'automerge'}],
+      }))
+      const {octokit, createComment, createPullRequest} = replacing({listLabelsOnIssue})
 
-      await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
+      const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
 
       expect(listLabelsOnIssue).toHaveBeenCalledExactlyOnceWith(
         expect.objectContaining({owner: 'fro-bot', repo: '.github', issue_number: 55, per_page: 100}),
       )
       expect(listLabelsOnIssue.mock.invocationCallOrder[0]).toBeLessThan(createComment.mock.invocationCallOrder[0] ?? 0)
+      expect(createPullRequest).toHaveBeenCalledTimes(1)
+      expect(result.replacedPullRequestNumber).toBe(55)
     })
 
-    it('is not added to the fresh PR when the old one did not carry it', async () => {
-      const {octokit, addLabels} = replacing({
-        listLabelsOnIssue: async () => ({data: [{name: 'automerge'}]}),
-      })
-      await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
-      expect(holdCalls(addLabels)).toEqual([])
-    })
-
-    it('carries to the PR that won the create race', async () => {
-      const {octokit, addLabels} = replacing({
-        ...held,
-        createPullRequest: async () => {
-          throw duplicate422()
-        },
-        listPullRequests: async () => ({data: [stalePull(90, MERGE_BASE)]}),
-      })
-      await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})
-      expect(holdCalls(addLabels).map(params => params.issue_number)).toEqual([90])
-    })
-
-    it('carries even when the fresh PR head is not the pin and its other labels are left alone', async () => {
-      const {octokit, addLabels} = replacing({
-        ...held,
-        getPullRequest: async () => ({data: {mergeable_state: 'clean', head: {sha: OTHER_HEAD}}}),
-      })
-      const result = await mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true, logger: mockLogger()})
-      expect(holdCalls(addLabels).map(params => params.issue_number)).toEqual([42])
-      expect(addLabels).toHaveBeenCalledTimes(1)
-      expect(result.headMovedFromPin).toBe(true)
-    })
-
-    it('fails when it cannot be added to the fresh PR', async () => {
-      const {octokit} = replacing({
-        ...held,
-        addLabels: async (params: {labels: string[]}) => {
-          if (params.labels.includes('hold-merge')) throw statusError(403, 'no')
-          return {data: []}
-        },
-      })
-      await expect(mergeDataPr({octokit, now: NOW, pin: PIN, qualifies: true})).rejects.toThrow(
-        'GitHub API error while adding hold-merge label to PR #42: no',
-      )
-    })
-
-    it('fails before it closes anything when the labels of the old PR cannot be read', async () => {
-      const {octokit, createComment, updatePullRequest, createPullRequest} = replacing({
+    it('fails before any write when its labels cannot be read', async () => {
+      const {octokit, createComment, updatePullRequest, createPullRequest, addLabels} = replacing({
         listLabelsOnIssue: async () => {
           throw statusError(500, 'down')
         },
@@ -2870,25 +2846,24 @@ describe('mergeDataPr: an open promotion PR whose merge base moved', () => {
       expect(createComment).not.toHaveBeenCalled()
       expect(updatePullRequest).not.toHaveBeenCalled()
       expect(createPullRequest).not.toHaveBeenCalled()
+      expect(addLabels).not.toHaveBeenCalled()
     })
   })
 
   describe('a later run', () => {
-    const closedUnmerged = (labels: {name: string}[] = []) => ({
+    const closedUnmerged = () => ({
       number: 55,
       state: 'closed',
       merged_at: null,
       head: {ref: 'data'},
       base: {ref: 'main'},
-      labels,
     })
 
-    /** A run that finds no open PR and the newest closed PR #55 with these comments, events and labels. */
+    /** A run that finds no open PR and the newest closed PR #55 with these comments and events. */
     function laterRun(found: {
       comments: unknown[]
       events?: unknown[]
       eventsError?: Error
-      labels?: {name: string}[]
       logger?: MergeDataPrLogger
     }) {
       const listComments = vi.fn(async (_params: {issue_number: number; per_page?: number}) => ({data: found.comments}))
@@ -2898,7 +2873,7 @@ describe('mergeDataPr: an open promotion PR whose merge base moved', () => {
       })
       const run = replacing({
         listPullRequestsAssociatedWithCommit: async () => ({data: []}),
-        listPullRequests: byState([], [closedUnmerged(found.labels)]),
+        listPullRequests: byState([], [closedUnmerged()]),
         listComments,
         listEvents,
       })
@@ -2980,38 +2955,6 @@ describe('mergeDataPr: an open promotion PR whose merge base moved', () => {
 
       expect((await run.result).closedPullRequestKept).toBe(true)
       expect(run.createPullRequest).not.toHaveBeenCalled()
-    })
-
-    it('carries hold-merge from the replaced PR to the one it opens', async () => {
-      const posted = await postedMarker()
-
-      const run = laterRun({
-        comments: [{user: bot, body: posted}],
-        events: [closedBy(bot)],
-        labels: [{name: 'automerge'}, {name: 'hold-merge'}],
-      })
-      await run.result
-
-      expect(run.addLabels).toHaveBeenCalledTimes(2)
-      expect(run.addLabels).toHaveBeenNthCalledWith(1, {
-        owner: 'fro-bot',
-        repo: '.github',
-        issue_number: 42,
-        labels: ['hold-merge'],
-      })
-    })
-
-    it('adds no hold-merge when the replaced PR did not carry it', async () => {
-      const posted = await postedMarker()
-
-      const run = laterRun({
-        comments: [{user: bot, body: posted}],
-        events: [closedBy(bot)],
-        labels: [{name: 'automerge'}],
-      })
-      await run.result
-
-      expect(run.addLabels).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({labels: ['automerge']}))
     })
 
     it('fails when the comments of the newest closed PR cannot be read', async () => {
