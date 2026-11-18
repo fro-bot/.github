@@ -10940,3 +10940,81 @@ entry, and left the dated sections untouched. No topic or entity pages changed.
 The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-11-18 07:10] manual-edit | repo:fro-bot/agent
+
+Daily oversight note, from the remediation handoff's one learning, verified in
+this pass: added one bullet to the `isolate-agent` git-trust section of
+[[fro-bot--agent]]. With fro-bot/.github pinned to `v0.145.1`, the isolated
+agent still runs as `fro-bot-sandbox` on a `runner`-owned checkout, and the
+`improvement-metrics-detect.test.ts` case still fails on ownership (re-run
+directly in this pass). Bumped `updated` and added the release commit as a
+source.
+
+Sources: https://github.com/fro-bot/agent/releases/tag/v0.145.1, https://github.com/fro-bot/.github/blob/10a4216/.github/workflows/fro-bot.yaml#L832
+
+## [2026-11-18 07:03] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@10a4216aceacc01f2a50a78b10838951575491a5
+
+## [2026-11-18 14:07] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Repeat survey of public `main` at `9480611873e05e9b5795fd50b39f548a107e7ded`
+(head commit: Renovate preset bump to v5.2.17, #950). Reads were limited to
+repo metadata, directory listings, `docs/readme.md`, `requirements.txt`,
+`mise.toml` and the three workflow files. No target content was executed.
+No material change since 2026-11-03: default branch `main`, public, not
+archived; the README still declares MIT (the API still detects no license);
+the same three workflows (`ci.yaml`, `renovate.yaml`,
+`update-repo-settings.yaml`), the same CI job shape, and Renovate is still
+present. Fro Bot is still absent, and the page already says so. The listing
+still holds 2,200 blobs, 74 trees and one gitlink. The malformed
+`.HA_VERSION` output write and the advisory Remark step are both unchanged.
+Version movement only: Prettier 3.9.10 → 3.10.1, mise pre-commit → 4.7.0,
+the `esphome` gitlink → `34f9267`. `bfra-me/.github` is still v4.43.0 and
+`requirements.txt` is unchanged.
+
+In [[marcusrbrown--ha-config]], corrected four contradicted current-state
+statements where they stand: the Overview last-push line, the CI Jobs
+Prettier version, and the two mise pre-commit version mentions in Developer
+Tooling. Bumped `updated`, added no `sources` entry and no dated section, and
+left the dated snapshots and findings untouched. The Renovate preset line was
+not re-read (`renovate.json5` was outside the permitted reads), so it was
+left as is. No topic or entity pages changed. The corrections context was
+empty.
+
+Sources: https://github.com/marcusrbrown/ha-config
+
+## [2026-11-18 14:09] ingest | repo:marcusrbrown/infra
+
+Surveyed marcusrbrown/infra and updated the control-plane wiki.
+
+Repeat survey of public `main` at `1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7`.
+Reads were limited to repo metadata, tree listings, the root README, manifests
+and workflow files. The repo is still public, MIT, on default branch `main`,
+with Bun + TypeScript, and Fro Bot (agent v0.145.1 in both jobs) and Renovate
+still present. The material change is a new public docs and status site:
+`apps/docs` (Astro + Starlight, #1757) publishes to GitHub Pages at
+mrbro.dev/infra/ through the new `site.yaml`. It is fed by the half-hourly
+`status-snapshot.yaml` artifact chain. Also new: `opencode-go-privacy.yaml`, a
+daily OpenCode Go privacy-snapshot PR for cliproxy's OpenCode Go routing.
+Workflows went from 21 to 24, apps from 8 to 9, and the CLI manifest from 0.26.0
+to 0.28.1. The root README tables omit the docs app and the three new workflows.
+
+In [[marcusrbrown--infra]], added one current-state line near the top and one
+dated 2026-11-18 section. Bumped `updated`, added no `sources` entry, and left
+earlier dated sections unchanged. In [[github-pages]], added a dated section on
+the artifact-chained status publishing pattern, a Repos list entry, a source,
+and a `related` entry. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/infra
+
+## [2026-11-18 17:03] manual-edit | knowledge/wiki/repos/marcusrbrown--copiloting.md
+
+Manual correction to knowledge/wiki/repos/marcusrbrown--copiloting.md
+
+Sources: none

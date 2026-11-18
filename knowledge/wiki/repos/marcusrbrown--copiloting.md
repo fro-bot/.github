@@ -194,7 +194,7 @@ Per AGENTS.md (self-documented):
 
 - **Python tests** (`tests/`): pytest. Tests cover app factory, auth views, config, health views, hooks, DB models.
 - **TypeScript tests** (`tests/ts/`): vitest. Config at `vitest.config.ts`, includes `tests/**/*.test.ts`.
-- `pyproject.toml` sets `pythonpath = ["course/pdf-dist"]` so tests can import the Flask app.
+- `pyproject.toml` sets `pythonpath = ["course/pdf-dist"]` so tests can import the Flask application.
 
 ## Survey History
 

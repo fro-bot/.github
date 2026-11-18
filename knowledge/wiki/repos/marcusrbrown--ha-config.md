@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/ha-config
 created: 2025-06-18
-updated: 2026-11-03
+updated: 2026-11-18
 node_id: R_kgDOJ_bMaQ
 sources:
   - url: https://github.com/marcusrbrown/ha-config
@@ -204,7 +204,7 @@ The older claims below should not be read as October runtime measurements.
 
 - **Purpose:** Version-controlled Home Assistant configuration
 - **Default branch:** `main`
-- **Last push:** 2026-09-21T01:25:35Z (`35ed8b7`, `chore(deps): update esphome digest to 7f39a6f` (#912) — a subject that names the digest the commit **removes**; see finding 1)
+- **Last push:** 2026-11-16T12:47:09Z (`9480611`, `chore(deps): update marcusrbrown/renovate-config preset to v5.2.17` (#950))
 - **Created:** 2023-07-25
 - **`node_id`:** `R_kgDOJ_bMaQ` (repo id `670485609`)
 - **Tree (2026-09-21):** 2,200 blobs / 74 trees / 1 submodule. 11 packages, 10 custom components, 3 workflows — the same shape as the 2025-06 survey. `custom_components/` alone is 2,125 of the 2,200 blobs (**96.6%**): by file count this is a vendored-integrations repo with a Home Assistant config attached. No root `README.md`, no `LICENSE` (first time recorded).
@@ -450,7 +450,7 @@ The CI pipeline runs four sequential/parallel jobs:
 
 1. **YAML Lint** — `frenck/action-yamllint@v1.5.0` validates YAML syntax
 2. **Remark Lint** — Markdown linting via `pipelinecomponents/remark-lint` (continue-on-error)
-3. **Prettier** — Format check using Prettier 3.9.6 (diff-only on PRs via `creyD/prettier_action@v4.3`)
+3. **Prettier** — Format check using Prettier 3.10.1 (diff-only on PRs via `creyD/prettier_action@v4.3`)
 4. **Check Home Assistant Config** — Runs `frenck/action-home-assistant@v1.4.1` against the HA version in `.HA_VERSION` (depends on lint jobs)
 
 ### Branch Protection
@@ -489,12 +489,12 @@ This is the same event-driven Renovate pattern used in [[marcusrbrown--github]] 
 ## Developer Tooling
 
 - **Renovate:** Extends `marcusrbrown/renovate-config#5.2.13` — **held** across this window (last moved 2026-09-05, #897). Custom managers for `.pre-commit-config.yaml` (Python version + pip packages) and `mise.toml` (pre-commit via aqua). `'git-submodules': { enabled: true }` with no schedule, so every upstream commit in [[marcusrbrown--esphome-life]] produces a PR here — and since that repo is itself Renovate-driven, this repo's churn is a **bot chain**: one dependency bot's merges are another's inbox. Post-upgrade runs `npx prettier@3.9.8 --no-color --write .` — Prettier advanced 3.9.6 → 3.9.7 (#908) → **3.9.8** (#910), propagated in the same commit to both the `ci.yaml` `PRETTIER_VERSION` env and the `postUpgradeTasks` command, which is the coupled-constant pattern done right: one Renovate change, both call sites. Automerge on minor/patch pip updates only — which is why every parked PR in this repo's history carries the `major` label. ESPHome version updates are unseparated: a repo-local rule sets `separateMajorMinor: false` **and** `separateMinorPatch: false` for `esphome`, collapsing every pending release into one PR. Because ESPHome is calendar-versioned, `2025.12.7 → 2026.8.2` classifies as a **major**, so the entire nine-month jump must land as a single approval-gated change — #777, open ~114 days. This is the [[esphome]] calendar-versioning trap, but arriving by a different route than [[marcusrbrown--esphome-life]]: there the suppression comes from the shared preset's `versioning: loose` and the pin is invisible; here the repo opts into the suppression deliberately and the cost is at least *visible* as a parked PR. Visible-and-stuck beats invisible-and-stuck, but neither ships the upgrade. **2026-09-21 addendum:** that same rule is unscoped by manager, so it also matches the `esphome` git submodule — see finding 1. The accommodation written to make one dependency legible is the mechanism that made a second one illegible. The `groupName: pre-commit` rule groups the `pre-commit` package updates together. A dedicated `'pre-commit'` block (`enabled: true`, `addLabels: [pre-commit]`) is now present in the config, elevating pre-commit hook management to an explicit first-class Renovate manager (the `.pre-commit-config.yaml` `pre-commit-hooks` rev is now tracked at v6.0.0).
-- **Pre-commit:** Managed via `mise` (aqua, v4.6.2 — bumped from 4.6.0 via #857 v4.6.1 → #867 v4.6.2). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation (`pre-commit-hooks` rev v6.0.0). Excludes `custom_components/`, `www/`, `.HA_VERSION`. Uses `--unsafe` YAML check to allow HA YAML extensions (`!include`, `!secret`, etc.).
+- **Pre-commit:** Managed via `mise` (aqua, v4.7.0; earlier bumped from 4.6.0 via #857 v4.6.1 → #867 v4.6.2). Hooks: trailing whitespace, EOF fixer, double-quote string fixer, requirements-txt fixer, large file check, merge conflict check, TOML/YAML validation (`pre-commit-hooks` rev v6.0.0). Excludes `custom_components/`, `www/`, `.HA_VERSION`. Uses `--unsafe` YAML check to allow HA YAML extensions (`!include`, `!secret`, etc.).
 - **Probot Settings:** `_extends: .github:common-settings.yaml` — the bare short-form, resolving to **`marcusrbrown/.github`** ([[marcusrbrown--github]]). Prior surveys recorded this as `fro-bot/.github`; see Corrections.
 - **AI Rules:** `.cursorrules` defines HA-specific development conventions (YAML standards, package organization, security, testing).
 - **Python deps:** `esphome==2025.12.7`, `yamllint==1.38.0` (in `requirements.txt`, byte-identical at `35ed8b7`). `yamllint` is **current** (PyPI latest 1.38.0, verified 2026-09-21) — so the file is not neglected; exactly one of its two lines is version-gated. `esphome` upstream is **2026.9.0** (released 2026-09-16), which is what parked PR #777 now proposes.
 - **Naming hazard worth stating plainly:** the token `esphome` denotes three different things in this repo — a PyPI package in `requirements.txt`, a git submodule path resolving to `marcusrbrown/esphome.life`, and a Renovate `matchPackageNames` entry that (unintentionally) governs both. A survey, a reviewer, or a package rule that does not disambiguate will get it wrong; finding 1 is what happens when a package rule doesn't.
-- **mise.toml:** Manages `pre-commit` tool version via aqua (`aqua:pre-commit/pre-commit = "4.6.2"`).
+- **mise.toml:** Manages `pre-commit` tool version via aqua (`aqua:pre-commit/pre-commit = "4.7.0"`).
 
 ## Fro Bot Integration
 

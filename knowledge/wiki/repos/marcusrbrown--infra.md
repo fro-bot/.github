@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/infra
 created: 2026-04-18
-updated: 2026-10-21
+updated: 2026-11-18
 node_id: R_kgDOR4g8TA
 sources:
   - url: https://github.com/marcusrbrown/infra
@@ -110,6 +110,52 @@ related:
 # marcusrbrown/infra
 
 Bun workspace monorepo for Marcus R. Brown's personal infrastructure. Hosts KeeWeb deploy automation, the CLIProxyAPI proxy (routes Fro Bot agents to Claude via the Claude Code OAuth subscription), the [[fro-bot--agent]] Discord gateway deployment, self-hosted Umami analytics, the [[fro-bot--dashboard]] operator dashboard deploy, a WireGuard VPN egress box on AWS Lightsail, an OIDC-authenticated credential broker (short-lived off-runner cliproxy keys for the harness pipeline), an AWS S3 durable-storage provisioner for `fro-bot/agent` session state (OIDC → STS, per-repo least-privilege IAM roles), and an operational CLI with MCP bridge.
+
+Current state (2026-11-18, `1dd6ce8`): nine app directories (adds `apps/docs`), two packages, 24 workflows; both `fro-bot.yaml` jobs pin agent **v0.145.1**; CLI manifest **0.28.1**. Still public, MIT, default branch `main`, Bun + TypeScript, Renovate present.
+
+## 2026-11-18 — infra now publishes a public docs and status site
+
+New since October 21: `apps/docs` (`@marcusrbrown/infra-docs`, private), an
+Astro 7.4 + Starlight 0.42 site added in #1757 (2026-11-02). It is the repo's
+first output that ships to GitHub Pages rather than a droplet or npm; the Pages
+API reports `https://mrbro.dev/infra/` with workflow builds. Its `build` script
+chains content generation, diagram rendering, a source redaction gate, `astro
+build`, a dist redaction gate, and a status-output check. Root `package.json`
+adds `fetch:upstream-compose`.
+
+Three workflows arrived with it or alongside it (21 → 24):
+
+- **`site.yaml`** builds on PRs and on `main` pushes touching `ARCHITECTURE.md`,
+  `STRUCTURE.md`, `apps/*/AGENTS.md`, `docs/runbooks/**`, `docs/solutions/**`,
+  `apps/docs/**` and shared docs/status code, plus `workflow_run` after Status
+  Snapshot. Deploy uses `actions/deploy-pages` in the `github-pages`
+  environment, `main` only. A `workflow_run` build publishes only after a
+  successful snapshot from a `schedule` or `workflow_dispatch` run on `main`.
+  Push and dispatch builds fail when no usable status-history artifact is
+  located. One concurrency group is shared by publishing runs, so a newer run
+  cancels an older in-flight one.
+- **`status-snapshot.yaml`** (#1756) runs at minutes 11 and 41 each hour,
+  `main` only, with read-only `contents`/`actions`/`deployments`. It carries
+  history forward as a `status-history` artifact with 7-day retention. A
+  manual `bootstrap` input creates the first artifact and refuses when a valid
+  one exists. History therefore lives in Actions artifacts, not in git.
+- **`opencode-go-privacy.yaml`** (#1804, 2026-11-05) runs daily at 05:17 UTC.
+  It parses the privacy table from `anomalyco/opencode` `dev` into
+  `packages/shared/opencode-go/privacy-snapshot.json` and opens or updates one
+  stable PR when terms change. Auto-merge is off. It mints a scoped App token
+  only after a successful parse, and closes a stale PR when upstream matches
+  `main` again. It came with cliproxy serving OpenCode Go models. The README
+  says the auth monitor probes both the Anthropic and OpenCode Go routes.
+
+The root README's package and workflow tables list neither `apps/docs` nor the
+three new workflows. This is documentation drift and does not affect the
+build. Live site content, artifact presence and run history were not inspected.
+Fro Bot is still present, so no missing-workflow follow-up is needed.
+
+Sources: [site workflow](https://github.com/marcusrbrown/infra/blob/1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7/.github/workflows/site.yaml),
+[status snapshot](https://github.com/marcusrbrown/infra/blob/1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7/.github/workflows/status-snapshot.yaml),
+[docs manifest](https://github.com/marcusrbrown/infra/blob/1dd6ce847c7c5c251f4eb22bd9fb27e19a08efc7/apps/docs/package.json).
+See [[github-pages]].
 
 ## 2026-10-21 — declared deployment contracts
 
