@@ -416,7 +416,7 @@ Repository management:
 | **Manage Issues** | Issue-hygiene automation | Daily 01:30 UTC, reusable, dispatch |
 | **Renovate** | Automated dependency updates | PR/issue events, `Main` completion, dispatch |
 
-> [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation. A PR by the `fro-bot` user (Remediate's `branch-pr` output) is reviewed on `opened` and on each push instead, because GitHub cannot request a review from a PR's own author; PRs by `[bot]` accounts (Renovate, the Fro Bot App) are not. The agent refuses to approve a PR by its own account, so a review of a `fro-bot`-user PR that would pass fails delivery as `review-guard-blocked` (a `request-changes` review posts normally).
+> [!NOTE] The Fro Bot PR-review workflow triggers on `ready_for_review` and `review_requested` to reduce duplicate runs. For ad hoc reviews outside those events, mention `@fro-bot` in the PR conversation. A PR by the `fro-bot` user (Remediate's `branch-pr` output) is reviewed on `opened` and on each push instead, because GitHub cannot request a review from a PR's own author; PRs by `[bot]` accounts (Renovate, the Fro Bot App) are not. GitHub does not let an account approve or request changes on its own PR, so the agent posts its verdict on a `fro-bot`-user PR as a `COMMENT` review (fro-bot/agent#2241). That review neither satisfies nor blocks branch protection; a human review is still needed to merge.
 
 ### Agent Models
 
