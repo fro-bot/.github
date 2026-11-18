@@ -2,9 +2,12 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-17
+updated: 2026-11-18
 node_id: R_kgDOQyTMEw
 sources:
+  - url: https://github.com/fro-bot/agent
+    sha: f49a72e96e1d891c61cecd02a768d626817a7831
+    accessed: 2026-11-18
   - url: https://github.com/fro-bot/agent
     sha: b70e54edc0333fbf97ca4d4204775ce33158b3b3
     accessed: 2026-11-17
@@ -216,6 +219,12 @@ and one consumer test, not a full survey.
   `fro-bot-sandbox` against a checkout owned by `runner`, and the same test
   (unchanged at `9c11624`) still failed on ownership. CI on the same commit
   stayed green.
+- **Still open at `v0.145.1` (`f49a72e9`, re-checked 2026-11-18).** fro-bot/.github
+  `main` at `10a4216` pins every agent step to this release. Run isolated as
+  `fro-bot-sandbox` against the `runner`-owned checkout, the same test still
+  failed with "detected dubious ownership" while its other 56 cases passed.
+  `main.yaml` CI on `10a4216` was green. The patch release did not change the
+  residual boundary described above.
 
 ## `isolate-agent` gets a read-only filesystem view and the runner's toolchains (2026-11-15 oversight note)
 

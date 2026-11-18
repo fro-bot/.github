@@ -10940,3 +10940,21 @@ entry, and left the dated sections untouched. No topic or entity pages changed.
 The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/gpt
+
+## [2026-11-18 07:10] manual-edit | repo:fro-bot/agent
+
+Daily oversight note, from the remediation handoff's one learning, verified in
+this pass: added one bullet to the `isolate-agent` git-trust section of
+[[fro-bot--agent]]. With fro-bot/.github pinned to `v0.145.1`, the isolated
+agent still runs as `fro-bot-sandbox` on a `runner`-owned checkout, and the
+`improvement-metrics-detect.test.ts` case still fails on ownership (re-run
+directly in this pass). Bumped `updated` and added the release commit as a
+source.
+
+Sources: https://github.com/fro-bot/agent/releases/tag/v0.145.1, https://github.com/fro-bot/.github/blob/10a4216/.github/workflows/fro-bot.yaml#L832
+
+## [2026-11-18 07:03] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@10a4216aceacc01f2a50a78b10838951575491a5
