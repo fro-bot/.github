@@ -10958,3 +10958,33 @@ Sources: https://github.com/fro-bot/agent/releases/tag/v0.145.1, https://github.
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@10a4216aceacc01f2a50a78b10838951575491a5
+
+## [2026-11-18 14:07] ingest | repo:marcusrbrown/ha-config
+
+Surveyed marcusrbrown/ha-config and updated the control-plane wiki.
+
+Repeat survey of public `main` at `9480611873e05e9b5795fd50b39f548a107e7ded`
+(head commit: Renovate preset bump to v5.2.17, #950). Reads were limited to
+repo metadata, directory listings, `docs/readme.md`, `requirements.txt`,
+`mise.toml` and the three workflow files. No target content was executed.
+No material change since 2026-11-03: default branch `main`, public, not
+archived; the README still declares MIT (the API still detects no license);
+the same three workflows (`ci.yaml`, `renovate.yaml`,
+`update-repo-settings.yaml`), the same CI job shape, and Renovate is still
+present. Fro Bot is still absent, and the page already says so. The listing
+still holds 2,200 blobs, 74 trees and one gitlink. The malformed
+`.HA_VERSION` output write and the advisory Remark step are both unchanged.
+Version movement only: Prettier 3.9.10 → 3.10.1, mise pre-commit → 4.7.0,
+the `esphome` gitlink → `34f9267`. `bfra-me/.github` is still v4.43.0 and
+`requirements.txt` is unchanged.
+
+In [[marcusrbrown--ha-config]], corrected four contradicted current-state
+statements where they stand: the Overview last-push line, the CI Jobs
+Prettier version, and the two mise pre-commit version mentions in Developer
+Tooling. Bumped `updated`, added no `sources` entry and no dated section, and
+left the dated snapshots and findings untouched. The Renovate preset line was
+not re-read (`renovate.json5` was outside the permitted reads), so it was
+left as is. No topic or entity pages changed. The corrections context was
+empty.
+
+Sources: https://github.com/marcusrbrown/ha-config
