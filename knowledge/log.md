@@ -11036,3 +11036,23 @@ Sources: https://github.com/fro-bot/.github/blob/0c04b6a/packages/ci-checks/src/
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@0c04b6af96d31dde286cf319ac520ef7fdb6e15b
+
+## [2026-11-19 14:31] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/systematic at `main` `16853e80`. Default branch,
+visibility, license (MIT), language, Bun/Biome toolchain, the build/test/release
+flow and the Fro Bot and Renovate setup are unchanged, so no dated note was added.
+The 2026-11-04 snapshot's counts and pins had drifted. Skills went 33 → 34 with
+`ce-connect`, agents went 37 → 38, and the README matches both. The v2 peer
+floor is now `>=2.2.5`, there are 12 → 13 workflows, Release Gate names 12 → 13
+checks (adding `Fro Bot approval backstop`), and the agent pin is v0.134.0 →
+v0.146.0 through the composite action. Following the repeat-survey rules,
+[[marcusrbrown--systematic]] got one current-state line near the top and an
+`updated` bump. No dated sections were changed and no `sources` entry was added.
+No topic pages were changed because nothing here justified it. Fro Bot is present,
+so no onboarding note is needed. The corrections context was empty. Reads were
+limited to directory listings, the README, `package.json` and workflow files.
+
+Sources: https://github.com/marcusrbrown/systematic
