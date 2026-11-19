@@ -11018,3 +11018,21 @@ Sources: https://github.com/marcusrbrown/infra
 Manual correction to knowledge/wiki/repos/marcusrbrown--copiloting.md
 
 Sources: none
+
+## [2026-11-19 07:40] manual-edit | knowledge/wiki/topics/security-remediation-integration.md
+
+Daily oversight note, from the remediation handoff's one learning, verified in
+this pass: added a dated 2026-11-19 section to [[security-remediation-integration]]
+on what the override-floor gate does after an accepted advisory is withdrawn.
+Re-ran `scripts/check-override-floors.ts` on `main` at `0c04b6a` (exit 0 with the
+"matches no reported advisory" notice for GHSA-fc5q-39xc-vjpf) and read the
+advisory's `withdrawn_at` from the GitHub Advisory Database. Bumped `updated`
+and added three sources.
+
+Sources: https://github.com/fro-bot/.github/blob/0c04b6a/packages/ci-checks/src/check-override-floors.ts, https://github.com/advisories/GHSA-fc5q-39xc-vjpf, https://github.com/fro-bot/.github/pull/4299
+
+## [2026-11-19 07:09] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@0c04b6af96d31dde286cf319ac520ef7fdb6e15b
