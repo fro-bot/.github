@@ -1,6 +1,6 @@
 # Override Floors
 
-The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the six that have one: brace-expansion, fast-uri, qs, source-map-js, undici and zod. It also describes `accepted-advisories.json`, the reviewed exception list for an advisory that has no fixed version, and records its one entry, picomatch.
+The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the six that have one: brace-expansion, fast-uri, qs, source-map-js, undici and zod. It also describes `accepted-advisories.json`, the reviewed exception list for an advisory that has no fixed version. The list is empty.
 
 ## `brace-expansion`
 
@@ -60,10 +60,4 @@ The file fails closed. A missing file is an empty list; text that is not JSON, a
 
 Do not use the file to silence an advisory that has a fixed version: raise a floor in `overrides` instead. Pick the expiry to force a review, not to push the problem away; renewing an entry takes a new look at the advisory and a reason that still holds.
 
-## `picomatch`
-
-GHSA-fc5q-39xc-vjpf (bun audit id 1247710, high): ReDoS through single-branch repeated extglobs. It affects picomatch <=4.0.7, and 4.0.7 is the latest release, so no fixed version exists (upstream fix: micromatch/picomatch#194, open).
-
-The locked copy, 4.0.4, comes only through the dev lint stack (`@stylistic/eslint-plugin` and `tinyglobby` under typescript-eslint). It runs lint tooling on glob patterns from our own configuration and never sees untrusted input, so the repository accepts the advisory in `accepted-advisories.json` until 2026-12-17 instead of leaving `main`'s Lint check red.
-
-Remove the entry when a fixed picomatch release exists and the lockfile resolves to it, or when the lint stack no longer locks picomatch. If neither has happened by the expiry, review the advisory again and renew the entry with a reason that still holds.
+A withdrawn advisory drops out of `bun audit`, so its entry stops matching and the gate prints the `notice:` line. Remove the entry then too. The picomatch entry for GHSA-fc5q-39xc-vjpf (bun audit id 1247710) was removed this way after GitHub withdrew the advisory on 2026-11-18.
