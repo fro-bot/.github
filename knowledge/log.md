@@ -11056,3 +11056,27 @@ so no onboarding note is needed. The corrections context was empty. Reads were
 limited to directory listings, the README, `package.json` and workflow files.
 
 Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-11-19 14:32] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/marcusrbrown. `main` moved `7f122f4` →
+`8fc890e`. Read the recursive directory listing, `README.md`, `package.json`,
+`pnpm-workspace.yaml`, and all six workflow files. No material change: default
+branch `main`, public, not archived, TypeScript/pnpm, MIT, Fro Bot and Renovate
+both present, same six workflows, same lint-only `Main` gate and six-hour
+profile pipeline. The deltas are version bumps: `fro-bot/agent` v0.135.0 →
+v0.146.0, pnpm 11.28.10 → 11.28.12, Prettier 3.9.10 → 3.10.1,
+`@bfra.me/eslint-config` 0.54.1, `@bfra.me/prettier-config` 0.16.14, `vite`
+override 7.3.7 → 7.3.8, `actions/checkout` v6.1.0. The jq `// "unknown"`
+fork preflight, missing `output-mode`, and the `pnpm-workspace.yaml` omission
+from the profile PR filter are unchanged.
+
+In [[marcusrbrown--marcusrbrown]], added one current-state pins line near the
+top, corrected the Overview "Last push" line in place, and bumped `updated`.
+No dated section and no `sources` entry added; earlier sections untouched. No
+topic, entity, or comparison page warranted changes. The corrections context
+was empty.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
