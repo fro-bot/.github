@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/systematic
 created: 2026-04-24
-updated: 2026-11-14
+updated: 2026-11-19
 sources:
   - url: https://github.com/marcusrbrown/systematic
     sha: b4010b3b9edc0af0831c9a19b2a26e56e4891d88
@@ -93,6 +93,8 @@ node_id: R_kgDORAJegA
 Compound-engineering workflow system for AI coding harnesses. Published to npm as `@fro.bot/systematic`. Adapted from the [Compound Engineering Plugin (CEP)](https://github.com/EveryInc/compound-engineering-plugin) for Claude Code, now evolving independently.
 
 **As of v3 this is no longer "an OpenCode plugin."** It is a single content source with three shipped harness adapters (OpenCode, Pi, Claude Code) and three documented portability targets. Everything below the 2026-09-05 section that says "OpenCode plugin" is v2-era framing retained for history.
+
+Current state (verified 2026-11-19 at `16853e80`): the README and listing agree on **34 skills / 38 agents** (`skills/ce-connect/` is new); the v2 peer and README floor are `@opencode/plugin >=2.2.5`, and setup/OCX still writes the v1 `plugin` key only. There are **13 workflow files**, and Release Gate names **13 required checks**, now including `Fro Bot approval backstop`. Fro Bot runs through the local composite action pinned to `fro-bot/agent` **v0.146.0**.
 
 ## 2026-11-14 — a hung agent step still leaves a posted report (oversight note)
 

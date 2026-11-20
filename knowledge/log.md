@@ -11018,3 +11018,65 @@ Sources: https://github.com/marcusrbrown/infra
 Manual correction to knowledge/wiki/repos/marcusrbrown--copiloting.md
 
 Sources: none
+
+## [2026-11-19 07:40] manual-edit | knowledge/wiki/topics/security-remediation-integration.md
+
+Daily oversight note, from the remediation handoff's one learning, verified in
+this pass: added a dated 2026-11-19 section to [[security-remediation-integration]]
+on what the override-floor gate does after an accepted advisory is withdrawn.
+Re-ran `scripts/check-override-floors.ts` on `main` at `0c04b6a` (exit 0 with the
+"matches no reported advisory" notice for GHSA-fc5q-39xc-vjpf) and read the
+advisory's `withdrawn_at` from the GitHub Advisory Database. Bumped `updated`
+and added three sources.
+
+Sources: https://github.com/fro-bot/.github/blob/0c04b6a/packages/ci-checks/src/check-override-floors.ts, https://github.com/advisories/GHSA-fc5q-39xc-vjpf, https://github.com/fro-bot/.github/pull/4299
+
+## [2026-11-19 07:09] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@0c04b6af96d31dde286cf319ac520ef7fdb6e15b
+
+## [2026-11-19 14:31] ingest | repo:marcusrbrown/systematic
+
+Surveyed marcusrbrown/systematic and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/systematic at `main` `16853e80`. Default branch,
+visibility, license (MIT), language, Bun/Biome toolchain, the build/test/release
+flow and the Fro Bot and Renovate setup are unchanged, so no dated note was added.
+The 2026-11-04 snapshot's counts and pins had drifted. Skills went 33 → 34 with
+`ce-connect`, agents went 37 → 38, and the README matches both. The v2 peer
+floor is now `>=2.2.5`, there are 12 → 13 workflows, Release Gate names 12 → 13
+checks (adding `Fro Bot approval backstop`), and the agent pin is v0.134.0 →
+v0.146.0 through the composite action. Following the repeat-survey rules,
+[[marcusrbrown--systematic]] got one current-state line near the top and an
+`updated` bump. No dated sections were changed and no `sources` entry was added.
+No topic pages were changed because nothing here justified it. Fro Bot is present,
+so no onboarding note is needed. The corrections context was empty. Reads were
+limited to directory listings, the README, `package.json` and workflow files.
+
+Sources: https://github.com/marcusrbrown/systematic
+
+## [2026-11-19 14:32] ingest | repo:marcusrbrown/marcusrbrown
+
+Surveyed marcusrbrown/marcusrbrown and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/marcusrbrown. `main` moved `7f122f4` →
+`8fc890e`. Read the recursive directory listing, `README.md`, `package.json`,
+`pnpm-workspace.yaml`, and all six workflow files. No material change: default
+branch `main`, public, not archived, TypeScript/pnpm, MIT, Fro Bot and Renovate
+both present, same six workflows, same lint-only `Main` gate and six-hour
+profile pipeline. The deltas are version bumps: `fro-bot/agent` v0.135.0 →
+v0.146.0, pnpm 11.28.10 → 11.28.12, Prettier 3.9.10 → 3.10.1,
+`@bfra.me/eslint-config` 0.54.1, `@bfra.me/prettier-config` 0.16.14, `vite`
+override 7.3.7 → 7.3.8, `actions/checkout` v6.1.0. The jq `// "unknown"`
+fork preflight, missing `output-mode`, and the `pnpm-workspace.yaml` omission
+from the profile PR filter are unchanged.
+
+In [[marcusrbrown--marcusrbrown]], added one current-state pins line near the
+top, corrected the Overview "Last push" line in place, and bumped `updated`.
+No dated section and no `sources` entry added; earlier sections untouched. No
+topic, entity, or comparison page warranted changes. The corrections context
+was empty.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown
