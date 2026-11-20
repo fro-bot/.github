@@ -11080,3 +11080,19 @@ topic, entity, or comparison page warranted changes. The corrections context
 was empty.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-11-20 06:46] ingest | repo:marcusrbrown/infra
+
+Daily oversight pass (Observe) on fro-bot/.github. Added one dated sub-note
+under the `opencode-go-privacy.yaml` entry in [[marcusrbrown--infra]]: the
+three-day refresh failure, the parser rebuild (#1989, #1995) and the new
+failure-alert job (#2001), confirmed from the workflow file at `5916f7d` and a
+successful scheduled run. Bumped `updated`. No other page changed.
+
+Sources: https://github.com/marcusrbrown/infra@5916f7da24372376679d9a3e8b03b3b8e2cf4264
+
+## [2026-11-20 06:48] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@8c782a55889ad7fc0d85087603e34b6c14b2b4a6
