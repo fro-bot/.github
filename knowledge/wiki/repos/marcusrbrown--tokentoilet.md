@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/tokentoilet
 created: 2026-04-18
-updated: 2026-10-22
+updated: 2026-11-20
 node_id: R_kgDOJ3rINw
 sources:
   - url: https://github.com/marcusrbrown/tokentoilet
@@ -74,9 +74,11 @@ related:
 
 # marcusrbrown/tokentoilet
 
-A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens, converting "wallet dust" into charitable contributions. Built with Next.js 16, React 19, TypeScript 6, Wagmi v2, and Reown AppKit. Deployed to Vercel.
+A [[web3-defi]] application for disposing of unwanted ERC-20 and ERC-721 tokens, converting "wallet dust" into charitable contributions. Built with Next.js 16, React 19, TypeScript 6, Wagmi v3, and Reown AppKit. Deployed to Vercel.
 
 ## Overview
+
+**Current state (`a8575cf`, 2026-11-20):** `fro-bot.yaml` pins agent **v0.146.0** and sets `isolate-agent: 'true'`. The `Enable authenticated git push for autoheal fixes` step and the `omo-providers` input are gone. Schedule and dispatch-autoheal still select `branch-pr`, other events `working-dir`, and checkout keeps `persist-credentials: false`. Pins: `bfra-me/.github` **v4.43.0**, Renovate preset **#5.2.17**, pnpm **11.28.12**, Next.js **16.4.6**, React **19.3.1**. The tree has the same files as `2c51ee3`; the 33 commits in between are dependency bumps plus the Fro Bot isolation change (#1686). The README and both prompts still say Wagmi v2, and there is still no `LICENSE` file.
 
 ### Evidence reconfirmed (2026-10-22)
 
@@ -532,11 +534,11 @@ This repo participates in the same developer tooling ecosystem as [[marcusrbrown
 | Pattern              | tokentoilet                            | ha-config       | vbs      |
 | -------------------- | -------------------------------------- | --------------- | -------- |
 | Probot settings base | `fro-bot/.github:common-settings.yaml` | Same            | Same     |
-| Renovate preset      | `marcusrbrown/renovate-config#5.2.13`  | `#4.5.8`        | `#4.5.8` |
+| Renovate preset      | `marcusrbrown/renovate-config#5.2.17`  | `#4.5.8`        | `#4.5.8` |
 | ESLint config        | `@bfra.me/eslint-config`               | N/A (YAML repo) | Same     |
 | Prettier config      | `@bfra.me/prettier-config/120-proof`   | N/A             | Same     |
-| Package manager      | pnpm 11.25.0                           | N/A (YAML repo) | pnpm     |
-| Fro Bot workflow     | Present (v0.109.4, report-only)         | **Missing**     | Present  |
+| Package manager      | pnpm 11.28.12                          | N/A (YAML repo) | pnpm     |
+| Fro Bot workflow     | Present (v0.146.0; autoheal `branch-pr`) | **Missing**     | Present  |
 | Copilot setup steps  | Present                                | Not present     | Present  |
 | AGENTS.md            | Present                                | Not present     | Present  |
 

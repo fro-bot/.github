@@ -11118,3 +11118,35 @@ untouched. No topic, entity, or comparison page warranted changes. The
 corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-11-20 14:09] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/tokentoilet. `main` moved `2c51ee3` → `a8575cf`
+(33 commits). Read the recursive directory listing, `readme.md`,
+`e2e/README.md`, `package.json`, all five workflow files, and the compare
+file list. The blob list is identical to `2c51ee3`, and the commits touched
+only manifests, lockfile, workflows, the setup action and `renovate.json5`.
+No material change: default branch `main`, public, not archived, TypeScript
+on pnpm, no license, Fro Bot and Renovate both present, same CI jobs.
+
+Fro Bot delivery wiring changed without changing the delivery mode. #1686
+added `isolate-agent: 'true'` and removed the pre-agent
+`Enable authenticated git push for autoheal fixes` extraheader step and the
+`omo-providers` input. Autoheal still selects `branch-pr`, other events
+`working-dir`. Version deltas: agent v0.117.3 → v0.146.0, `bfra-me/.github`
+v4.36.0 → v4.43.0, Renovate preset #5.2.13 → #5.2.17, pnpm 11.28.3 →
+11.28.12, Next.js 16.3.8 → 16.4.6, React 19.3.0 → 19.3.1. The Wagmi v2 prose
+in the README and prompts, the README's MIT/`LICENSE` claim with no file in the
+tree, and the PR-only security audit are all unchanged.
+
+In [[marcusrbrown--tokentoilet]]: added one current-state paragraph at the top
+of Overview. Corrected the stale intro (Wagmi v2 → v3, against the manifest's
+`^3.0.0`) and the tokentoilet cells for Renovate, pnpm and Fro Bot in the
+Shared Ecosystem table. Bumped `updated`. The dated October 7 statement about
+the push-credential step is left as written; the new top paragraph supersedes
+it. No dated section and no `sources` entry added. No topic, entity, or
+comparison page warranted changes. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
