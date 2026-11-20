@@ -11096,3 +11096,25 @@ Sources: https://github.com/marcusrbrown/infra@5916f7da24372376679d9a3e8b03b3b8e
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@8c782a55889ad7fc0d85087603e34b6c14b2b4a6
+
+## [2026-11-20 14:06] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/mothership. `main` moved `e98c474` → `59fc571`
+(6 commits). Read the recursive directory listing, `package.json`, and the
+`fro-bot.yaml` diff plus the eight-workflow listing. No material change:
+default branch `main`, public, not archived, MIT, Bun/TS + Rust/Tauri v2,
+Fro Bot and Renovate both present, same eight workflows. Deltas are version
+bumps — `fro-bot/agent` v0.133.0 → v0.144.4, Vite 7.3.7 → 7.3.8,
+`@tauri-apps/cli` 2.11.4 → 2.12.4, `@types/react`/`@types/react-dom` → 19.3.0
+— plus `isolate-agent: 'true'` on the Fro Bot step (#188). The workflow still
+has no `output-mode` and no delivery step after `Run Fro Bot`.
+
+In [[marcusrbrown--mothership]], corrected the Tech Stack `@tauri-apps/cli`
+pin in place, added one current-state pins line near the top, and bumped
+`updated`. No dated section and no `sources` entry added; earlier sections
+untouched. No topic, entity, or comparison page warranted changes. The
+corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/mothership
