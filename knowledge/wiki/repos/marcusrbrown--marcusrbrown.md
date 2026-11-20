@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown
 created: 2026-04-18
-updated: 2026-11-05
+updated: 2026-11-19
 node_id: MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown
@@ -85,6 +85,8 @@ related:
 # marcusrbrown/marcusrbrown
 
 Marcus R. Brown's GitHub profile README repository. A TypeScript-powered automation system that generates and maintains his public GitHub profile, including sponsor tracking, badge automation, A/B content testing, and scheduled profile updates via [[github-actions-ci]].
+
+Current pins (verified 2026-11-19 at `8fc890e`): `fro-bot/agent` **v0.146.0**, pnpm **11.28.12**, Prettier **3.10.1**, `vite` override **7.3.8**; both reusable callers remain on `bfra-me/.github` v4.43.0.
 
 ## Bounded source snapshot — 2026-11-05
 
@@ -286,7 +288,7 @@ agent-requested verification, and workflow-executed PR checks.
 - **Default branch:** `main`
 - **Language:** TypeScript
 - **Created:** 2020-12-09
-- **Last push:** 2026-09-21 (`39ce599a`; was 2026-09-07 at the prior survey)
+- **Last push:** 2026-11-19 (`8fc890e`)
 - **Repo id / `node_id`:** `319928661` / `MDEwOlJlcG9zaXRvcnkzMTk5Mjg2NjE=`
 - **License:** MIT
 - **Topics:** `github`, `readme-profile`, `profile-readme`, `awesome-readme`, `typescript`, `markdown`

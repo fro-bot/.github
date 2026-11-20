@@ -2,8 +2,15 @@
 type: topic
 title: Security remediation integration and evidence boundaries
 created: 2026-09-30
-updated: 2026-11-14
+updated: 2026-11-19
 sources:
+  - url: https://github.com/fro-bot/.github/blob/0c04b6a/packages/ci-checks/src/check-override-floors.ts
+    sha: 0c04b6a
+    accessed: 2026-11-19
+  - url: https://github.com/advisories/GHSA-fc5q-39xc-vjpf
+    accessed: 2026-11-19
+  - url: https://github.com/fro-bot/.github/pull/4299
+    accessed: 2026-11-19
   - url: https://github.com/marcusrbrown/sparkle/commit/414b5d7
     accessed: 2026-11-14
   - url: https://github.com/marcusrbrown/sparkle/blob/1a6b44ef092a5c0fac52497250bf1e65edfa55d2/docs/package.json
@@ -83,3 +90,9 @@ In [[marcusrbrown--sparkle]], Renovate's [#2242](https://github.com/marcusrbrown
 
 That is a different claim from the floors described above. A `pnpm-workspace.yaml` override like `>=1.2.2` *excludes* the vulnerable versions for every resolution. A lockfile-only bump just *records* one safe resolution. To verify a security fix, check which of the two you have: the commit title, a green check, and a closed alert all hold up under either one. For a caret range on an unpublished app, the remaining risk is small, because a fresh resolution picks the newest minor. It matters more where the manifest is the contract, such as a published library or a workspace whose consumers resolve from scratch.
 
+
+## 2026-11-19 — a withdrawn advisory turns an accepted exception into a stale entry
+
+fro-bot/.github's `accepted-advisories.json` accepted picomatch advisory [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) (bun audit id 1247710, high) until 2026-12-17, because no fixed release existed. The GitHub Advisory Database records the advisory as withdrawn at 2026-11-18 15:38 UTC. After that, `bun audit` stopped reporting it, and `scripts/check-override-floors.ts` on `main` at `0c04b6a` exited 0 with a notice that the accepted entry "matches no reported advisory". The gate still fails an expired entry even when nothing reports it, so the notice is the only early signal; an unexpired stale entry otherwise sits quietly until its date.
+
+The practical rule: treat that notice as a removal trigger, not as noise to wait out. A leftover acceptance keyed to a withdrawn advisory would let the same id back through without review if it were ever republished. The removal ([#4299](https://github.com/fro-bot/.github/pull/4299), open at this observation) also flips the test that pinned the committed file, so it asserts the advisory fails the gate again. An open PR is not the repaired default branch; check `main` before calling the entry gone.
