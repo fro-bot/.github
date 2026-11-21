@@ -186,11 +186,11 @@ repos:
     name: tokentoilet
     added: 2026-04-18
     onboarding_status: onboarded
-    last_survey_at: 2026-11-06
-    last_survey_status: failure
+    last_survey_at: 2026-11-20
+    last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
-    next_survey_eligible_at: 2026-12-06
+    next_survey_eligible_at: 2026-12-23
     discovery_channel: collab
     private: false
     node_id: R_kgDOJ3rINw
@@ -381,12 +381,12 @@ repos:
     name: mothership
     added: 2026-07-06
     onboarding_status: onboarded
-    last_survey_at: 2026-11-05
+    last_survey_at: 2026-11-20
     last_survey_status: success
     has_fro_bot_workflow: true
     has_renovate: true
     discovery_channel: collab
-    next_survey_eligible_at: 2026-12-07
+    next_survey_eligible_at: 2026-12-21
     private: false
     node_id: R_kgDOTOX0_A
     database_id: 1290138876
