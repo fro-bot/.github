@@ -11080,3 +11080,137 @@ topic, entity, or comparison page warranted changes. The corrections context
 was empty.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown
+
+## [2026-11-20 06:46] ingest | repo:marcusrbrown/infra
+
+Daily oversight pass (Observe) on fro-bot/.github. Added one dated sub-note
+under the `opencode-go-privacy.yaml` entry in [[marcusrbrown--infra]]: the
+three-day refresh failure, the parser rebuild (#1989, #1995) and the new
+failure-alert job (#2001), confirmed from the workflow file at `5916f7d` and a
+successful scheduled run. Bumped `updated`. No other page changed.
+
+Sources: https://github.com/marcusrbrown/infra@5916f7da24372376679d9a3e8b03b3b8e2cf4264
+
+## [2026-11-20 06:48] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@8c782a55889ad7fc0d85087603e34b6c14b2b4a6
+
+## [2026-11-20 14:06] ingest | repo:marcusrbrown/mothership
+
+Surveyed marcusrbrown/mothership and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/mothership. `main` moved `e98c474` → `59fc571`
+(6 commits). Read the recursive directory listing, `package.json`, and the
+`fro-bot.yaml` diff plus the eight-workflow listing. No material change:
+default branch `main`, public, not archived, MIT, Bun/TS + Rust/Tauri v2,
+Fro Bot and Renovate both present, same eight workflows. Deltas are version
+bumps — `fro-bot/agent` v0.133.0 → v0.144.4, Vite 7.3.7 → 7.3.8,
+`@tauri-apps/cli` 2.11.4 → 2.12.4, `@types/react`/`@types/react-dom` → 19.3.0
+— plus `isolate-agent: 'true'` on the Fro Bot step (#188). The workflow still
+has no `output-mode` and no delivery step after `Run Fro Bot`.
+
+In [[marcusrbrown--mothership]], corrected the Tech Stack `@tauri-apps/cli`
+pin in place, added one current-state pins line near the top, and bumped
+`updated`. No dated section and no `sources` entry added; earlier sections
+untouched. No topic, entity, or comparison page warranted changes. The
+corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/mothership
+
+## [2026-11-20 14:09] ingest | repo:marcusrbrown/tokentoilet
+
+Surveyed marcusrbrown/tokentoilet and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/tokentoilet. `main` moved `2c51ee3` → `a8575cf`
+(33 commits). Read the recursive directory listing, `readme.md`,
+`e2e/README.md`, `package.json`, all five workflow files, and the compare
+file list. The blob list is identical to `2c51ee3`, and the commits touched
+only manifests, lockfile, workflows, the setup action and `renovate.json5`.
+No material change: default branch `main`, public, not archived, TypeScript
+on pnpm, no license, Fro Bot and Renovate both present, same CI jobs.
+
+Fro Bot delivery wiring changed without changing the delivery mode. #1686
+added `isolate-agent: 'true'` and removed the pre-agent
+`Enable authenticated git push for autoheal fixes` extraheader step and the
+`omo-providers` input. Autoheal still selects `branch-pr`, other events
+`working-dir`. Version deltas: agent v0.117.3 → v0.146.0, `bfra-me/.github`
+v4.36.0 → v4.43.0, Renovate preset #5.2.13 → #5.2.17, pnpm 11.28.3 →
+11.28.12, Next.js 16.3.8 → 16.4.6, React 19.3.0 → 19.3.1. The Wagmi v2 prose
+in the README and prompts, the README's MIT/`LICENSE` claim with no file in the
+tree, and the PR-only security audit are all unchanged.
+
+In [[marcusrbrown--tokentoilet]]: added one current-state paragraph at the top
+of Overview. Corrected the stale intro (Wagmi v2 → v3, against the manifest's
+`^3.0.0`) and the tokentoilet cells for Renovate, pnpm and Fro Bot in the
+Shared Ecosystem table. Bumped `updated`. The dated October 7 statement about
+the push-credential step is left as written; the new top paragraph supersedes
+it. No dated section and no `sources` entry added. No topic, entity, or
+comparison page warranted changes. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-11-21 13:33] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/marcusrbrown.github.io. `main` moved `8a1567d` →
+`f323ebf` (28 commits). Read the recursive directory listing (not truncated,
+same eight workflow files), the compare file list, and the diffs of
+`package.json`, `pnpm-workspace.yaml`, `.github/renovate.json5` and the five
+changed workflows; re-read `fro-bot.yaml` and the `pnpm-workspace.yaml` audit
+block at the new head. No material change: default branch `main`, public, not
+archived, TypeScript/React on Vite with pnpm, no license file (MIT still only
+declared), Fro Bot and Renovate both present, same build/test/deploy shape.
+
+Fro Bot wiring changed without changing the delivery mode. All three
+`fro-bot/agent` steps moved v0.113.2 → v0.146.0, gained `isolate-agent: 'true'`
+and dropped `omo-providers`; the pre-agent `Enable authenticated git push for
+autoheal fixes` extraheader step is removed, and a step now exports
+`PLAYWRIGHT_BROWSERS_PATH` to the runner tool cache for the isolated agent.
+Autoheal/schedule still select `branch-pr`, review `working-dir`. Version
+deltas: pnpm 11.27.0 → 11.28.13, Vite 7.3.6 → 7.3.8, Playwright 1.63.0 → 1.65.1,
+happy-dom 20 → 21, Vitest 4.1.11 → 4.1.12, `bfra-me/.github` Renovate caller
+v4.31.0 → v4.43.0, Renovate preset #5.2.13 → #5.2.17, artifact actions patch
+bumps. `pnpm-workspace.yaml` gained more advisory overrides (basic-ftp ≥6.2.4,
+minimatch ≥11.0.1, effect 4.1.4, zod ≥4.6.6, source-map-js) and a
+`minimumReleaseAgeExclude` list; the three ignored GHSAs are unchanged.
+
+In [[marcusrbrown--marcusrbrown-github-io]]: updated the inspected revision in
+the intro, the changed cells of the toolchain table, and the Fro Bot pin and
+push-credential sentence in place. Bumped `updated`. The dated 2026-11-07
+section is left as written. No dated note and no `sources` entry added. No
+topic, entity, or comparison page warranted changes. The corrections context
+was empty.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-11-21 13:34] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/vbs. `main` moved `a9d710f` → `61049d9` (35
+commits). I read the root and workflow directory listings, plus the compare patches
+for `fro-bot.yaml`, `update-star-trek-data.yaml`, `package.json`,
+`pnpm-workspace.yaml` and `renovate.json5`. I did not read the source files that
+changed. Nothing material changed: default branch `main`, public, not archived,
+TypeScript on pnpm, no root LICENSE, Fro Bot and Renovate both present, the same
+seven workflows, and the README unchanged.
+
+The Fro Bot wiring added `isolate-agent: true`. The output-mode split is the same:
+autoheal and schedule runs use `branch-pr`, other events use `working-dir`.
+Version changes: agent v0.136.1 → v0.146.0, pnpm 11.28.10 → 11.28.13, Vite
+7.3.7 → 7.3.8, Prettier 3.9.10 → 3.10.1, `@bfra.me/eslint-config` 0.54.0 →
+0.54.1, `@bfra.me/prettier-config` 0.16.13 → 0.16.14, Renovate preset #5.2.16 →
+#5.2.17, `create-github-app-token` v3.3.0 → v3.4.0. The workspace's
+`minimumReleaseAgeExclude` list gained the new eslint/prettier config versions.
+
+Changes to [[marcusrbrown--vbs]]: added one current-state paragraph under the intro.
+Corrected three stale current-state statements where they stand: the Overview pnpm
+version, the Fro Bot row in the workflows table (the 15:30 UTC cron is gone), and
+the Daily Maintenance schedule line. Bumped `updated`. I added no dated section, no
+Survey History row and no `sources` entry. No topic, entity or comparison page
+needed changes. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/vbs

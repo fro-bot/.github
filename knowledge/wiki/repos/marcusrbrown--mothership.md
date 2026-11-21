@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/mothership
 created: 2026-07-06
-updated: 2026-11-05
+updated: 2026-11-20
 node_id: R_kgDOTOX0_A
 sources:
   - url: https://github.com/marcusrbrown/mothership
@@ -78,6 +78,11 @@ As of the 2026-09-08 survey the `ide_*` surface has doubled from layout control 
 The tables and detailed survey below retain their **2026-09-08 snapshot**.
 The following bounded observations are the newer evidence; historical issue,
 release, alert, and workflow-run counts were not rechecked.
+
+Current pins (2026-11-20, `main` at `59fc571`): `fro-bot/agent` **v0.144.4**
+(SHA `b3d5cd8`) with `isolate-agent: 'true'`, Vite `7.3.8`, `@tauri-apps/cli`
+`2.12.4`, `@types/react` / `@types/react-dom` `19.3.0`; still no
+`output-mode` or step after `Run Fro Bot`.
 
 ## 2026-11-05 Observation — selective dependency movement, same delivery boundary
 
@@ -418,7 +423,7 @@ The `AGENTS.md` Invariants section is the canonical contract; the Fro Bot review
 
 | Layer             | Technology                                                                        |
 | ----------------- | --------------------------------------------------------------------------------- |
-| Desktop shell     | Tauri v2 (`@tauri-apps/api` ^2, `@tauri-apps/cli` 2.11.4, `@tauri-apps/plugin-opener` ^2 — renamed from `tauri-plugin-opener` since 2026-07-06) |
+| Desktop shell     | Tauri v2 (`@tauri-apps/api` ^2, `@tauri-apps/cli` 2.12.4, `@tauri-apps/plugin-opener` ^2 — renamed from `tauri-plugin-opener` since 2026-07-06) |
 | Frontend          | React 19.1 + React DOM 19.1, TypeScript ~5.8.3                                     |
 | Build             | Vite ^7.0.4 + `@vitejs/plugin-react`                                              |
 | Layout engine     | dockview ^7.0.2 + dockview-react (imperative panel API behind a typed command layer) |
