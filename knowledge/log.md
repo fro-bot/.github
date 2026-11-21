@@ -11185,3 +11185,32 @@ topic, entity, or comparison page warranted changes. The corrections context
 was empty.
 
 Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
+
+## [2026-11-21 13:34] ingest | repo:marcusrbrown/vbs
+
+Surveyed marcusrbrown/vbs and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/vbs. `main` moved `a9d710f` → `61049d9` (35
+commits). I read the root and workflow directory listings, plus the compare patches
+for `fro-bot.yaml`, `update-star-trek-data.yaml`, `package.json`,
+`pnpm-workspace.yaml` and `renovate.json5`. I did not read the source files that
+changed. Nothing material changed: default branch `main`, public, not archived,
+TypeScript on pnpm, no root LICENSE, Fro Bot and Renovate both present, the same
+seven workflows, and the README unchanged.
+
+The Fro Bot wiring added `isolate-agent: true`. The output-mode split is the same:
+autoheal and schedule runs use `branch-pr`, other events use `working-dir`.
+Version changes: agent v0.136.1 → v0.146.0, pnpm 11.28.10 → 11.28.13, Vite
+7.3.7 → 7.3.8, Prettier 3.9.10 → 3.10.1, `@bfra.me/eslint-config` 0.54.0 →
+0.54.1, `@bfra.me/prettier-config` 0.16.13 → 0.16.14, Renovate preset #5.2.16 →
+#5.2.17, `create-github-app-token` v3.3.0 → v3.4.0. The workspace's
+`minimumReleaseAgeExclude` list gained the new eslint/prettier config versions.
+
+Changes to [[marcusrbrown--vbs]]: added one current-state paragraph under the intro.
+Corrected three stale current-state statements where they stand: the Overview pnpm
+version, the Fro Bot row in the workflows table (the 15:30 UTC cron is gone), and
+the Daily Maintenance schedule line. Bumped `updated`. I added no dated section, no
+Survey History row and no `sources` entry. No topic, entity or comparison page
+needed changes. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/vbs
