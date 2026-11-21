@@ -11150,3 +11150,38 @@ it. No dated section and no `sources` entry added. No topic, entity, or
 comparison page warranted changes. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/tokentoilet
+
+## [2026-11-21 13:33] ingest | repo:marcusrbrown/marcusrbrown.github.io
+
+Surveyed marcusrbrown/marcusrbrown.github.io and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/marcusrbrown.github.io. `main` moved `8a1567d` →
+`f323ebf` (28 commits). Read the recursive directory listing (not truncated,
+same eight workflow files), the compare file list, and the diffs of
+`package.json`, `pnpm-workspace.yaml`, `.github/renovate.json5` and the five
+changed workflows; re-read `fro-bot.yaml` and the `pnpm-workspace.yaml` audit
+block at the new head. No material change: default branch `main`, public, not
+archived, TypeScript/React on Vite with pnpm, no license file (MIT still only
+declared), Fro Bot and Renovate both present, same build/test/deploy shape.
+
+Fro Bot wiring changed without changing the delivery mode. All three
+`fro-bot/agent` steps moved v0.113.2 → v0.146.0, gained `isolate-agent: 'true'`
+and dropped `omo-providers`; the pre-agent `Enable authenticated git push for
+autoheal fixes` extraheader step is removed, and a step now exports
+`PLAYWRIGHT_BROWSERS_PATH` to the runner tool cache for the isolated agent.
+Autoheal/schedule still select `branch-pr`, review `working-dir`. Version
+deltas: pnpm 11.27.0 → 11.28.13, Vite 7.3.6 → 7.3.8, Playwright 1.63.0 → 1.65.1,
+happy-dom 20 → 21, Vitest 4.1.11 → 4.1.12, `bfra-me/.github` Renovate caller
+v4.31.0 → v4.43.0, Renovate preset #5.2.13 → #5.2.17, artifact actions patch
+bumps. `pnpm-workspace.yaml` gained more advisory overrides (basic-ftp ≥6.2.4,
+minimatch ≥11.0.1, effect 4.1.4, zod ≥4.6.6, source-map-js) and a
+`minimumReleaseAgeExclude` list; the three ignored GHSAs are unchanged.
+
+In [[marcusrbrown--marcusrbrown-github-io]]: updated the inspected revision in
+the intro, the changed cells of the toolchain table, and the Fro Bot pin and
+push-credential sentence in place. Bumped `updated`. The dated 2026-11-07
+section is left as written. No dated note and no `sources` entry added. No
+topic, entity, or comparison page warranted changes. The corrections context
+was empty.
+
+Sources: https://github.com/marcusrbrown/marcusrbrown.github.io
