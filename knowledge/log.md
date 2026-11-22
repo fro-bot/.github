@@ -11214,3 +11214,32 @@ Survey History row and no `sources` entry. No topic, entity or comparison page
 needed changes. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/vbs
+
+## [2026-11-22 13:26] ingest | repo:marcusrbrown/.dotfiles
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Surveyed marcusrbrown/.dotfiles and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/.dotfiles. `main` moved `509a35b` → `7db92f4` (102
+commits). I read the repo metadata, the workflow directory listing, the compare file
+list, and the compare patches for `fro-bot.yaml`, `main.yaml`, `.dotfiles/package.json`,
+`.github/renovate.json5` and `.devcontainer/devcontainer.json`. No files were added or
+removed, and neither README changed. Nothing material changed: default branch `main`,
+public, not archived, TypeScript, the API still reports no license, and Fro Bot and
+Renovate are both present in the same four workflows.
+
+One posture change: the Fro Bot checkout went from the trigger-scoped
+`persist-credentials` expression to an unconditional `false`. The agent step keeps
+`FRO_BOT_PAT` as `github-token` and added `isolate-agent: true`. Version changes: agent
+v0.136.4 → v0.146.0, `MISE_VERSION` 2026.11.4 → 2026.11.12, SDK 1.19.5 → 1.19.6,
+Prettier 3.9.10 → 3.10.1, Renovate preset #5.2.16 → #5.2.17, automerge preset 5.3.1 →
+5.3.2, devcontainer node feature 2.1.1 → 2.1.2.
+
+Changes to [[marcusrbrown--dotfiles]]: added one current-state paragraph under the intro
+and corrected the Overview last-push date where it stands. Bumped `updated`. I added no
+dated section, no Survey History row and no `sources` entry. In [[github-actions-ci]] I
+added a dated note to the credential-scoping bullet: dotfiles no longer uses the shared
+expression. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/.dotfiles
