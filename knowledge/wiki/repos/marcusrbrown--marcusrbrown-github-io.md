@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/marcusrbrown.github.io
 created: 2026-04-25
-updated: 2026-11-07
+updated: 2026-11-21
 node_id: R_kgDORgYjdA
 sources:
   - url: https://github.com/marcusrbrown/marcusrbrown.github.io
@@ -28,7 +28,7 @@ related:
 
 Developer portfolio for Marcus R. Brown, branded **mrbro.dev** and deployed to
 [[github-pages]]. The public repository's default branch is `main`; its inspected
-revision is `8a1567dfedb1258675e4cfa39d2e5c1854dc3487`. The manifest names the
+revision is `f323ebffab716ea11a44e03cf21f60e9a6cda660`. The manifest names the
 package `mrbro.dev`, declares `https://mrbro.dev` as its homepage, and points its
 repository URL at `marcusrbrown/marcusrbrown.github.io`. MIT is declared in the
 manifest and README; the complete tree contains no root license file.
@@ -58,12 +58,12 @@ or plugins. The current build explicitly type-checks the OpenCode TS project.
 | Layer | Declaration at the inspected revision |
 | --- | --- |
 | UI and routing | React/React DOM `^19.0.0`, React Router DOM `^7.18.2` |
-| Language and bundler | TypeScript `5.9.3`, Vite `7.3.6`, React SWC plugin `4.3.3` |
-| Runtime and package manager | Node `>=24.0.0`; `pnpm@11.27.0`, engine `>=11.11.0` |
-| Unit testing | Vitest and coverage-v8 `4.1.11`, happy-dom `20.14.5` |
-| Browser and accessibility testing | Playwright `1.63.0`, axe-core/Playwright `4.13.0` |
+| Language and bundler | TypeScript `5.9.3`, Vite `7.3.8`, React SWC plugin `4.3.3` |
+| Runtime and package manager | Node `>=24.0.0`; `pnpm@11.28.13`, engine `>=11.11.0` |
+| Unit testing | Vitest and coverage-v8 `4.1.12`, happy-dom `21.0.4` |
+| Browser and accessibility testing | Playwright `1.65.1`, axe-core/Playwright `4.14.0` |
 | Performance tooling | Lighthouse CI `0.15.1` |
-| Shared standards | `@bfra.me/eslint-config` `0.52.2`, Prettier config `0.16.11`, TS config `0.13.2` |
+| Shared standards | `@bfra.me/eslint-config` `0.54.1`, Prettier config `0.16.14`, TS config `0.13.2` |
 | Blog tooling | feed `6.0.0`, Shiki `4.4.3`, unified/remark/rehype, rehype-sanitize |
 
 These are manifest declarations rather than resolved lockfile or installed
@@ -151,10 +151,13 @@ These are declared delivery steps, not evidence a particular refresh landed.
 The README's broad “dynamic” GitHub integration description should be read
 alongside this committed-snapshot and build-time-prerender workflow.
 
-**Fro Bot workflow is present**, pinned to `fro-bot/agent` **v0.113.2** at
-`43023e5b9755fe307c03ede1067cc182564d30e3`. No missing-workflow onboarding draft
-is warranted. Schedule/autoheal runs explicitly select `branch-pr` output mode
-and configure push authentication; review dispatch remains `working-dir`.
+**Fro Bot workflow is present**, pinned to `fro-bot/agent` **v0.146.0** at
+`65239fc570b0e7adc3c0d0c263282ee91ff6108d`. No missing-workflow onboarding draft
+is warranted. Schedule/autoheal runs explicitly select `branch-pr` output mode;
+review dispatch remains `working-dir`. All three agent invocations set
+`isolate-agent: 'true'`, the pre-agent on-disk push-credential step is gone,
+and Playwright browsers are exported to the runner tool cache so the isolated
+agent can read them.
 Generic review and scheduled work are separate jobs. Trusted issue/comment
 associations are checked, fork PR heads are refused on the issue-comment
 checkout path, and bot PRs are normally skipped. A bounded exception admits
