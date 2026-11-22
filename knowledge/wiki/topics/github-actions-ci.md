@@ -4,6 +4,9 @@ title: GitHub Actions CI
 created: 2026-04-18
 updated: 2026-11-22
 sources:
+  - url: https://github.com/fro-bot/dashboard/blob/8d0aa38c69e7f74b66f2363ba34625b668aaaa06/.github/workflows/release-pending.yaml
+    sha: 8d0aa38c69e7f74b66f2363ba34625b668aaaa06
+    accessed: 2026-11-22
   - url: https://github.com/fro-bot/space-bus/blob/2d7f6b7a5c14c1e8976080c47c6b3764f589531d/.github/workflows/fro-bot.yaml
     sha: 2d7f6b7a5c14c1e8976080c47c6b3764f589531d
     accessed: 2026-11-16
@@ -1378,6 +1381,7 @@ Repos use `dorny/paths-filter` to scope CI runs to relevant file changes, reduci
 [[fro-bot--dashboard]]'s `release.yaml` (2026-06-26) is the ecosystem's reference for image-only releases decoupled from `package.json` version:
 
 - **Guard job** runs a script over the changed-file range + a base-vs-head `package.json` diff to decide whether to release at all.
+  - _2026-11-22 update:_ at `8d0aa38c` the dashboard dropped this guard. A release now starts only from a notes-only (`docs/releases/batch.md`) merge of a `release/pending` PR that the `fro-bot[bot]` App both opened and merged. A separate `release-pending.yaml` prepares that PR and rechecks the approving review; a permissionless `pull_request_review` workflow only wakes it. The approval is a review on a PR, so `release.yaml` no longer needs a dispatch trigger or a source-path filter. The guard checks author and merger by numeric ID, not login. Neither check proves the batch contents were reviewed; that is up to the preparing script, which this survey did not read.
 - **Candidate-then-promote:** build + push a throwaway `ci-<run>-<attempt>` tag, smoke-test it **by digest**, then `docker buildx imagetools create` to promote the _same digest_ to `<calver>`/`latest`/`sha-<short>`, verifying each promoted tag resolves back to the smoke-tested digest (no rebuild between test and release).
 - **Layered smoke test:** host-port `/api/healthz` poll (catches `127.0.0.1`-bind regressions), sibling-container reachability by service name (catches a 127.0.0.1-only bind that 502s behind a reverse proxy), SPA `/manifest.webmanifest` served, and a CSP `script-src 'self'` header assertion.
 - **Identity split:** GHCR push uses `GITHUB_TOKEN` (App installation tokens cannot push GHCR); a `fro-bot[bot]` App token is reserved for the identity-sensitive tag push + GitHub Release; failure cleanup deletes the tag + partial release.

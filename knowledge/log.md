@@ -11243,3 +11243,32 @@ added a dated note to the credential-scoping bullet: dotfiles no longer uses the
 expression. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/.dotfiles
+
+## [2026-11-22 13:32] ingest | repo:fro-bot/dashboard
+
+Surveyed fro-bot/dashboard and updated the control-plane wiki.
+
+Repeat survey of fro-bot/dashboard. `main` moved `299839ff` → `8d0aa38c` (74
+commits). I read the repo metadata, the compare file list, the workflow
+directory listing, both new workflows in full, and the compare patches for
+`package.json`, `fro-bot.yaml`, `main.yaml` and `release.yaml`. The README did not
+change. Default branch `main`, public, not archived, TypeScript, no license,
+Bun 1.4.4 with Node >=24. Fro Bot and Renovate are both still present.
+
+One material change: releases are now review-gated batches. New
+`release-pending.yaml` and `release-pending-review.yaml` prepare a
+`release/pending` PR and recheck its approval. `release.yaml` lost
+`workflow_dispatch` and its source-path filter. It now releases only a
+notes-only `docs/releases/batch.md` merge of that PR, authored and merged by
+`fro-bot[bot]`. The smoke test adds an unsigned listener-ingest 401 check.
+Non-material: agent v0.136.5 → v0.146.0 with `isolate-agent` and an
+unconditional `persist-credentials: false`, Impeccable 4.8.0 → 4.10.0, Trivy
+v0.76.1 → v0.76.2, wiki-write-core 0.1.4 → 0.8.0, and a new `zod@4` override.
+
+Changes to [[fro-bot--dashboard]]: one current-state paragraph under the title,
+one dated 2026-11-22 section, and the `release.yaml` trigger and guard lines
+corrected where they stand. Bumped `updated`; no new repository `sources` entry.
+In [[github-actions-ci]] I added a dated sub-bullet under the CalVer release guard
+and one source. The corrections context was empty.
+
+Sources: https://github.com/fro-bot/dashboard
