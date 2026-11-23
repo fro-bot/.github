@@ -1026,7 +1026,8 @@ describe('selfMerge: the merge (AE6)', () => {
     })
     const outcome = await selfMerge(w.input())
     expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
-    expect(outcome.summary).toContain('did not count')
+    expect(outcome.summary).not.toContain('did not count')
+    expect(outcome.summary).not.toContain('change request')
   })
 
   it('exits 1 on a 405 for a conflicted pull request', async () => {
@@ -1621,11 +1622,9 @@ describe('selfMerge: the full text of every summary', () => {
       'merge blocked',
       async () =>
         selfMerge(world({merge: throwing(405), pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'})}).input()),
-      approvedSummary(
-        'merge blocked',
-        'GitHub refused the merge although the pull request was approved: the approval did not count or a change request is outstanding. The pull request stays open.',
-        ['- Merge refused (405): unavailable; mergeable_state: blocked'],
-      ),
+      approvedSummary('merge blocked', 'GitHub refused the merge. The pull request stays open.', [
+        '- Merge refused (405): unavailable; mergeable_state: blocked',
+      ]),
     ],
     [
       'merge failed',
@@ -1723,6 +1722,37 @@ describe('selfMerge: why GitHub refused a merge (405)', () => {
     expect(outcome.summary).toContain(
       '- Merge refused (405): Repository rule violations found; mergeable_state: blocked',
     )
+  })
+
+  it('states no diagnosis of its own: the whole summary for a conflicted refusal', async () => {
+    const outcome = await selfMerge(refused({message: 'Merge conflict'}, 'dirty').input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toBe(
+      [
+        '### Promotion self-merge: merge blocked',
+        '',
+        'GitHub refused the merge. The pull request stays open. The approval was already submitted as `fro-bot` on the pinned commit and stays on the pull request until the head moves or someone dismisses it; check the pull request.',
+        '',
+        '- Pull request: #77',
+        `- Pinned commit: \`${PIN}\``,
+        '- Merge refused (405): Merge conflict; mergeable_state: dirty',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('reports the settled mergeable_state, not the first read after the refusal', async () => {
+    const w = world({
+      merge: () => {
+        throw refusedWith(405, {message: 'Merge conflict'})
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'unknown'}, {mergeable: 'dirty'}),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toContain('- Merge refused (405): Merge conflict; mergeable_state: dirty')
+    expect(outcome.summary).not.toContain('mergeable_state: unknown')
+    expect(w.sleeps).toEqual([2000])
   })
 
   it('records the mergeable_state the settle re-read ended on', async () => {

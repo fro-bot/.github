@@ -218,8 +218,7 @@ function details(): Readonly<Record<FixedCode, string>> {
       'The merge request was cut off at the deadline. Read again afterwards, the pull request is still open, so the merge has not gone through, though GitHub may still accept it. Check the pull request.',
     MERGE_UNKNOWN:
       'The merge request failed or was cut off, and the pull request could not be read afterwards, so whether GitHub accepted the merge is not known. Check the pull request.',
-    MERGE_BLOCKED:
-      'GitHub refused the merge although the pull request was approved: the approval did not count or a change request is outstanding. The pull request stays open.',
+    MERGE_BLOCKED: 'GitHub refused the merge. The pull request stays open.',
     API_FAILED: 'A GitHub API call failed, so the run stopped. Nothing further was done.',
     MERGED:
       'The promotion gates passed on the pinned commit, the required checks passed on it, and the pull request was approved as `fro-bot` and squash-merged pinned to it.',
