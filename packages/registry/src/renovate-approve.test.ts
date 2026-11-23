@@ -1113,6 +1113,66 @@ describe('sweep: it yields to open pull requests by people', () => {
     expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
   })
 
+  describe('the fro-bot user account', () => {
+    const FRO_BOT = {id: 19_864_447, type: 'User', login: 'fro-bot'}
+
+    it('does not yield to an open, non-draft, same-repository PR against main by the fro-bot user: the candidate is approved', async () => {
+      const w = world({prs: [pr(7), person(3, {author: FRO_BOT})]})
+      expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+      expect(w.named('approve')).toHaveLength(1)
+      expect(outcomes(await DRY(world({prs: [pr(7), person(3, {author: FRO_BOT})]})))).toEqual({7: 'would-approve'})
+    })
+
+    it('does not yield to the fro-bot user even when the draft flag and base of its PR cannot be read', async () => {
+      const w = world({prs: [pr(7), person(3, {author: FRO_BOT, draft: undefined, rawBase: {ref: 5, repo: {id: 1}}})]})
+      expect(outcomes(await LIVE(w))).toEqual({7: 'approved'})
+    })
+
+    it('still yields to another user PR that is open next to a fro-bot user PR, naming that one', async () => {
+      const w = world({
+        prs: [pr(7), person(2, {author: FRO_BOT}), person(5, {author: {id: 1234, type: 'User', login: 'octocat'}})],
+      })
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(5), yieldedTo: 5})
+      expect(w.named('approve')).toEqual([])
+    })
+
+    it.each([
+      ['another login', 'octocat'],
+      ['a login that differs only in case', 'Fro-Bot'],
+      ['a login with a suffix', 'fro-bot-2'],
+      ['the App login', 'fro-bot[bot]'],
+      ['an empty login', ''],
+    ])('yields to a user PR with %s, with the existing detail', async (_name, login) => {
+      const w = world({prs: [pr(7), person(3, {author: {id: 1234, type: 'User', login}})]})
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(3), yieldedTo: 3})
+      expect(w.named('approve')).toEqual([])
+    })
+
+    it.each([
+      ['no login', {id: 1234, type: 'User'}],
+      ['a null login', {id: 1234, type: 'User', login: null}],
+      ['a login that is not a string', {id: 1234, type: 'User', login: 42}],
+    ])('yields to a user PR with %s: an unreadable login is doubt', async (_name, author) => {
+      const w = world({prs: [pr(7), person(3, {author})]})
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(3)})
+      expect(w.named('approve')).toEqual([])
+    })
+
+    it.each([
+      ['no type', {id: 19_864_447, login: 'fro-bot'}],
+      ['a null type', {id: 19_864_447, type: null, login: 'fro-bot'}],
+      ['a type that is not a string', {id: 19_864_447, type: 7, login: 'fro-bot'}],
+    ])('yields to a fro-bot PR with %s: an unreadable type comes before the login', async (_name, author) => {
+      const w = world({prs: [pr(7), person(3, {author})]})
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(3)})
+      expect(w.named('approve')).toEqual([])
+    })
+  })
+
   it('keeps the outcome of a candidate that is not ready, and yields only the ready one', async () => {
     const w = world({prs: [pr(2, {behindBy: 1}), pr(3), person(9)]})
     const result = await LIVE(w)
