@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/infra
 created: 2026-04-18
-updated: 2026-11-18
+updated: 2026-11-20
 node_id: R_kgDOR4g8TA
 sources:
   - url: https://github.com/marcusrbrown/infra
@@ -146,6 +146,20 @@ Three workflows arrived with it or alongside it (21 → 24):
   only after a successful parse, and closes a stale PR when upstream matches
   `main` again. It came with cliproxy serving OpenCode Go models. The README
   says the auth monitor probes both the Anthropic and OpenCode Go routes.
+  - **2026-11-20 update.** The refresh failed on its 2026-11-17, -18 and -19
+    schedules with `Endpoints: no table found`: upstream had dropped the table
+    the parser read. #1989 (`cf1de53`) rebuilt the snapshot from the docs table
+    plus the live model list, and #1995 (`f489583`) leaves a model with no
+    privacy fields out of the snapshot instead of failing. #2001 (`5916f7d`,
+    merged 2026-11-20) added an `alert` job that runs after `refresh` whatever
+    its result, on `main` only. A failed or cancelled refresh opens one
+    `opencode-go-privacy-failure` issue (or comments on the open one) and posts
+    to Discord, and the next success closes it. Before this the refresh failed
+    closed silently, which is how the outage ran three days unnoticed. The
+    2026-11-20 05:23 scheduled run succeeded on `5916f7d`.
+    Sources: [workflow at 5916f7d](https://github.com/marcusrbrown/infra/blob/5916f7da24372376679d9a3e8b03b3b8e2cf4264/.github/workflows/opencode-go-privacy.yaml),
+    [#2001](https://github.com/marcusrbrown/infra/pull/2001),
+    [run 44680730100](https://github.com/marcusrbrown/infra/actions/runs/44680730100).
 
 The root README's package and workflow tables list neither `apps/docs` nor the
 three new workflows. This is documentation drift and does not affect the

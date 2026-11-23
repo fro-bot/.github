@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/.dotfiles
 created: 2026-04-18
-updated: 2026-11-08
+updated: 2026-11-22
 node_id: MDEwOlJlcG9zaXRvcnkxODY5MTU0
 sources:
   - url: https://github.com/marcusrbrown/.dotfiles
@@ -101,6 +101,12 @@ related:
 # marcusrbrown/.dotfiles
 
 Marcus R. Brown's [[dotfiles]] repository. Uses a **bare git repository** pattern (`GIT_DIR=~/.dotfiles`, `GIT_WORK_TREE=$HOME`) to track shell and development environment configuration directly in `$HOME` without symlinks.
+
+As of `7db92f41d8ddbd83fe4557805ababc5993c8c397`, the `fro-bot.yaml` checkout sets
+`persist-credentials: false` for every trigger. The trigger-scoped expression is gone. The agent
+still receives `FRO_BOT_PAT` as its `github-token` input and now sets `isolate-agent: true`. Its
+pin is `fro-bot/agent` `v0.146.0` (`65239fc`). The independent `MISE_VERSION` in `main.yaml` is
+`2026.11.12`. Whether scheduled runs still push was not checked.
 
 ## 2026-11-08 bounded observations
 
@@ -369,7 +375,7 @@ What accumulated in those 967 days is the point: `DOTNET_CLI_TELEMETRY_OPTOUT` l
 - **Purpose:** Synchronize shell configuration and dev environment across machines
 - **Default branch:** `main`
 - **Created:** 2011-06-09
-- **Last push:** 2026-09-25 (was 2026-09-10)
+- **Last push:** 2026-11-22 (was 2026-09-25)
 - **`node_id`:** `MDEwOlJlcG9zaXRvcnkxODY5MTU0` (repo id `1869154`)
 - **License:** _Still undetectable (2026-09-25, SHA `5a890ee`):_ the repo API still returns `license: null`, which makes this the **seventh consecutive survey** without one. _Prior reading (2026-09-10, SHA `fe0144c`):_ the GitHub License API continues to return `null` (`license: null`, `/license` endpoint 404) and no `LICENSE`/`UNLICENSE` file appears in the tree. This is now the **sixth consecutive survey** with no machine-detectable license (first flagged SHA `4df0c2d`, 2026-06-16). Prior surveys through SHA `70c211bc` (2026-06-06) recorded **The Unlicense (public domain)**. Treat license status as **unspecified**.
 - **Topics:** `dotfiles`, `configuration`, `settings`, `preferences`, `zsh`, `sheldon`, `mise`, `starship`

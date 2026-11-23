@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/vbs
 created: 2026-04-18
-updated: 2026-11-07
+updated: 2026-11-21
 node_id: R_kgDOPOixzg
 sources:
   - url: https://github.com/marcusrbrown/vbs
@@ -78,6 +78,8 @@ related:
 # marcusrbrown/vbs
 
 **VBS (View By Stardate)** — a local-first, chronological Star Trek viewing guide web application. TypeScript + Vite + D3.js, deployed to GitHub Pages. Uses a functional factory architecture with closure-based state management and generic EventEmitters.
+
+**Current state (2026-11-21, `main` at `61049d9`):** `fro-bot.yaml` pins `fro-bot/agent` v0.146.0 and now sets `isolate-agent: true`; the `branch-pr`/`working-dir` output-mode split and the single 03:30 UTC cron are unchanged. The manifest declares pnpm 11.28.13, Vite 7.3.8, Prettier 3.10.1, `@bfra.me/eslint-config` 0.54.1 and `@bfra.me/prettier-config` 0.16.14; the Renovate preset is `#5.2.17`.
 
 ## Bounded source snapshot — 2026-11-07
 
@@ -327,7 +329,7 @@ Sources: [README](https://github.com/marcusrbrown/vbs/blob/7ef7531d72a18271c925a
 - **License:** MIT (declared in package.json; no LICENSE file at root and the API reports `license: null` — **9th consecutive survey** with no root LICENSE, so GitHub's own license detection has never had anything to read)
 - **Topics:** `star-trek`, `viewing-guide`, `chronological`, `progress-tracker`, `local-first`
 - **Star count:** 2 (unchanged as of 2026-09-08; unchanged since 2026-06-21; was 1 through the 2026-06-10 survey). Forks 0, watchers 0.
-- **Package manager:** pnpm 11.22.0 (unchanged at 2026-09-08 — **frozen behind blocked PR #740**, which carries 11.22.0 → 11.25.0; was 11.13.1 at 2026-07-19, 11.9.0 at 2026-07-05 — **v10 → v11 major boundary crossed** 2026-06-27 via #640/#642/#644 `[SECURITY]`; was 10.34.3 at 2026-06-21, 10.34.1 at 2026-06-10)
+- **Package manager:** pnpm 11.28.13 as of 2026-11-21. Earlier: pnpm 11.22.0 (unchanged at 2026-09-08 — **frozen behind blocked PR #740**, which carries 11.22.0 → 11.25.0; was 11.13.1 at 2026-07-19, 11.9.0 at 2026-07-05 — **v10 → v11 major boundary crossed** 2026-06-27 via #640/#642/#644 `[SECURITY]`; was 10.34.3 at 2026-06-21, 10.34.1 at 2026-06-10)
 - **Node.js:** 22.x
 
 ## Tech Stack
@@ -439,7 +441,7 @@ vbs/
 | --- | --- | --- | --- |
 | CI | `ci.yaml` | push/PR to `main` | Lint, type-check, test with coverage, build |
 | Deploy | `deploy.yaml` | push to `main`, dispatch | Build + deploy to GitHub Pages |
-| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 15:30 UTC + 03:30 UTC autoheal), dispatch | PR review, daily maintenance, autoheal (single workflow as of 2026-05-14, PR #564; single unified job as of 2026-05-30, PR #594; `Validate review mode inputs` guard present as of 2026-08-19; autoheal sweep 5 → 8 categories) |
+| Fro Bot | `fro-bot.yaml` | PR, issue, comment, schedule (daily 03:30 UTC only; the 15:30 UTC maintenance cron is gone), dispatch | PR review, daily maintenance, autoheal (single workflow as of 2026-05-14, PR #564; single unified job as of 2026-05-30, PR #594; `Validate review mode inputs` guard present as of 2026-08-19; autoheal sweep 5 → 8 categories) |
 | ~~Fro Bot Autoheal~~ | ~~`fro-bot-autoheal.yaml`~~ | _Removed 2026-05-14 (PR #564) — folded into `fro-bot.yaml` with `mode` dispatch input (`review`/`maintenance`/`autoheal`/`both`)_ | _historical_ |
 | Update Star Trek Data | `update-star-trek-data.yaml` | weekly Monday 09:00 UTC, dispatch | Regenerate data from external sources, validate, create PR |
 | Renovate | `renovate.yaml` | — | Dependency updates |
@@ -475,7 +477,7 @@ Triggers on `opened`, `synchronize`, `reopened`, `ready_for_review`, `review_req
 
 ### Daily Maintenance
 
-Scheduled at 15:30 UTC daily. Maintains a rolling "Daily Maintenance Report" issue with metrics, stale issues/PRs, unassigned bugs, and recommended actions. 14-day rolling window with historical summary compression.
+No longer has its own schedule: the 15:30 UTC cron is gone, and the single 03:30 UTC pass now writes one combined daily report (see the 2026-11-07 snapshot). Historically, it maintained a rolling "Daily Maintenance Report" issue with metrics, stale issues/PRs, unassigned bugs, and recommended actions. 14-day rolling window with historical summary compression.
 
 ### Daily Autoheal
 

@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/dashboard
 created: 2026-06-15
-updated: 2026-11-09
+updated: 2026-11-22
 node_id: R_kgDOS6ys-g
 sources:
   - url: https://github.com/fro-bot/dashboard
@@ -224,6 +224,48 @@ related:
 ---
 
 # fro-bot/dashboard
+
+Current state (2026-11-22, `main` at `8d0aa38c69e7f74b66f2363ba34625b668aaaa06`):
+releases are review-gated batches. `release.yaml` runs only on a push to
+`main` that changes `docs/releases/batch.md` alone, from a merged
+`release/pending` pull request opened and merged by `fro-bot[bot]`. It no longer
+has a `workflow_dispatch` trigger or a source-path filter. Nine workflow files
+are present. `fro-bot.yaml` is at agent **v0.146.0** with `isolate-agent`; its
+checkout sets `persist-credentials: false` for every trigger, which replaces the
+trigger-scoped expression described in the 2026-08-31 section below.
+
+## 2026-11-22 — releases move to a review-gated batch PR
+
+Material change to how the project releases. In the 74 commits from
+`299839ff` to `8d0aa38c`, two workflows were added:
+
+- **`release-pending.yaml`** routes push-to-`main`, a Sunday/Wednesday
+  15:00 UTC schedule, manual dispatch, and `workflow_run` wake-ups into a
+  `prepare` or `review` mode, then runs `node scripts/release-pending.ts`. It
+  mints an App token with `contents: write` and `pull-requests: write`.
+  Manual dispatch and the review wake-up are accepted only from one hard-coded
+  user ID, and only on the first run attempt. A successful push-triggered
+  Release run also wakes it, to prepare the next batch.
+- **`release-pending-review.yaml`** is a signal only. It fires on a submitted
+  review of the `release/pending` → `main` PR by that same user ID. Its step
+  says the trusted workflow rechecks authority; it holds no permissions.
+
+`release.yaml`'s guard was rewritten to match. It skips anything that is not a
+single-parent push to `main` whose only changed file is `docs/releases/batch.md`.
+It then requires exactly one associated PR: merged, its merge commit equal to
+the event SHA, head `release/pending` and base `main` in the same repository,
+and both author and merger the `fro-bot[bot]` App (ID-checked). API failures
+and ambiguous associations fail the guard; a missing association skips with a
+warning. `scripts/should-release.ts` no longer appears in the guard. The
+release job still repeats the main-ref check, and infra dispatch is still a
+separate best-effort job. The candidate smoke test adds one check: an unsigned
+`POST /api/listener/ingest` must return 401.
+
+The repo also added `docs/releases/batch.md`, `docs/runbooks/dashboard-releases.md`,
+and `scripts/release-{batch,pending}.ts` with tests. The README did not change in
+this range, and I did not read those docs or scripts. This entry is from workflow
+files and the compare file list only. It does not show that a batch release has
+run.
 
 ## 2026-11-09 — unavailable listings and live-only wait reasons
 
@@ -950,9 +992,9 @@ The composite `./.github/actions/setup` installs pnpm (`pnpm/action-setup`), Nod
 
 ### `release.yaml` (CalVer GHCR release + infra deploy dispatch, new 2026-06-26)
 
-Push-to-`main` (path-filtered to source/Dockerfile/manifests/release scripts) + dispatch. `contents: read` default; `bash -Eeuo pipefail`. Four-job chain:
+Push-to-`main` path-filtered to `docs/releases/batch.md` only, with no dispatch trigger (as of 2026-11-22; see the 2026-11-22 section). `contents: read` default; `bash -Eeuo pipefail`. Four-job chain:
 
-1. **Release guard** — `scripts/should-release.ts` evaluates the changed-file range + a `package.json` diff (base vs head) to decide whether a release is warranted; dispatch only releases from `main`.
+1. **Release guard** — releases only a single-parent, notes-only commit that is the merge of a `fro-bot[bot]`-authored and -merged `release/pending` PR (as of 2026-11-22). The earlier `scripts/should-release.ts` changed-file plus `package.json` diff check no longer runs in the guard.
 2. **Release** — mints a `fro-bot[bot]` App token (`actions/create-github-app-token`) so the tag + GitHub Release are authored by the App identity. Builds + pushes a **candidate** image to GHCR (`ci-<run>-<attempt>`), then **smoke-tests by digest**: host-port `/api/healthz` poll (catches `127.0.0.1`-bind regressions), sibling-container reachability by service name (catches a 127.0.0.1-only bind that would 502 behind Caddy), SPA `/manifest.webmanifest` served (confirms `web/dist/` baked in), and a **CSP header check** (`script-src 'self'` present). Computes a CalVer tag via `scripts/compute-release-tag.ts` (race-retried tag push), promotes the candidate digest to `<calver>` / `latest` / `sha-<short>` via `buildx imagetools` with digest-equality verification, and creates the GitHub Release with an appended Image block (tag + digest + source SHA). Failure cleanup deletes the tag + partial release.
 3. **Dispatch infra deploy** (`environment: release`, whole-job `continue-on-error`) — best-effort: validates the CalVer + sha256 digest, mints a **separate** short-lived token from an infra-dispatch App scoped to `marcusrbrown/infra` + `actions:write`, and `gh workflow run deploy-dashboard.yaml` in [[marcusrbrown--infra]] with `version` + `digest`. This only reaches infra's operator-approval gate — it cannot bypass it. Issue #112 tracks migrating this dispatch to a dedicated infra-only App; the dispatch key is `environment: release`-scoped as the primary mitigation.
 
