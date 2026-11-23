@@ -1160,6 +1160,17 @@ describe('sweep: it yields to open pull requests by people', () => {
       expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(3)})
       expect(w.named('approve')).toEqual([])
     })
+
+    it.each([
+      ['no type', {id: 19_864_447, login: 'fro-bot'}],
+      ['a null type', {id: 19_864_447, type: null, login: 'fro-bot'}],
+      ['a type that is not a string', {id: 19_864_447, type: 7, login: 'fro-bot'}],
+    ])('yields to a fro-bot PR with %s: an unreadable type comes before the login', async (_name, author) => {
+      const w = world({prs: [pr(7), person(3, {author})]})
+      const result = await LIVE(w)
+      expect(rowOf(result, 7)).toMatchObject({outcome: 'yielded', detail: YIELD_DETAIL(3)})
+      expect(w.named('approve')).toEqual([])
+    })
   })
 
   it('keeps the outcome of a candidate that is not ready, and yields only the ready one', async () => {
