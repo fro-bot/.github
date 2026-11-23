@@ -1,7 +1,7 @@
 ---
 title: Dependency holds need explicit lift conditions
 date: 2026-08-31
-last_updated: 2026-10-09
+last_updated: 2026-11-23
 category: best-practices
 module: .github/renovate.json5
 problem_type: best_practice
@@ -13,6 +13,7 @@ applies_when:
   - "the held package may become safe after an upstream parser, compiler, or plugin release"
   - "a pnpm override floor is meant to exclude vulnerable transitive releases"
   - "a repository-wide advisory gate evaluates multiple dependency floors together"
+  - "an advisory acceptance or allowlist entry carries an expiry date"
 tags:
   - tooling
   - supply-chain
@@ -83,6 +84,27 @@ such as `<7` can be reasonable when another independent rule enforces the real p
 boundary, but the comment must say that the neighboring rule is load-bearing. Otherwise
 the apparent hold is weaker than it looks.
 
+### Test an expiring acceptance apart from the committed list
+
+An acceptance with an expiry date is a hold whose lift condition is a date. PR #4288 let the
+override-floors gate accept one listed advisory, matched on both package and advisory id, through an
+inclusive UTC `expires` day (`accepted-advisories.json`). Its unit tests already passed the clock in
+(`now?: () => Date` in `packages/ci-checks/src/check-override-floors.ts`) and checked the boundaries
+directly: the last millisecond of the expiry day passes, the first millisecond of the next day fails,
+and a file that does not parse fails.
+
+The entrypoint tests did not. They ran the gate against the committed `accepted-advisories.json`
+and the real clock, so a fake-audit case that should pass would start failing when that entry
+expired, was renewed or was removed, with no code change. The first review asked for test-owned
+acceptance fixtures, and the follow-up commit changed only `scripts/ci-checks-flows.test.ts`: each case
+runs the gate from a test-owned checkout copy that holds its own `accepted-advisories.json` (empty unless
+the case says otherwise).
+
+1. Test the expiry rule where the clock can be injected, at both sides of the boundary.
+2. Give every test that runs the real entrypoint its own policy file. When it must use the real
+   clock, pick dates far from it (`9999-12-31` for unexpired, `2000-01-01` for expired).
+3. Never let a test read the production policy file. Renewing or lifting the hold then cannot fail CI.
+
 ## Why This Matters
 
 Dependency holds are intentionally sticky: Renovate will keep respecting them without
@@ -123,6 +145,7 @@ was too narrow. PR #3968 then changed the Fro Bot remediation prompt to require 
   to touch.
 - An automated remediation agent opens one PR per advisory, but the required check evaluates all
   advisories together.
+- Adding or testing an acceptance, allowlist or policy entry that expires on a date.
 
 ## Examples
 
@@ -202,3 +225,5 @@ fixing every flagged package in one PR, and opening or updating it only when tha
 - [Verify Renovate predicates against the live dependency taxonomy](../workflow-issues/verify-renovate-predicates-against-live-taxonomy-2026-08-31.md) — verify that the tool actually matches the dependency shape the hold is meant to govern.
 - [Lockfiles are advisory until the build gates them](../workflow-issues/lockfiles-are-advisory-until-gated-2026-07-11.md) — a dependency-control claim needs enforcement, not just recorded intent; a lockfile proves intent only after a gate checks the postcondition the security claim depends on.
 - [Verify in the CI topology, not just locally](verify-in-the-ci-topology-not-just-locally-2026-07-11.md) — validate compatibility in the environment that runs the toolchain.
+- [Test the integration seam, not the endpoints](test-the-integration-seam-not-the-endpoints-2026-07-06.md) — the entrypoint tests here run the real gate, so they need their own inputs.
+- Source: `ed0382444d8d431002e862d1389888b49aa5ba94` (PR #4288, test-owned acceptance fixtures for the expiring advisory acceptance).

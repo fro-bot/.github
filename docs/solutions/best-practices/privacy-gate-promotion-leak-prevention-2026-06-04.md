@@ -1,7 +1,7 @@
 ---
 title: Privacy Gate Design for Data→Main Promotion Leak Prevention
 date: 2026-06-04
-last_updated: 2026-11-12
+last_updated: 2026-11-23
 verified: 2026-06-04
 category: best-practices
 module: github-workflows
@@ -17,6 +17,7 @@ applies_when:
   - a resolver returns an ambiguous result that conflates "deleted" with "no access"
   - a broad-scope credential is needed to resolve private identities
   - a gate must decide between fail-open and fail-closed under uncertainty
+  - a registry keeps historical identity or visibility on purpose (archived rows, old names)
 tags:
   - privacy-gate
   - fail-closed
@@ -51,7 +52,7 @@ point — that are the real reusable lessons here.
 
 ## Guidance
 
-Three rules for any gate that prevents a sensitive identifier from crossing a trust boundary.
+Four rules for any gate that prevents a sensitive identifier from crossing a trust boundary.
 
 ### 1. Scan content, not just identifiers
 
@@ -100,9 +101,18 @@ it from every other subprocess — including the `git` call that computes the di
 branch with the ambient checkout token; it never needs the broad PAT). Redact output to file paths
 only, with any private token in a path replaced by `[REDACTED]`.
 
+### 4. Treat stored identity as history, not as a current fact
+
+A registry that keeps old data on purpose describes the past. Archived rows in `metadata/repos.yaml` keep their owner, name and `private: false` after a rename or transfer on GitHub, and when reconcile cannot see the repository. The review of the lifecycle plan in PR #4264 found two fail-open paths in a plan that read those rows as current, and confirmed both with a probe against `buildPublicSlugMap`, `detectPrivateWikiLeaks` and `checkPrivateLeak`:
+
+- **Stored-only tokens.** Scanning an archived row by its stored name alone lets an addition through that names the repository's current, non-public identity. The leak scan then used the resolved live name. Scan both: an archived row that GitHub does not confirm `PUBLIC` contributes its stored and its live owner/name (`resolveScanRow` in `packages/privacy/src/check-private-leak.ts`). Only when there is no usable live name (a failed lookup, no node ID, a malformed answer) does it fall back to the stored name.
+- **A stale public row grants attribution.** `buildPublicSlugMap` admitted every stored `private: false` row, and a page whose `sources` matched skipped the unchanged-page check. If the repository turned private or unreachable, an edit with body-only text and no identity token passed both gates. Now an archived row enters the public slug map only when GitHub reports its node `PUBLIC` at check time (`packages/privacy/src/check-wiki-private-presence.ts`). Without that, its page passes only when it is unchanged from `main`: published history stays, and new content gets no permission from the stored row.
+
+The findings were caught against a docs-only diff, before the plan became the implementation contract.
+
 ## Why This Matters
 
-A privacy gate's failure mode must be "block promotion," never "leak." The three rules each close
+A privacy gate's failure mode must be "block promotion," never "leak." The four rules each close
 a different way the naive design leaks:
 
 - **Content scanning** catches the actual leak class (in-body mention of an unrelated private repo)
@@ -112,6 +122,8 @@ a different way the naive design leaks:
   (not recoverable; the public branch is the canonical record).
 - **Trusted-chokepoint enforcement** removes an entire spoofing/forgery/SPOF surface that a per-PR
   gate would have to defend, at a fraction of the implementation cost.
+- **Stored identity as history** keeps a rename, a transfer or a visibility change from opening a
+  gap that the registry's kept data cannot show.
 
 ## When to Apply
 
@@ -160,7 +172,7 @@ if (failedNodeIds.length > 0) {
 }
 ```
 
-An archived row is selected as well as every `private: true` row, because a stored `private: false` for it cannot be trusted. The same lookup applies: exactly `PUBLIC` contributes no name, and anything else (or a failed lookup, or no node ID) scans by the stored owner and name and by the live ones, without blocking the scan. The wiki-presence gate admits an archived row's page only when the same lookup reports `PUBLIC`.
+An archived row is selected as well as every `private: true` row, because a stored `private: false` for it cannot be trusted. The same lookup applies: exactly `PUBLIC` contributes no name, and anything else (or a failed lookup, or no node ID) scans by the stored owner and name and by the live ones, without blocking the scan. The wiki-presence gate attributes a changed archived page only when the same lookup reports `PUBLIC`; otherwise only an unchanged page passes (rule 4).
 
 ### Least privilege: confine the broad credential, split the workflow
 
@@ -207,6 +219,10 @@ return {ok: false, matchedFiles: redactedFiles}
   fallback path must reuse the exact fail-closed predicates of the main gate.
 - Issues: #3407 (wire the gate), #3408 (operator-actionable blocked output), #3429 (resolver PAT
   hygiene), #3430 (redact node_ids in failure output), #3424 (accepted commit-history exposure).
+- Source for rule 4: `a954038e2986090be051de740fab4b85b0d48209` (PR #4264, the lifecycle plan and its
+  privacy review).
+- `docs/solutions/best-practices/fix-a-fail-safe-flags-false-positive-in-the-consumer-2026-11-15.md` —
+  the consumer-side live `PUBLIC` lookup that rule 4 reuses for archived rows.
 
 ## See also — privacy-gate correctness patterns
 
