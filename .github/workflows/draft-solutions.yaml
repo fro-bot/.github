@@ -152,7 +152,7 @@ jobs:
 
       - name: 🤖 Draft solution docs
         id: agent
-        uses: fro-bot/agent@65239fc570b0e7adc3c0d0c263282ee91ff6108d # v0.146.0
+        uses: fro-bot/agent@e6386cadf0854fa6ff9bf91f8e52252813264959 # v0.147.2
         timeout-minutes: 45
         env:
           TASK_PROMPT: |
@@ -370,7 +370,7 @@ jobs:
 
       - id: get-workflow-app-token
         name: 🔑 Mint write token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
