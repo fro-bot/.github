@@ -73,18 +73,17 @@ describe('renovate-approve.yaml triggers', () => {
   it('starts on the completion of the workflows that produce a required check, and nothing else', () => {
     const run = workflow.on.workflow_run as {workflows?: string[]; types?: string[]}
     expect(run.types).toEqual(['completed'])
-    expect(run.workflows).toEqual(['Main', 'CodeQL', 'Dependency Review', 'Renovate', 'Check Private Leak'])
+    expect(run.workflows).toEqual(['Main', 'CodeQL', 'Dependency Review', 'Renovate'])
+  })
+
+  it('starts on a workflow_run only when the triggering run is on a renovate/ branch', () => {
+    const run = workflow.on.workflow_run as {branches?: string[]}
+    expect(run.branches).toEqual(['renovate/**'])
   })
 
   it('names workflows that exist on this branch, so a rename cannot silently unhook the trigger', () => {
     const run = workflow.on.workflow_run as {workflows: string[]}
-    const names = [
-      'main.yaml',
-      'codeql-analysis.yaml',
-      'dependency-review.yaml',
-      'renovate.yaml',
-      'check-private-leak.yaml',
-    ].map(file => {
+    const names = ['main.yaml', 'codeql-analysis.yaml', 'dependency-review.yaml', 'renovate.yaml'].map(file => {
       const document: unknown = parse(readFileSync(resolve(root, '.github/workflows', file), 'utf8'))
       return (document as {name: string}).name
     })
