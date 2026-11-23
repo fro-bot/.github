@@ -11284,3 +11284,27 @@ Sources: https://github.com/fro-bot/space-bus/pull/265, https://github.com/fro-b
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@776aa0331676479f23c9aaf4f25a5788708d54f4
+
+## [2026-11-23 16:04] ingest | repo:marcusrbrown/metacogs
+
+Surveyed marcusrbrown/metacogs and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/metacogs. `main` moved `f15c4562` → `61065ee1`
+(11 commits). I read the repo metadata, the root listing, the workflow
+directory listing, and the compare file list and workflow patches. README and
+`package.json` did not change. Default branch `main`, public, not archived,
+TypeScript, Bun. Fro Bot and Renovate are both still present. No material change.
+
+Non-material: `fro-bot/agent` v0.136.5 → v0.144.5 with `isolate-agent: 'true'`.
+The schedule/dispatch step that wrote a git push credential into `extraheader`
+is gone (#107). The PR-review prompt now leaves typecheck, test and check gates
+to CI (#108). Release moves npm 11.21.1 → 11.21.2 and
+`create-github-app-token` v3.3.0 → v3.4.0.
+
+Changes to [[marcusrbrown--metacogs]]: one current-state statement under the
+title, because the old agent and npm pins appear only in the dated 2026-11-09
+section. Bumped `updated`; no new repository `sources` entry. In
+[[github-actions-ci]] I added a dated sub-note to the credential-scoping entry
+and one source. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/metacogs
