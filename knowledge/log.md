@@ -11308,3 +11308,13 @@ section. Bumped `updated`; no new repository `sources` entry. In
 and one source. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/metacogs
+
+## [2026-11-23 16:06] ingest | repo:marcusrbrown/.github
+
+Surveyed marcusrbrown/.github and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/.github at `d9a5bb9a`. I read the public metadata, the full directory listing, the README, all three workflows and the Renovate config. Since the 2026-11-10 recheck at `307d4eb4`, the only change is a dependency bump: Prettier 3.9.10 → 3.10.1 (#447), in both the CI `PRETTIER_VERSION` and Renovate's post-upgrade task. The structure is unchanged: 15 files, three workflows (`main.yaml`, `renovate.yaml`, `update-repo-settings.yaml`) and no package manifest. Both reusable callers are still at `bfra-me/.github` v4.43.0 (`e6a1ab17`), and the preset is still `#4.5.9`. Still public, MIT, default branch `main`, not archived. There is still no Fro Bot workflow, and the page already says so.
+
+Nothing material changed, so there is no dated note and no new repository `sources` entry. In [[marcusrbrown--github]] I corrected three outdated current-state version labels where they stand: the structure table's `bfra-me/.github` pin (v4.27.0 → v4.43.0), the CI Prettier version, and the Renovate post-upgrade Prettier version (both 3.9.6 → 3.10.1). I also bumped `updated`. Dated sections were left untouched. No topic, entity or comparison page needed changes. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/.github
