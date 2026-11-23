@@ -11272,3 +11272,15 @@ In [[github-actions-ci]] I added a dated sub-bullet under the CalVer release gua
 and one source. The corrections context was empty.
 
 Sources: https://github.com/fro-bot/dashboard
+
+## [2026-11-23 07:10] manual-edit | fro-bot/space-bus, marcusrbrown/opencode-copilot-delegate
+
+This entry comes from the daily oversight pass's cross-project scan, not from a survey. In [[fro-bot--space-bus]] I added a dated RESOLVED sub-bullet under the 2026-09-19 delivery-blocker correction. #265 makes the scheduled autoheal pass deliver as `branch-pr`, and #272 makes a same-day rerun reuse the existing daily report. Both were confirmed against `fro-bot.yaml` at `d65a2ddf` and against the first scheduled run after the merge. In [[marcusrbrown--opencode-copilot-delegate]] I added one dated section on #595, which makes the `ce:review` persona pipeline mandatory and requires a `Review method:` line on every review. Reviews after the merge were confirmed to carry that line. I bumped `updated` on both pages and added one source to each.
+
+Sources: https://github.com/fro-bot/space-bus/pull/265, https://github.com/fro-bot/space-bus/pull/272, https://github.com/marcusrbrown/opencode-copilot-delegate/pull/595
+
+## [2026-11-23 07:05] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@776aa0331676479f23c9aaf4f25a5788708d54f4

@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/opencode-copilot-delegate
 created: 2026-04-23
-updated: 2026-11-10
+updated: 2026-11-23
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: f0d44887e8ec2d37c4162c3c81e2691075ace99a
@@ -55,6 +55,9 @@ sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: 8fac30bd3fde62da93ceaf3b9760750f3d046c62
     accessed: 2026-09-26
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate/pull/595
+    sha: 83048ca92f7abfda4794e2251d696b7b4186b1a6
+    accessed: 2026-11-23
 tags:
   - opencode
   - plugin
@@ -631,6 +634,12 @@ These divergences are appropriate for an OpenCode plugin — Bun is the OpenCode
 - **RPC cleanup is best-effort:** OpenCode's server plugin API has no dispose hook today, so RPC server cleanup relies on process-exit signals and the orphan-reaper posture for missed shutdowns.
 - **TUI is opt-in:** Server plugin works alone. `/copilot-status` requires explicitly installing the TUI half in `tui.jsonc` — see the README for the dual-config snippet.
 - **Integration tests not in CI:** Test directory exists but tracked as issue #38. Suite skips when neither `GH_TOKEN` nor `COPILOT_PAT` is set.
+
+## PR review: mandatory persona pipeline and method disclosure (2026-11-22)
+
+PR #595 (merged 2026-11-22 03:54 UTC, `83048ca`, one file: `.github/workflows/fro-bot.yaml`) changed the PR-review prompt in two ways. First, the reviewer now has to run the full `ce:review` persona pipeline. The old prompt let it "review the diff directly" whenever `ce:review` failed or degraded, and #595's own description says that clause let the persona pipeline be skipped on several consecutive PRs. Only two cases now allow a direct review: a docs-only diff, judged against a closed path list where anything under `.github/`, `AGENTS.md` or a prompt file never counts as docs, or a named failure of the skill, a persona, the validation step or the merge step. Second, every review body must open with exactly one `Review method:` line in one of four fixed forms: full, partial (listing failed personas), docs-only direct, or direct with the quoted error. That makes a skipped pipeline visible in the review itself.
+
+Observed 2026-11-23: every Fro Bot review submitted after the merge, three on #596 and one on #598, opens with `Review method: ce:review read-only; personas: correctness, testing, project-standards`. The two reviews of #596 submitted just before the merge have no such line. This pattern can be adopted by other repositories whose review prompt has a discretionary fallback; compare [[github-actions-ci]].
 
 ## 0.x Versioning Policy
 
