@@ -20,7 +20,9 @@
  * - The live required list is read again on every poll, and a change restarts the wait.
  * - Exit 0: merged, held, dry run, stale, timed out, 409 or behind. Exit 1: a failed check, unreadable or
  *   short protection, an approval that did not count, any other API failure. Stderr carries fixed codes
- *   only, never an upstream message, a token or a payload.
+ *   only. The job summary may also carry GitHub's own `message` for a refused merge (a 405), on one line,
+ *   capped at 200 characters and escaped, with the pull request's `mergeable_state`; nothing else from the
+ *   response, no token and no payload reaches either.
  * - The clock and the sleep are injected, so no test waits for real.
  */
 
@@ -34,6 +36,7 @@ import {
   evaluateChecks,
   isTransient,
   parseDeclaredContexts,
+  propertyOf,
   readCheckRuns,
   readCommitStatuses,
   readRequiredChecks,
@@ -142,6 +145,8 @@ function limits() {
     transientBaseMs: 2000,
     mergeableRereads: 3,
     mergeableDelayMs: 2000,
+    // The longest GitHub message a summary carries.
+    refusalChars: 200,
     pageSize: 100,
     maxPages: 50,
     // 60 minutes at one poll a minute is 61 polls; one more is the bound if the clock never moves.
@@ -248,6 +253,8 @@ interface OutcomeContext {
   readonly pullRequest: number | null
   readonly pin: string
   readonly approved?: boolean
+  /** One line for the facts under the summary: why GitHub refused the merge. */
+  readonly refusal?: string
 }
 
 /** The run as it unfolds: `approved` once `createReview` succeeded, `waiting` until the checks have settled. */
@@ -283,8 +290,33 @@ function summaryFor(context: OutcomeContext, title: string, detail: string, code
   const facts = [
     context.pullRequest === null ? undefined : `- Pull request: #${String(context.pullRequest)}`,
     `- Pinned commit: ${/^[0-9a-f]{40}$/u.test(context.pin) ? `\`${context.pin}\`` : 'not available'}`,
+    context.refusal === undefined ? undefined : `- ${context.refusal}`,
   ].filter(fact => fact !== undefined)
   return [`### Promotion self-merge: ${title}`, '', said, '', ...facts, ''].join('\n')
+}
+
+/** Text from GitHub as one line of at most `refusalChars` characters, safe to write into a job summary. */
+function summaryLine(text: unknown): string {
+  const line =
+    typeof text === 'string'
+      ? text
+          .replaceAll(/\p{Cc}/gu, ' ')
+          .slice(0, limits().refusalChars)
+          .trim()
+      : ''
+  return line === ''
+    ? 'unavailable'
+    : line
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll(/[\\`*_[\]|~#]/gu, String.raw`\$&`)
+}
+
+/** Why GitHub refused a merge: its `message` from the response body, when it sent a string, and the PR's state. */
+function refusalOf(error: unknown, mergeableState: string): string {
+  const message = propertyOf(propertyOf(propertyOf(error, 'response'), 'data'), 'message')
+  return `Merge refused (405): ${summaryLine(message)}; mergeable_state: ${summaryLine(mergeableState)}`
 }
 
 /** The outcome of a run whose deadline passed: the wait ran out, or the time after it did. */
@@ -609,7 +641,8 @@ async function promote(input: SelfMergeInput, state: RunState): Promise<SelfMerg
     if (status === 405) {
       const after = await settle()
       if (after.stop !== null) return after.stop
-      return outcomeOf(state, after.pull.mergeableState === 'behind' ? 'OPEN_WAITING' : 'MERGE_BLOCKED')
+      if (after.pull.mergeableState === 'behind') return outcomeOf(state, 'OPEN_WAITING')
+      return outcomeOf({...state, refusal: refusalOf(error, after.pull.mergeableState)}, 'MERGE_BLOCKED')
     }
     // The merge may have gone through before the failure or the cut-off: look before reporting.
     const pull = await reconcile()

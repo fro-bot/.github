@@ -77,7 +77,7 @@ function pagination() {
 }
 
 /** A property of whatever was thrown; `Object()` makes a primitive, `null` or `undefined` safe to read. */
-function propertyOf(error: unknown, name: string): unknown {
+export function propertyOf(error: unknown, name: string): unknown {
   return Reflect.get(new Object(error), name)
 }
 
