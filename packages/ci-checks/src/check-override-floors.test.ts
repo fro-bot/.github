@@ -800,31 +800,18 @@ describe('readAcceptedAdvisories', () => {
     })
   })
 
-  it('reads the committed file: it parses, and its picomatch entry is unexpired on 2026-11-17', () => {
+  it('reads the committed file: it parses, and the withdrawn picomatch advisory is no longer accepted', () => {
     const result = readAcceptedAdvisories()
     expect(result.ok).toBe(true)
     const entries = result.ok ? result.entries : []
-    expect(
-      entries.map(entry => ({
-        package: entry.package,
-        advisory: entry.advisory,
-        ghsa: entry.ghsa,
-        expires: entry.expires,
-      })),
-    ).toContainEqual({
-      package: 'picomatch',
-      advisory: 1247710,
-      ghsa: 'GHSA-fc5q-39xc-vjpf',
-      expires: '2026-12-17',
-    })
-    expect(entries.find(entry => entry.package === 'picomatch')?.reason).not.toBe('')
+    expect(entries.find(entry => entry.package === 'picomatch' && entry.advisory === 1247710)).toBeUndefined()
 
     const gate = checkOverrideFloors({
       runAudit: auditOf({picomatch: [picomatchRecord]}),
-      now: at('2026-11-17'),
+      now: at('2026-11-19'),
     })
-    expect(gate.ok).toBe(true)
-    expect(gate.skipped).toMatchObject([{packageName: 'picomatch', advisoryId: 1247710, expires: '2026-12-17'}])
+    expect(gate.ok).toBe(false)
+    expect(gate.skipped).toEqual([])
   })
 })
 
