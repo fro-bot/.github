@@ -68,7 +68,7 @@ jobs:
       #      simplest — no dynamic loop over a data-driven target set.
       - name: 🔑 Mint control-plane token
         id: control-plane-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -78,7 +78,7 @@ jobs:
 
       - name: 🔑 Mint fro-bot dispatch token
         id: dispatch-token-fro-bot
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -90,7 +90,7 @@ jobs:
       # tokens for marcusrbrown-owned repos).
       - name: 🔑 Mint marcusrbrown dispatch token
         id: dispatch-token-marcusrbrown
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}
@@ -203,7 +203,7 @@ jobs:
       # `actions: read` — no `pull-requests: read` (PR search is removed).
       - name: 🔑 Mint control-plane token
         id: control-plane-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -213,7 +213,7 @@ jobs:
 
       - name: 🔑 Mint fro-bot track token
         id: track-token-fro-bot
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -225,7 +225,7 @@ jobs:
       # tokens for marcusrbrown-owned repos).
       - name: 🔑 Mint marcusrbrown track token
         id: track-token-marcusrbrown
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.MRBRO_BOT_APPLICATION_ID }}
           private-key: ${{ secrets.MRBRO_BOT_APPLICATION_PRIVATE_KEY }}

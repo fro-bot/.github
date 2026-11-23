@@ -132,7 +132,7 @@ jobs:
       # owner sidesteps PAT policy entirely while still permitting public-read GraphQL.
       - name: Mint App token for privacy gate
         id: gate-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -304,7 +304,7 @@ jobs:
       - name: Run Fro Bot survey ingest
         id: survey-agent
         if: ${{ steps.onboarded.outputs.onboarded == 'true' }}
-        uses: fro-bot/agent@65239fc570b0e7adc3c0d0c263282ee91ff6108d # v0.146.0
+        uses: fro-bot/agent@e6386cadf0854fa6ff9bf91f8e52252813264959 # v0.147.2
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -363,7 +363,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 1)
         id: survey-agent-retry-1
         if: ${{ success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}
-        uses: fro-bot/agent@65239fc570b0e7adc3c0d0c263282ee91ff6108d # v0.146.0
+        uses: fro-bot/agent@e6386cadf0854fa6ff9bf91f8e52252813264959 # v0.147.2
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -422,7 +422,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 2)
         id: survey-agent-retry-2
         if: ${{ success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}
-        uses: fro-bot/agent@65239fc570b0e7adc3c0d0c263282ee91ff6108d # v0.146.0
+        uses: fro-bot/agent@e6386cadf0854fa6ff9bf91f8e52252813264959 # v0.147.2
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -633,7 +633,7 @@ jobs:
 
       - name: 🔑 Mint App token for data writes
         id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -658,7 +658,7 @@ jobs:
       - name: 🔑 Mint App token for recheck
         id: recheck-token
         if: ${{ always() && needs.survey-resolve.outputs.resolve-outcome == 'success' }}
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
@@ -860,7 +860,7 @@ jobs:
       # actions: write.
       - name: 🔑 Mint App token for the survey re-dispatch
         id: app-token
-        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         with:
           client-id: ${{ secrets.APPLICATION_ID }}
           private-key: ${{ secrets.APPLICATION_PRIVATE_KEY }}
