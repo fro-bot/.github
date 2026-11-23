@@ -20,6 +20,15 @@ function apiError(status: number, message = 'upstream body with a secret'): ApiE
   return Object.assign(new Error(message), {status})
 }
 
+/** A refused request as Octokit throws it: the status, and the response body GitHub sent, when it sent one. */
+function refusedWith(status: number, data?: unknown): ApiError {
+  return Object.assign(new Error('Octokit: request failed with a body that must not reach a summary'), {
+    status,
+    response: {status, data, headers: {'x-github-request-id': 'REQ-ID'}},
+    request: {headers: {authorization: 'token secret-token'}},
+  })
+}
+
 /** Plays `items` in order, then repeats the last. An `Error` item is thrown. */
 function script<T>(...items: readonly (T | Error)[]): () => T {
   let index = 0
@@ -1017,7 +1026,8 @@ describe('selfMerge: the merge (AE6)', () => {
     })
     const outcome = await selfMerge(w.input())
     expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
-    expect(outcome.summary).toContain('did not count')
+    expect(outcome.summary).not.toContain('did not count')
+    expect(outcome.summary).not.toContain('change request')
   })
 
   it('exits 1 on a 405 for a conflicted pull request', async () => {
@@ -1425,17 +1435,19 @@ describe('runSelfMerge', () => {
 })
 
 describe('selfMerge: the full text of every summary', () => {
-  const facts = (withPullRequest = true) => [
+  const facts = (withPullRequest = true, extra: readonly string[] = []) => [
     ...(withPullRequest ? ['- Pull request: #77'] : []),
     `- Pinned commit: \`${PIN}\``,
+    ...extra,
     '',
   ]
-  const summary = (title: string, detail: string, withPullRequest = true) =>
-    [`### Promotion self-merge: ${title}`, '', detail, '', ...facts(withPullRequest)].join('\n')
+  const summary = (title: string, detail: string, withPullRequest = true, extra: readonly string[] = []) =>
+    [`### Promotion self-merge: ${title}`, '', detail, '', ...facts(withPullRequest, extra)].join('\n')
   const AFTER =
     'The approval was already submitted as `fro-bot` on the pinned commit and stays on the pull request until the head moves or someone dismisses it; check the pull request.'
   /** A summary of a run that had already approved: the detail, then the sentence about the approval. */
-  const approvedSummary = (title: string, detail: string) => summary(title, `${detail} ${AFTER}`)
+  const approvedSummary = (title: string, detail: string, extra: readonly string[] = []) =>
+    summary(title, `${detail} ${AFTER}`, true, extra)
 
   const throwing = (status: number) => () => {
     throw apiError(status)
@@ -1610,10 +1622,9 @@ describe('selfMerge: the full text of every summary', () => {
       'merge blocked',
       async () =>
         selfMerge(world({merge: throwing(405), pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'})}).input()),
-      approvedSummary(
-        'merge blocked',
-        'GitHub refused the merge although the pull request was approved: the approval did not count or a change request is outstanding. The pull request stays open.',
-      ),
+      approvedSummary('merge blocked', 'GitHub refused the merge. The pull request stays open.', [
+        '- Merge refused (405): unavailable; mergeable_state: blocked',
+      ]),
     ],
     [
       'merge failed',
@@ -1693,6 +1704,184 @@ describe('selfMerge: odd thrown values and response shapes', () => {
       pulls: script<PullState>({}, {}, {}, {head: MOVED}),
     })
     expect(await selfMerge(w.input())).toMatchObject({exitCode: 0, code: 'STALE_HEAD'})
+  })
+})
+
+describe('selfMerge: why GitHub refused a merge (405)', () => {
+  const refused = (data: unknown, mergeable = 'blocked') =>
+    world({
+      merge: () => {
+        throw refusedWith(405, data)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable}),
+    })
+
+  it('records GitHub message and the mergeable_state in the summary', async () => {
+    const outcome = await selfMerge(refused({message: 'Repository rule violations found'}).input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toContain(
+      '- Merge refused (405): Repository rule violations found; mergeable_state: blocked',
+    )
+  })
+
+  it('states no diagnosis of its own: the whole summary for a conflicted refusal', async () => {
+    const outcome = await selfMerge(refused({message: 'Merge conflict'}, 'dirty').input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toBe(
+      [
+        '### Promotion self-merge: merge blocked',
+        '',
+        'GitHub refused the merge. The pull request stays open. The approval was already submitted as `fro-bot` on the pinned commit and stays on the pull request until the head moves or someone dismisses it; check the pull request.',
+        '',
+        '- Pull request: #77',
+        `- Pinned commit: \`${PIN}\``,
+        '- Merge refused (405): Merge conflict; mergeable_state: dirty',
+        '',
+      ].join('\n'),
+    )
+  })
+
+  it('reports the settled mergeable_state, not the first read after the refusal', async () => {
+    const w = world({
+      merge: () => {
+        throw refusedWith(405, {message: 'Merge conflict'})
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'unknown'}, {mergeable: 'dirty'}),
+    })
+    const outcome = await selfMerge(w.input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toContain('- Merge refused (405): Merge conflict; mergeable_state: dirty')
+    expect(outcome.summary).not.toContain('mergeable_state: unknown')
+    expect(w.sleeps).toEqual([2000])
+  })
+
+  it('records the mergeable_state the settle re-read ended on', async () => {
+    const outcome = await selfMerge(refused({message: 'Merge conflict'}, 'dirty').input())
+    expect(outcome.summary).toContain('- Merge refused (405): Merge conflict; mergeable_state: dirty')
+  })
+
+  it.each([
+    ['no body', undefined],
+    ['a null body', null],
+    ['a string body', 'Repository rule violations found'],
+    ['a body without a message', {documentation_url: 'https://docs.github.com/'}],
+    ['a numeric message', {message: 42}],
+    ['an object message', {message: {text: 'Repository rule violations found'}}],
+    ['an empty message', {message: ''}],
+    ['a message of only control characters and spaces', {message: ' \r\n\t\u0000 '}],
+  ])('shows unavailable for %s', async (_why, data) => {
+    const outcome = await selfMerge(refused(data).input())
+    expect(outcome).toMatchObject({exitCode: 1, code: 'MERGE_BLOCKED'})
+    expect(outcome.summary).toContain('- Merge refused (405): unavailable; mergeable_state: blocked')
+  })
+
+  it('shows unavailable for an error with no response at all', async () => {
+    const w = world({
+      merge: () => {
+        throw apiError(405)
+      },
+      pulls: script<PullState>({}, {}, {}, {mergeable: 'blocked'}),
+    })
+    expect((await selfMerge(w.input())).summary).toContain(
+      '- Merge refused (405): unavailable; mergeable_state: blocked',
+    )
+  })
+
+  it('reduces the message to one line', async () => {
+    const outcome = await selfMerge(
+      refused({message: 'one\r\ntwo\nthree\rfour\tfive\u0000six\u007Fseven\u0085eight'}).input(),
+    )
+    expect(outcome.summary).toContain('Merge refused (405): one  two three four five six seven eight; mergeable_state')
+    expect(outcome.summary.split('\n').filter(line => line.includes('Merge refused'))).toHaveLength(1)
+  })
+
+  it('escapes markdown and HTML', async () => {
+    const outcome = await selfMerge(
+      refused({message: '<b>&amp;</b> [a](http://x) `c` *d* _e_ | ~f~ #g \\h > i'}).input(),
+    )
+    expect(outcome.summary).toContain(
+      String.raw`- Merge refused (405): &lt;b&gt;&amp;amp;&lt;/b&gt; \[a\](http://x) \`c\` \*d\* \_e\_ \| \~f\~ \#g \\h &gt; i; mergeable_state: blocked`,
+    )
+  })
+
+  it('escapes the mergeable_state and keeps it to one line', async () => {
+    const outcome = await selfMerge(refused({message: 'No'}, 'a_b<c\nd').input())
+    expect(outcome.summary).toContain(String.raw`- Merge refused (405): No; mergeable_state: a\_b&lt;c d`)
+  })
+
+  it('caps the message at 200 characters', async () => {
+    const at = await selfMerge(refused({message: 'a'.repeat(200)}).input())
+    expect(at.summary).toContain(`(405): ${'a'.repeat(200)}; mergeable_state`)
+    const over = await selfMerge(refused({message: 'a'.repeat(201)}).input())
+    expect(over.summary).toContain(`(405): ${'a'.repeat(200)}; mergeable_state`)
+    expect(over.summary).not.toContain('a'.repeat(201))
+  })
+
+  it('caps before it escapes, and trims what the cap leaves at the edges', async () => {
+    const outcome = await selfMerge(refused({message: `  ${'a'.repeat(197)}*b${'c'.repeat(50)}`}).input())
+    expect(outcome.summary).toContain(String.raw`(405): ${'a'.repeat(197)}\*; mergeable_state`)
+  })
+
+  it('records nothing else from the response or the request', async () => {
+    const outcome = await selfMerge(
+      refused({message: 'Repository rule violations found', documentation_url: 'https://docs.github.com/x'}).input(),
+    )
+    for (const leaked of ['docs.github.com', 'REQ-ID', 'secret-token', 'must not reach a summary']) {
+      expect(outcome.summary).not.toContain(leaked)
+    }
+  })
+
+  it('leaves stderr as the fixed code and keeps the message out of stdout', async () => {
+    const out: string[] = []
+    const err: string[] = []
+    const writes: string[] = []
+    const w = refused({message: 'Repository rule violations found'})
+    const code = await runSelfMerge({
+      env: {
+        GH_TOKEN: 'pat-value',
+        GITHUB_STEP_SUMMARY: '/summary',
+        PROMOTION_PR: '77',
+        PROMOTION_PIN: PIN,
+        PROMOTION_QUALIFIES: 'true',
+        PROMOTION_SELF_MERGE: 'on',
+      },
+      readSettings: () =>
+        `branches:\n  - name: main\n    protection:\n      required_status_checks:\n        contexts:\n${DECLARED.map(context => `          - '${context}'`).join('\n')}\n`,
+      createClient: async () => w.octokit,
+      now: () => w.clock.now,
+      sleep: async ms => {
+        w.clock.now += ms
+      },
+      signal: ms => AbortSignal.timeout(ms),
+      stdout: text => out.push(text),
+      stderr: text => err.push(text),
+      append: (_path, content) => writes.push(content),
+    })
+    expect(code).toBe(1)
+    expect(err).toEqual(['::error::promotion-self-merge: MERGE_BLOCKED\n'])
+    expect(out).toEqual([])
+    expect(writes.join('')).toContain('Merge refused (405): Repository rule violations found; mergeable_state: blocked')
+  })
+
+  it('keeps a 405 while behind as open and waiting, with no refusal line', async () => {
+    const outcome = await selfMerge(refused({message: 'Base branch was modified'}, 'behind').input())
+    expect(outcome).toMatchObject({exitCode: 0, code: 'OPEN_WAITING'})
+    expect(outcome.summary).not.toContain('Merge refused')
+    expect(outcome.summary).not.toContain('Base branch was modified')
+  })
+
+  it('adds no refusal line for a 409 or another failure', async () => {
+    for (const status of [409, 500]) {
+      const w = world({
+        merge: () => {
+          throw refusedWith(status, {message: 'Head branch was modified'})
+        },
+        pulls: script<PullState>({}, {}, {}, {}, {}, {}, {}, {}),
+      })
+      const outcome = await selfMerge(w.input())
+      expect(outcome.summary).not.toContain('Merge refused')
+      expect(outcome.summary).not.toContain('Head branch was modified')
+    }
   })
 })
 
