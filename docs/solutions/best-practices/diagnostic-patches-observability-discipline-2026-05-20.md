@@ -1,8 +1,8 @@
 ---
 title: Diagnostic patches must fail loudly and preserve stderr
 date: 2026-05-20
-last_updated: 2026-05-20
-verified: 2026-05-20
+last_updated: 2026-11-23
+verified: 2026-11-23
 category: best-practices
 module: .github/workflows/survey-repo.yaml
 problem_type: best_practice
@@ -43,7 +43,9 @@ Three PRs over three iterations instead of one, because each layer of swallowed 
 
 ## Guidance
 
-### 1. Never `2>/dev/null` a workflow gate's failure-path command
+### 1. Off public surfaces, never `2>/dev/null` a workflow gate's failure-path command
+
+**Scope first.** This rule covers steps that do not emit to a public surface. A privacy gate that runs on a public surface discards the CLI's stderr by design: an upstream error can name a private repository, so the gate prints a fixed reason plus the opaque node ID instead (`.github/actions/resolve-public-repo/action.yaml:50-52`). That exception is item 10 in [the privacy-gate learning](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md). Do not copy the replay below into such a gate.
 
 When `gh api`, `curl`, `jq`, or any external CLI fails inside a step that controls dispatch, operators have no visibility unless stderr is surfaced. Capture stderr to a tempfile and `cat` it on failure between stable marker lines:
 
@@ -61,6 +63,8 @@ rm -f "$gh_stderr"
 ```
 
 The markers do double duty: they anchor the captured stderr in the log for humans and provide a stable string for any future log-parsing tooling.
+
+The `survey-repo.yaml` examples below illustrate the capture mechanics only; that gate is a public surface and now discards stderr under item 10.
 
 ### 2. Be wary of leading dashes in `printf` format strings
 
@@ -234,7 +238,7 @@ After (PR #3347):
 
 ## Related
 
-- [Survey Repo dispatch boundary trusted caller-provided owner/repo, leaking private identity into public Actions surface](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — same workflow file and same privacy gate; defense-in-depth shape rather than diagnostic discipline. Note: the code example in that doc still shows `2>/dev/null` and the leading-dash `printf` pattern; both are now updated in production but stale in the doc.
+- [Survey Repo dispatch boundary trusted caller-provided owner/repo, leaking private identity into public Actions surface](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md) — same workflow file and same privacy gate; defense-in-depth shape rather than diagnostic discipline. Item 10 there records why public-surface gates discard stderr instead of surfacing it.
 - [The jq `//` falsy-coalesce trap in shell-driven gates](../workflow-issues/jq-falsy-coalesce-trap-in-shell-gates-2026-05-17.md) — companion "the gate can lie if the parser silently coerces" pattern in the same workflow.
 - [Autonomous-pipeline silent failures: status misclassification and additive-pipeline drift](../runtime-errors/autonomous-pipeline-silent-failures-2026-04-19.md) — same workflow-observability family; different cause shape (compound-expression status classification, not stderr blackout).
 - PR #3344 — diagnostic stderr capture

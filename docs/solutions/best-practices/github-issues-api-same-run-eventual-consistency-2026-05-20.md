@@ -1,8 +1,8 @@
 ---
 title: GitHub Issues API same-run eventual consistency requires an in-memory created-ID set
 date: 2026-05-20
-last_updated: 2026-07-04
-verified: 2026-05-20
+last_updated: 2026-11-23
+verified: 2026-11-23
 category: best-practices
 module: packages/registry/src/reconcile-effects.ts
 problem_type: best_practice
@@ -51,36 +51,46 @@ The set holds whatever identifier the dedup logic keys on. For per-owner rollups
 ### Pattern
 
 ```ts
-// 1. After the create stage emits its plan, materialize the dedup keys.
+// 1. reconcile-handler.ts:526-528 — after the create stage emits its plan, materialize
+//    the dedup keys. The set holds owners whose rollup was attempted (not only succeeded),
+//    so a failed create also suppresses self-heal for the rest of the run.
 const currentRunRollupOwners = new Set(
-  plan.issues
-    .filter(issue => issue.kind === 'per-owner-rollup')
-    .map(issue => issue.owner),
+  plan.issues.filter(issue => issue.kind === 'per-owner-rollup').map(issue => issue.owner),
 )
 
-// 2. Pass the set through to any downstream stage that lists + creates.
-const healedRollups = await selfHealRollups({
-  appOctokit,
+// 2. reconcile-handler.ts:529-539 — pass the set through to any downstream stage that
+//    lists + creates, and surface its suppression count.
+const {created: healedRollups, raceSuppressed} = await selfHealRollups({
+  writerOctokit,
   owner,
   repo,
+  nextRepos: plan.nextRepos,
   accessList,
   allowlist,
   logger,
   currentRunRollupOwners,
 })
+plan.summary.raceSuppressedRollups = raceSuppressed
 
-// 3. Inside selfHealRollups, union the in-memory set with the API-derived set
-//    BEFORE deciding whether to create. The set is authoritative.
-const existingRollupOwners = new Set<string>(/* from issues.listForRepo */)
-for (const owner of params.currentRunRollupOwners) {
-  existingRollupOwners.add(owner)
-}
+// 3. reconcile-effects.ts:784-820 — inside selfHealRollups, keep the API-derived set and
+//    the in-memory set SEPARATE and consult both before creating. Checking the API set
+//    first keeps API-visible owners out of raceSuppressed.
+const existingRollupOwners = new Set<string>(/* from issues.listForRepo, lines 788-800 */)
+// do NOT union currentRunRollupOwners here (lines 801-802)
 
-if (existingRollupOwners.has(targetOwner)) {
-  // skip create — either the API already knows, or we created it ourselves this run
-  return
+let raceSuppressed = 0
+for (const [owner, entries] of qualifyingOwners) {
+  if (existingRollupOwners.has(owner)) continue // pre-existing on GitHub — silent skip
+  if (params.currentRunRollupOwners.has(owner)) {
+    // same-run race suppression (lines 814-820): creation was attempted earlier in this run
+    raceSuppressed += 1
+    continue
+  }
+  // create — only reached when neither source knows the owner
 }
 ```
+
+Both sources must be consulted, because each misses a case the other covers. The API set misses a rollup attempted earlier in this run while the list is stale. The in-memory set misses a rollup that already existed and was not attempted this run. A hit in either prevents the create. Checking the API set first keeps API-visible owners out of `raceSuppressed`, so the count covers only same-run hits the API list did not yet show. A failed create also counts, so the metric does not prove the issue exists.
 
 ### Test the race directly
 
@@ -97,10 +107,10 @@ A regression test must reproduce the race shape: mock `issues.listForRepo` to re
 
 As of 2026-07-04, this pattern guards two independent call sites in `packages/registry/src/reconcile-effects.ts`, not just the rollup path:
 
-- **Per-owner rollups** — `currentRunRollupOwners` (built ~line 1665, passed into `selfHealRollups` at line 1668) is checked against `existingRollupOwners` inside `selfHealRollups` (function starts ~line 3106; the same-run check is at lines 3158-3166, separate from the `listForRepo`-derived set built at lines 3130-3153).
-- **Visibility-transition alerts** — `runIssueQueue` (function starts ~line 2680) declares its own same-run `attemptedTransitionNodeIds` Set at line 2708 and checks it at lines 2727-2739, independently of the `listForRepo`-based duplicate check earlier in the same loop.
+- **Per-owner rollups** — `currentRunRollupOwners` (built at `reconcile-handler.ts:526`, passed into `selfHealRollups` at `reconcile-handler.ts:529-538`) is checked inside `selfHealRollups` (function starts at `reconcile-effects.ts:760`). The `listForRepo`-derived `existingRollupOwners` is built at lines 784-800 and deliberately not unioned with the in-memory set (lines 801-802); the separate same-run check at lines 814-820 increments `raceSuppressed`.
+- **Visibility-transition alerts** — `runIssueQueue` (function starts at `reconcile-effects.ts:344`) declares its own same-run `attemptedTransitionNodeIds` Set at line 379, checks it at lines 392-398, and adds to it at line 466 only after a successful create. The check runs independently of the `listForRepo`-based duplicate check later in the same loop.
 
-Both sites follow the identical shape: a `listForRepo`-derived set for cross-run/pre-existing dedup, unioned or checked alongside an in-memory same-run Set that is authoritative for anything created earlier in the current process. Different resource within the same run (rollup issues vs. visibility-transition alerts), same eventual-consistency fix.
+Both sites follow the identical shape: a `listForRepo`-derived set for cross-run/pre-existing dedup, checked separately from an in-memory same-run Set that is authoritative for anything created earlier in the current process. Different resource within the same run (rollup issues vs. visibility-transition alerts), same eventual-consistency fix.
 
 ## When to Apply
 
@@ -125,9 +135,10 @@ Specifically in `fro-bot/.github`:
 
 ```ts
 const healedRollups = await selfHealRollups({
-  appOctokit,
+  writerOctokit,
   owner,
   repo,
+  nextRepos: plan.nextRepos,
   accessList,
   allowlist,
   logger,
@@ -158,15 +169,14 @@ for (const candidate of healableOwners) {
 
 ```ts
 const currentRunRollupOwners = new Set(
-  plan.issues
-    .filter(issue => issue.kind === 'per-owner-rollup')
-    .map(issue => issue.owner),
+  plan.issues.filter(issue => issue.kind === 'per-owner-rollup').map(issue => issue.owner),
 )
 
-const healedRollups = await selfHealRollups({
-  appOctokit,
+const {created: healedRollups, raceSuppressed} = await selfHealRollups({
+  writerOctokit,
   owner,
   repo,
+  nextRepos: plan.nextRepos,
   accessList,
   allowlist,
   logger,
@@ -188,14 +198,16 @@ const existingRollupOwners = new Set(
   openRollups.map(issue => issue.title /* parse owner from title */),
 )
 
-// Union API state with in-memory created state. In-memory is authoritative
-// for anything created in this run — the API list may be lagging.
-for (const owner of params.currentRunRollupOwners) {
-  existingRollupOwners.add(owner)
-}
-
+// Consult API state and in-memory attempted state separately; a hit in either skips the
+// create. In-memory covers anything attempted this run while the API list lags, and
+// checking the API set first keeps API-visible owners out of raceSuppressed.
+let raceSuppressed = 0
 for (const candidate of healableOwners) {
   if (existingRollupOwners.has(candidate)) continue
+  if (params.currentRunRollupOwners.has(candidate)) {
+    raceSuppressed += 1
+    continue
+  }
   await octokit.rest.issues.create({ /* now only fires if neither source knows */ })
 }
 ```
@@ -209,10 +221,11 @@ test('does not double-create a rollup that was just created in the same run', as
     data: [], // API list lags — empty even though we just created
   })
 
-  await selfHealRollups({
-    appOctokit: mockOctokit,
+  const result = await selfHealRollups({
+    writerOctokit: mockOctokit,
     owner: 'fro-bot',
     repo: '.github',
+    nextRepos, // ≥2 pending-review entries for ownerJustCreated
     accessList,
     allowlist,
     logger,
@@ -220,8 +233,11 @@ test('does not double-create a rollup that was just created in the same run', as
   })
 
   expect(mockOctokit.rest.issues.create).not.toHaveBeenCalled()
+  expect(result.raceSuppressed).toBe(1)
 })
 ```
+
+This example covers a stale read, and it would still pass with the two guards in the opposite order. The guard order is pinned by `counts race-suppressed skips separately from pre-existing rollups in raceSuppressedRollups` (`packages/registry/src/reconcile-repos.test.ts:4561`): an owner that is in both sets does not increment `raceSuppressed`.
 
 ## Related
 
