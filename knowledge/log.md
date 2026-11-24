@@ -11330,3 +11330,15 @@ Non-material: `fro-bot/agent` v0.126.0 → v0.147.1 with `isolate-agent: true`, 
 Changes to [[marcusrbrown--containers]]: one current-state statement under the title. I also corrected stale current-state values where they stand: the openai/urllib3 constraints, the pnpm version in two places, the mise Node/pnpm pins and the Fro Bot auth secrets. Bumped `updated`; no new repository `sources` entry. In [[docker-containers]] I added a dated update on the DL3025 paragraph (PR #723 merged; alert closure not verified) and one source. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/containers
+
+## [2026-11-24 16:02] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/opencode-copilot-delegate. `main` moved `f0d44887` → `b5f11867` (72 commits). I read the repo metadata, the directory listings, the compare file list and commit subjects, README, `package.json` and all eight workflows. The repo is still public, MIT, TypeScript on Bun, default branch `main`, not archived.
+
+The material changes are in host runtime, testing and Fro Bot delivery. Four releases (v0.12.2 → v0.14.1) added OpenCode 2.x support to the same package (#582, #587). The default export is now `{ id, server, setup }`, and both `@opencode-ai/plugin >=1.14.41` and `@opencode/plugin >=2.3.2` are optional peers. CI now runs a dual-host smoke test, `test:tui`, and a path-filtered host-contract matrix (`v1-floor`, `v1-current`, `v2`). CodeQL and Scorecard workflows were added. `fro-bot.yaml` now declares `output-mode: branch-pr` for the daily pass, which closes the delivery mismatch recorded since 2026-09-10. It also adds an approval-rule step with a separate `approval-backstop` job. Fro Bot and Renovate are both present, so no missing-workflow note is needed.
+
+Changes to [[marcusrbrown--opencode-copilot-delegate]]: a current-state statement under the title and one dated 2026-11-24 section. I corrected these current-state lines where they stand: the Biome, peer, runtime-dependency and dev-type rows; the workflow count and table (CI scope, CodeQL, Scorecard, Renovate v4.43.0); the Fro Bot delivery, prompt-coupling, daily-pass, secrets and concurrency bullets; the TUI opt-in and RPC cleanup statements; and the divergence table. Dated sections are untouched. I bumped `updated` and added no repository `sources` entry. [[opencode-plugins]] gets a dated section on the dual-host evidence fields, and [[github-actions-ci]] gets a dated section on the approval backstop and the delivery fix. Each has one new commit-pinned source. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
