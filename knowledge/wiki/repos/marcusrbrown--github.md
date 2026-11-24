@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/.github
 created: 2025-06-18
-updated: 2026-11-10
+updated: 2026-11-23
 sources:
   - url: https://github.com/marcusrbrown/.github
     sha: 307d4eb4a5821ee2d179b9fb27a4607b7e944fc2
@@ -120,8 +120,8 @@ Lean repo, 15 files total. No application code, no `package.json`, no TypeScript
 | `.github/settings.yml` | This repo's own Probot settings, self-extending `common-settings.yaml` |
 | `.github/renovate.json5` | Renovate config (extends `marcusrbrown/renovate-config#4.5.9`) |
 | `.github/workflows/main.yaml` | CI: Prettier check only |
-| `.github/workflows/renovate.yaml` | Renovate runner (reusable from `bfra-me/.github@v4.27.0`) |
-| `.github/workflows/update-repo-settings.yaml` | Probot settings sync (reusable from `bfra-me/.github@v4.27.0`) |
+| `.github/workflows/renovate.yaml` | Renovate runner (reusable from `bfra-me/.github@v4.43.0`) |
+| `.github/workflows/update-repo-settings.yaml` | Probot settings sync (reusable from `bfra-me/.github@v4.43.0`) |
 | `.prettierrc.yaml` | Prettier config |
 | `CODE_OF_CONDUCT.md` | Contributor Covenant v1.4 (contact: `git@mrbro.dev`) |
 | `FUNDING.yml` | GitHub Sponsors: `marcusrbrown` |
@@ -204,7 +204,7 @@ Self-extends `common-settings.yaml` with repo-specific overrides:
 Minimal pipeline. Single `Lint` job:
 
 1. Checkout branch via `actions/checkout@fbc6f399...` (SHA-pinned, v5.1.0) — uses `github.head_ref` ref
-2. Run Prettier 3.9.6 via `creyD/prettier_action@31355f8e...` (SHA-pinned, v4.3) with `--check .`
+2. Run Prettier 3.10.1 via `creyD/prettier_action@31355f8e...` (SHA-pinned, v4.3) with `--check .`
 
 No TypeScript checking, no tests, no additional linting. Appropriate for a YAML/Markdown-only repo.
 
@@ -229,7 +229,7 @@ Note also the contrast with two `uses:`-path failure modes already on this wiki:
 ## Developer Tooling
 
 - **Prettier:** Config in `.prettierrc.yaml` — arrow parens `avoid`, no bracket spacing, `auto` EOL, 120 char width, no semicolons, single quotes, tab width 2. Overrides for `.vscode/*.json` and `.devcontainer/**/devcontainer*.json` (tab width 4) and `*.md` (double quotes).
-- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.9` (still v4.x — has _not_ joined the v4→v5 migration wave noted in [[marcusrbrown--renovate-config]]; listed among the holdouts there as of 2026-06-17, and unchanged since 2026-04-30, ~19 weeks). Post-upgrade runs `npx prettier@3.9.6 --no-color --write .`. PR creation set to `immediate`. Rebase when behind base branch.
+- **Renovate:** Extends `marcusrbrown/renovate-config#4.5.9` (still v4.x — has _not_ joined the v4→v5 migration wave noted in [[marcusrbrown--renovate-config]]; listed among the holdouts there as of 2026-06-17, and unchanged since 2026-04-30, ~19 weeks). Post-upgrade runs `npx prettier@3.10.1 --no-color --write .`. PR creation set to `immediate`. Rebase when behind base branch.
 
 ## The 2026-09-04 Renovate Self-Update Deadlock
 

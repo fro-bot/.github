@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/metacogs
 created: 2026-10-24
-updated: 2026-11-09
+updated: 2026-11-23
 sources:
   - url: https://github.com/marcusrbrown/metacogs
     sha: f15c45628e10b42fa9541c1f3ff4bc89af569ae7
@@ -55,6 +55,10 @@ node_id: R_kgDOVUNN9g
 ---
 
 # marcusrbrown/metacogs
+
+Current as of `main` at `61065ee1`: `fro-bot.yaml` pins `fro-bot/agent` v0.144.5 with
+`isolate-agent: 'true'` and no longer writes a git push credential to disk;
+release installs npm 11.21.2.
 
 ## 2026-11-09 snapshot: multi-host packaging, separate evidence levels
 
