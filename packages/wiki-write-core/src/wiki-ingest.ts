@@ -198,6 +198,7 @@ export type WikiIngestErrorCode =
   | 'MISSING_TOKEN'
   | 'OCTOKIT_LOAD_FAILED'
   | 'CONFLICT_EXHAUSTED'
+  | 'SERVER_ERROR_EXHAUSTED'
   | 'HANDOFF_BASE_INVALID'
   | 'HANDOFF_PAGE_CHANGED'
   | 'ARCHIVE_NOTICE_MISSING'
@@ -407,7 +408,11 @@ function collectWikiFrontmatter(files: Record<string, string>): Map<string, Wiki
  * in that attempt from the tree the files were derived from (`baseCommitSha`, or the first head read
  * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
  * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
- * replays the same files on it, up to `maxRetries` attempts, under the same guard.
+ * replays the same files on it, up to `maxRetries` attempts, under the same guard. A GitHub server error
+ * (HTTP 500, 502, 503 or 504) from any call in an attempt is retried the same way, after a backoff, and
+ * exhausts into `SERVER_ERROR_EXHAUSTED`; the response body is never kept. A server error that answers the
+ * ref update may hide a write that landed, so the ref is read back first: when it already points at the
+ * commit the attempt created, the write succeeded.
  *
  * With `handoff`, the handed-off paths are checked first on every attempt against the agent's data
  * commit (`HANDOFF_PAGE_CHANGED`), so a page conflict is never reported as a ref race.
@@ -454,6 +459,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
     // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
     // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
     let updatingRef = false
+    let createdCommitSha: string | undefined
     try {
       await assertWritableWikiBranch(octokit, owner, repo, branch)
 
@@ -538,6 +544,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         parents: [commit.data.sha],
       })
 
+      createdCommitSha = createdCommit.data.sha
       updatingRef = true
       await octokit.rest.git.updateRef({
         owner,
@@ -552,6 +559,30 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
       if (shouldBootstrapDataBranch && isApiErrorStatus(error, 404) && attempt < maxRetries) {
         await bootstrapDataBranch()
         continue
+      }
+
+      const serverErrorStatus = serverErrorStatusOf(error)
+      if (serverErrorStatus !== undefined) {
+        // The ref update was sent, so a server error does not say whether it landed: ask the ref.
+        if (
+          updatingRef &&
+          createdCommitSha !== undefined &&
+          (await refPointsAt(octokit, owner, repo, branch, createdCommitSha))
+        ) {
+          return {committed: true, commitSha: createdCommitSha, attempts: attempt}
+        }
+
+        if (attempt < maxRetries) {
+          await delayConflictRetry(attempt)
+          continue
+        }
+
+        // The status only: the error's message is GitHub's HTML error page and must never reach a log.
+        throw new WikiIngestError({
+          code: 'SERVER_ERROR_EXHAUSTED',
+          message: `wiki ingest exhausted ${maxRetries} attempt(s) writing ${owner}/${repo}@${branch}: GitHub answered with a server error (HTTP ${serverErrorStatus})`,
+          remediation: 'GitHub was failing on every attempt. Re-run the workflow once GitHub has recovered.',
+        })
       }
 
       const refRace = isConflictError(error) || (updatingRef && isApiErrorStatus(error, 422))
@@ -1604,6 +1635,30 @@ function isWikiPageType(value: unknown): value is WikiPageType {
 
 function isConflictError(error: unknown): boolean {
   return isRecord(error) && error.status === 409
+}
+
+const SERVER_ERROR_STATUSES: readonly number[] = [500, 502, 503, 504]
+
+/** The status of a GitHub server error worth retrying (500, 502, 503, 504), else `undefined`. */
+function serverErrorStatusOf(error: unknown): number | undefined {
+  if (!isRecord(error) || typeof error.status !== 'number') return undefined
+  return SERVER_ERROR_STATUSES.includes(error.status) ? error.status : undefined
+}
+
+/** Whether `branch` currently points at `sha`. A failed read answers `false`: the write is not confirmed. */
+async function refPointsAt(
+  octokit: OctokitClient,
+  owner: string,
+  repo: string,
+  branch: string,
+  sha: string,
+): Promise<boolean> {
+  try {
+    const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
+    return head.data.object.sha === sha
+  } catch {
+    return false
+  }
 }
 
 function isApiErrorStatus(error: unknown, status: number): boolean {
