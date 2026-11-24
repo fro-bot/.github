@@ -237,6 +237,8 @@ test('does not double-create a rollup that was just created in the same run', as
 })
 ```
 
+This example covers a stale read, and it would still pass with the two guards in the opposite order. The guard order is pinned by `counts race-suppressed skips separately from pre-existing rollups in raceSuppressedRollups` (`packages/registry/src/reconcile-repos.test.ts:4561`): an owner that is in both sets does not increment `raceSuppressed`.
+
 ## Related
 
 - [merge-data PR recovery from GitHub 422 race](../integration-issues/merge-data-pr-github-422-race-recovery-2026-05-02.md) — the closest analogue. Same GitHub eventual-consistency family, different resource (Pulls API). Fix shape differs: there the system rediscovers a PR after a transient 422 / stale `expected_head_sha`; here the system carries an in-memory created-ID set so same-run stages don't double-count or miss freshly created issues. Pair them when reasoning about same-run GitHub API consistency.
