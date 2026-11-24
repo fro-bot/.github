@@ -2,8 +2,11 @@
 type: topic
 title: Docker Containers
 created: 2026-04-18
-updated: 2026-10-27
+updated: 2026-11-24
 sources:
+  - url: https://github.com/marcusrbrown/containers
+    sha: faf0796635aecca6c3dcb8ef321ee3daf71c4b62
+    accessed: 2026-11-24
   - url: https://github.com/marcusrbrown/containers
     sha: be4082462cf3f401dc33b1a9a6a90ca2addf2451
     accessed: 2026-10-27
@@ -87,6 +90,8 @@ Labels follow the [OCI Image Spec annotations](https://github.com/opencontainers
 - **Strip package managers from the runtime stage** (2026-09-23, [[fro-bot--dashboard]]): before `USER node`, the final stage runs `rm -rf` on `npm`/`npx`/`pnpm`/`pnpx`/`corepack`/`yarn`/`yarnpkg`, their `lib/node_modules` trees, and root caches. It copies only `node_modules/` from a `prod-deps` stage, with no manifests and no lockfile. The `node:*` base images ship all of these, so a runtime image that "only runs `node src/server.ts`" still carries a working fetch-and-install toolchain unless someone removes it. The cost is one layer. The payoff is that a compromised process cannot `npx` its way to a second-stage payload.
 
 **Hadolint DL3025 (`HEALTHCHECK`/`CMD`/`ENTRYPOINT` shell vs. JSON form):** [[marcusrbrown--containers]] carries open code-scanning alerts (#283/#285) for shell-form `HEALTHCHECK CMD` in both `node/*` Dockerfiles. Shell form wraps the command in `/bin/sh -c`, which reintroduces a shell process between the init system and the probe — undercutting the `tini`-as-PID-1 signal-handling discipline the same Dockerfiles otherwise enforce. JSON exec notation (`HEALTHCHECK CMD ["curl", "-f", "http://localhost:3000/health"]`) is the fix; the proposed patch (PR #723) has been green and unmerged since 2026-07-30.
+
+**Update (2026-11-24):** PR #723 has merged into [[marcusrbrown--containers]] `main` (between `be408246` and `faf07966`), and both `node/*` Dockerfiles appear in the compare. This survey did not read the Dockerfiles or the alert state, so it does not confirm that alerts #283/#285 are closed.
 
 ### Multi-Architecture
 
