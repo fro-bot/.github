@@ -1,6 +1,6 @@
 # Override Floors
 
-The root `package.json` `overrides` map pins 14 floors. This file records the rationale for the six that have one: brace-expansion, fast-uri, qs, source-map-js, undici and zod. It also describes `accepted-advisories.json`, the reviewed exception list for an advisory that has no fixed version. The list is empty.
+The root `package.json` `overrides` map pins 15 floors. This file records the rationale for the seven that have one: brace-expansion, fast-uri, katex, qs, source-map-js, undici and zod. It also describes `accepted-advisories.json`, the reviewed exception list for an advisory that has no fixed version. The list is empty.
 
 ## `brace-expansion`
 
@@ -15,6 +15,14 @@ GHSA-hrr3-gc8f-f4qj, GHSA-jvvf-x445-j334, GHSA-w74x-v6f9-j3xg, GHSA-xhq7-xmqj-76
 The installed copy is a transitive of `ajv`, which declares `fast-uri ^3.0.1`, so no parent range admits 4.2.3 and an override is the only way to move it.
 
 Remove this floor only when all parent ranges exclude the affected versions.
+
+## `katex`
+
+GHSA-238p-pmpm-9mq7 (low): prototype pollution can bypass KaTeX's trust restrictions. It affects >=0.11.0 <0.18.2; 0.18.2 is the first patched release.
+
+The installed copy is a dev-only transitive of the lint chain: `@eslint/markdown` depends on `mdast-util-math` and `micromark-extension-math`, which declares `katex ^0.16.0`, so no parent range admits a patched release and an override is the only way to move it. The floor is out of the declared range on purpose; the lint gate exercises the parser.
+
+Remove this floor when the `micromark-extension-math` release in use requires `katex >=0.18.2`.
 
 ## `qs`
 
