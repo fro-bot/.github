@@ -2360,7 +2360,8 @@ describe('commitWikiChanges (GitHub server errors)', () => {
     const failure = outcome as InstanceType<typeof WikiIngestError>
     expect(failure.code).toBe('SERVER_ERROR_UNCONFIRMED')
     expect(failure.message).toContain(String(status))
-    expect(failure.remediation).toContain('data branch head')
+    expect(failure.message).toContain('commit-after-write')
+    expect(failure.remediation).toContain('reachable from the data branch head')
     expect(`${failure.message} ${failure.remediation} ${String(failure.cause)}`).not.toMatch(
       /DOCTYPE|html|secret-body-marker/i,
     )

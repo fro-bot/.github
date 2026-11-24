@@ -462,6 +462,8 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
     // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
     // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
     let updatingRef = false
+    // The commit the ref update points at, kept for the unconfirmed-write diagnostic.
+    let attemptedCommitSha = ''
     try {
       await assertWritableWikiBranch(octokit, owner, repo, branch)
 
@@ -548,6 +550,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         parents: [commit.data.sha],
       })
 
+      attemptedCommitSha = createdCommit.data.sha
       updatingRef = true
       await octokit.rest.git.updateRef({
         owner,
@@ -571,9 +574,8 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
           // The ref update was sent, so the commit may have landed: neither retry nor guess.
           throw new WikiIngestError({
             code: 'SERVER_ERROR_UNCONFIRMED',
-            message: `wiki ingest could not confirm whether its commit reached ${owner}/${repo}@${branch}: GitHub answered the ref update with a server error (HTTP ${serverErrorStatus})`,
-            remediation:
-              'The commit may have landed. Check the data branch head before re-running; a re-run would see it as a conflict.',
+            message: `wiki ingest could not confirm whether its commit ${attemptedCommitSha} reached ${owner}/${repo}@${branch}: GitHub answered the ref update with a server error (HTTP ${serverErrorStatus})`,
+            remediation: `The commit may have landed. Check whether ${attemptedCommitSha} is reachable from the data branch head before re-running; a re-run would see it as a conflict.`,
           })
         }
 
