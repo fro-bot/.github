@@ -3,7 +3,7 @@ type: repo
 title: fro-bot/space-bus
 node_id: R_kgDOTMGFnQ
 created: 2026-07-03
-updated: 2026-11-16
+updated: 2026-11-23
 sources:
   - url: https://github.com/fro-bot/space-bus
     sha: ad8eefe00c467ba342353d5bbd3d8cc6fbb61fc5
@@ -29,6 +29,9 @@ sources:
   - url: https://github.com/fro-bot/space-bus
     sha: 20ab67c56a39f12774d7dcb659e65848767bc03e
     accessed: 2026-11-01
+  - url: https://github.com/fro-bot/space-bus/blob/d65a2ddfb2946c40e12b15f715ced4c8a7fa65f1/.github/workflows/fro-bot.yaml
+    sha: d65a2ddfb2946c40e12b15f715ced4c8a7fa65f1
+    accessed: 2026-11-23
 tags:
   - opencode
   - mcp
@@ -693,6 +696,7 @@ A **downstream consumer** surfaced during the 2026-07-06 survey of [[marcusrbrow
 - **No structural change 2026-08-04:** six-tool surface, lane split, managed-server/CLI/launchd, and full automation all durable; the only motion was additive `/core` primitives + dep bumps + `assets/` brand tokens. The plugin is in steady-state.
 - **"Steady-state" superseded 2026-09-04 → code freeze.** The 2026-08-04 reading was correct as description and too generous as diagnosis. Measured: 5 of 117 blobs changed in 27 days, all action pins; `src/` untouched for 47 days; no human commit and no npm release since 2026-07-19; zero pending changesets. Not evidence of a defect, but the automation cannot tell "finished" from "abandoned" and the three findings below are what that costs.
 - **CORRECTED 2026-09-19 — the delivery blocker is the `working-dir` harness contract, not the prompt.** The agent has said so in every report since #166 (09-05). Re-check next survey whether `fro-bot.yaml` grew the caller half (a `Resolve delivery mode` gate + `output-mode` input + commit/push/PR steps, per the [[marcusrbrown--sparkle]] #2001/#2003 shape) or whether the schedule run switched to `branch-pr`. The prompt's category-4/boundary conflict should still be fixed, but fixing it alone will not deliver anything.
+  - **RESOLVED 2026-11-23: the schedule run switched to `branch-pr`.** #265 (merge `617cbea`, 2026-11-23 01:37 UTC) gave the `Run Fro Bot` step an `output-mode` expression: `branch-pr` on `schedule`, or on `workflow_dispatch` with an empty prompt, and `''` (unset) on every other event. That is the same condition that picks the autoheal prompt. #272 (`c85b49e`) followed up so a same-day rerun updates the existing daily report and does not open a second one. At `d65a2ddf` the expression is still in `fro-bot.yaml`, and the first scheduled run after it ([45113052564](https://github.com/fro-bot/space-bus/actions/runs/45113052564)) succeeded. This supersedes the "no `output-mode`" wording in the 2026-11-16 current-state paragraph. The fix matches the one [[marcusrbrown--opencode-copilot-delegate]] made in #555. A later survey should check whether the scheduled runs now open PRs.
 - **NEW 2026-09-19 — the gap is now discarding security patches.** Two verified-green remediations written to the working tree and lost: `bun audit` 19 → 0 (#170, 09-08) and `overrides` for three HIGH advisories (#183, 09-19). Check `package.json` for an `overrides` block next survey; its absence is the cheapest possible proof the channel is still cut.
 - **NEW 2026-09-19 — PR #72 needs a fix on `main`, not on its own branch.** `biome.json`'s `$schema` pins `2.5.2` while Renovate bumps the CLI; plus a real `noUnsafeOptionalChaining` finding at `src/contract.test.ts:125`. Track whether either lands. This supersedes the 2026-09-04 stale-`bun.lock` hypothesis.
 - **NEW 2026-09-19 — Renovate runs in duplicate.** Pairs 9–13 s apart, ~23 runs/day, `renovate.yaml` has no cron of its own. Source of the second dispatch **unidentified**; establish it next survey (a `print-config: true` dispatch or the org dispatcher's own run log should name it).
