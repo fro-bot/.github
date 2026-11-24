@@ -1,7 +1,7 @@
 ---
 title: "feat: repository lifecycle actions: archive, unarchive and declared rename"
 type: feat
-status: active
+status: complete
 date: 2026-11-15
 origin: docs/brainstorms/2026-11-15-repo-lifecycle-archive-and-declared-rename-requirements.md
 ---
@@ -402,7 +402,7 @@ Leak-scan decision for one selected row:
 
 **Result (2026-11-17):** merged as #4281 (2026-11-17T04:40:45Z), together with Unit 5. `archive` is seen live in Unit 7; `unarchive` is covered by tests only.
 
-- [ ] **Unit 7: first live use and read-backs**
+- [x] **Unit 7: first live use and read-backs**
 
 **Goal:** `copiloting` is archived through the action, and each protection is seen working.
 
@@ -426,7 +426,7 @@ Leak-scan decision for one selected row:
 
 **Verification:** each read-back above is recorded with its run ID.
 
-**Results (2026-11-17 to 2026-11-18), partial:**
+**Results (2026-11-17 to 2026-11-24):**
 
 - [x] **Archive dispatched.** The `Rename Tracked Repo` run [44019346503](https://github.com/fro-bot/.github/actions/runs/44019346503) (2026-11-17, 04:45Z, two minutes after package 0.8.0 was published) succeeded and printed `{"action":"archive","result":"archived"}`.
 - [x] **The commit on `data`.** `11bf08c` (`chore(archive): archive marcusrbrown/copiloting`) changed `knowledge/index.md`, `knowledge/log.md`, the repo page and `metadata/repos.yaml`. The row for `marcusrbrown/copiloting` reads `onboarding_status: archived` with `private: false`, `node_id` and `database_id` stored. The page gained `archived: 2026-11-17` and the notice. The index lists the page under `## Archived` and not under Repos. The log has one entry. Side effect: the action re-serialized the page's frontmatter in the writer's standard layout (an inline tag list became a block list and the title lost its quotes); no value changed.
@@ -436,16 +436,14 @@ Leak-scan decision for one selected row:
 - [x] **The promotion merged.** #4283 did not: run 44020147146 ended `STALE_HEAD`, and on a later run ([44124965721](https://github.com/fro-bot/.github/actions/runs/44124965721)) GitHub dismissed the reused PR's approval two seconds after it was given ("The merge-base changed after approval."), so the merge returned 405 (`MERGE_BLOCKED`). After #4283 was closed, a `refresh-review` run ([44134888191](https://github.com/fro-bot/.github/actions/runs/44134888191)) opened #4287 and self-merged it at 17:22Z on 2026-11-17. On `main` the row reads `archived`, the page carries its date and notice, and the index lists it under Archived. The reused-PR failure is fixed by [#4290](https://github.com/fro-bot/.github/pull/4290): a run now replaces an open promotion PR whose merge base moved, unless it carries `hold-merge`.
 - [x] **Dashboard on package 0.8.0.** Dashboard [#854](https://github.com/fro-bot/dashboard/pull/854) took 0.8.0 at 04:55Z on 2026-11-17, release `2026.11.24` carries it, and infra's Deploy Dashboard run 44020788514 deployed it at 04:58Z, thirteen minutes after the archive ran. The contract version is still 1, so saves are accepted.
 - [x] **A dashboard save of the archived page.** On 2026-11-18 a one-word edit saved through the dashboard wrote `5ba9bd0` on `data`: the page kept `archived: 2026-11-17` and the notice, `knowledge/index.md` was unchanged with the page still under Archived, and one `manual-edit` log entry was added. A second save with the notice removed was refused (no commit), but the editor showed no reason: [fro-bot/dashboard#861](https://github.com/fro-bot/dashboard/issues/861).
-- [ ] **Seven days with no survey or dispatch for the archived row.** Open until 2026-11-24.
+- [x] **Seven days with no survey or dispatch for the archived row.** From the archive (2026-11-17 04:45Z) to 2026-11-24 04:57Z, no run of `survey-repo.yaml` (17 runs), `cross-repo-dispatch.yaml` (22) or `dispatch-renovate.yaml` (17) names `marcusrbrown/copiloting` in its log, and the only `data` commits that touch its row or page are the archive (`11bf08c`), its promotion (#4287) and the 2026-11-18 dashboard edit (`5ba9bd0`). Daily Observe reports list it as "1 archived and skipped".
 - **`unarchive`.** Proven by tests only, as the approach allowed; no real need has arisen.
-
-Unit 7 stays unticked until the seven-day window has closed with no survey or dispatch for the row.
 
 ### Phase 2: declared rename
 
 Not built. Decided 2026-11-16: the feature is the archive and unarchive actions and archived pages; the existing rename workflow is unchanged.
 
-- [ ] **Unit 8: declare, replace and cancel**
+**Unit 8 (not built): declare, replace and cancel**
 
 **Goal:** A row can carry a declared new name, validated when it is written.
 
@@ -471,7 +469,7 @@ Not built. Decided 2026-11-16: the feature is the archive and unarchive actions 
 
 **Verification:** a declared row parses everywhere; surveys still run under the current name.
 
-- [ ] **Unit 9: apply writes a redirect and clears the declaration**
+**Unit 9 (not built): apply writes a redirect and clears the declaration**
 
 **Goal:** Every rename leaves a redirect from the old page address, and a declared rename clears its declaration in the same commit.
 
@@ -509,7 +507,7 @@ Not built. Decided 2026-11-16: the feature is the archive and unarchive actions 
 
 **Verification:** a local site build of a fixture page with the alias serves a redirect at the old page address.
 
-- [ ] **Unit 10: reconcile starts a declared rename and reports**
+**Unit 10 (not built): reconcile starts a declared rename and reports**
 
 **Goal:** A declared rename is started by reconcile with no operator dispatch, and every pending or mismatched declaration is visible.
 
@@ -539,7 +537,7 @@ Not built. Decided 2026-11-16: the feature is the archive and unarchive actions 
 
 **Verification:** the reconcile summary for a fixture run shows the three counts.
 
-- [ ] **Unit 11: redirects for pages renamed earlier**
+**Unit 11 (not built): redirects for pages renamed earlier**
 
 **Goal:** Old page addresses of already-renamed pages redirect.
 
@@ -564,7 +562,7 @@ Not built. Decided 2026-11-16: the feature is the archive and unarchive actions 
 
 **Verification:** the dry run on current `data` lists the pages; after the write and a site publish, one old page address returns a redirect.
 
-- [ ] **Unit 12: phase 2 read-backs**
+**Unit 12 (not built): phase 2 read-backs**
 
 **Goal:** One declared rename is seen end to end.
 
