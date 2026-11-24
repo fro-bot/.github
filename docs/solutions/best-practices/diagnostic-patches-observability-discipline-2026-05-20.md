@@ -43,7 +43,9 @@ Three PRs over three iterations instead of one, because each layer of swallowed 
 
 ## Guidance
 
-### 1. Never `2>/dev/null` a workflow gate's failure-path command
+### 1. Off public surfaces, never `2>/dev/null` a workflow gate's failure-path command
+
+**Scope first.** This rule covers steps that do not emit to a public surface. A privacy gate that runs on a public surface discards the CLI's stderr by design: an upstream error can name a private repository, so the gate prints a fixed reason plus the opaque node ID instead (`.github/actions/resolve-public-repo/action.yaml:50-52`). That exception is item 10 in [the privacy-gate learning](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md). Do not copy the replay below into such a gate.
 
 When `gh api`, `curl`, `jq`, or any external CLI fails inside a step that controls dispatch, operators have no visibility unless stderr is surfaced. Capture stderr to a tempfile and `cat` it on failure between stable marker lines:
 
@@ -62,7 +64,7 @@ rm -f "$gh_stderr"
 
 The markers do double duty: they anchor the captured stderr in the log for humans and provide a stable string for any future log-parsing tooling.
 
-**Scope.** This rule covers steps that do not emit to a public surface. A privacy gate that runs on a public surface discards the CLI's stderr by design: an upstream error can name a repository, so the gate prints a fixed reason plus the opaque node ID instead (`.github/actions/resolve-public-repo/action.yaml:50-52`). That exception is item 10 in [the privacy-gate learning](../security-issues/survey-workflow-side-privacy-gate-2026-05-16.md). Everywhere else, the marker pattern above applies; the `survey-repo.yaml` examples below illustrate the capture mechanics, and that gate now discards stderr under item 10.
+The `survey-repo.yaml` examples below illustrate the capture mechanics only; that gate is a public surface and now discards stderr under item 10.
 
 ### 2. Be wary of leading dashes in `printf` format strings
 

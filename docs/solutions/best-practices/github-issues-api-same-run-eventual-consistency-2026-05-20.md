@@ -73,8 +73,8 @@ const {created: healedRollups, raceSuppressed} = await selfHealRollups({
 plan.summary.raceSuppressedRollups = raceSuppressed
 
 // 3. reconcile-effects.ts:784-820 — inside selfHealRollups, keep the API-derived set and
-//    the in-memory set SEPARATE and check both before creating. Unioning them would hide
-//    which guard fired; two checks keep each skip path observable on its own.
+//    the in-memory set SEPARATE and consult both before creating. Checking the API set
+//    first keeps API-visible owners out of raceSuppressed.
 const existingRollupOwners = new Set<string>(/* from issues.listForRepo, lines 788-800 */)
 // do NOT union currentRunRollupOwners here (lines 801-802)
 
@@ -82,7 +82,7 @@ let raceSuppressed = 0
 for (const [owner, entries] of qualifyingOwners) {
   if (existingRollupOwners.has(owner)) continue // pre-existing on GitHub — silent skip
   if (params.currentRunRollupOwners.has(owner)) {
-    // same-run race suppression (lines 814-820): created earlier in this run
+    // same-run race suppression (lines 814-820): creation was attempted earlier in this run
     raceSuppressed += 1
     continue
   }
@@ -90,7 +90,7 @@ for (const [owner, entries] of qualifyingOwners) {
 }
 ```
 
-Either check alone prevents the duplicate create, so the no-duplicate guarantee does not depend on how the two sets are combined. Keeping them apart is what makes `raceSuppressed` a count of same-run guard hits only, distinct from owners that already had a rollup on GitHub.
+Both sources must be consulted, because each misses a case the other covers. The API set misses a rollup attempted earlier in this run while the list is stale. The in-memory set misses a rollup that already existed and was not attempted this run. A hit in either prevents the create. Checking the API set first keeps API-visible owners out of `raceSuppressed`, so the count covers only same-run hits the API list did not yet show. A failed create also counts, so the metric does not prove the issue exists.
 
 ### Test the race directly
 
@@ -198,9 +198,9 @@ const existingRollupOwners = new Set(
   openRollups.map(issue => issue.title /* parse owner from title */),
 )
 
-// Check API state and in-memory created state separately. In-memory is authoritative
-// for anything created in this run — the API list may be lagging — and a separate
-// check keeps the same-run guard observable via raceSuppressed.
+// Consult API state and in-memory attempted state separately; a hit in either skips the
+// create. In-memory covers anything attempted this run while the API list lags, and
+// checking the API set first keeps API-visible owners out of raceSuppressed.
 let raceSuppressed = 0
 for (const candidate of healableOwners) {
   if (existingRollupOwners.has(candidate)) continue
