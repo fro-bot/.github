@@ -410,10 +410,9 @@ function collectWikiFrontmatter(files: Record<string, string>): Map<string, Wiki
  * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
  * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
  * replays the same files on it, up to `maxRetries` attempts, under the same guard. A GitHub server error
- * (HTTP 500, 502, 503 or 504) from any call in an attempt is retried the same way, after a backoff, and
- * exhausts into `SERVER_ERROR_EXHAUSTED`; the response body is never kept. A server error that answers the
- * ref update may hide a write that landed, so the ref is read back first: when it already points at the
- * commit the attempt created, the write succeeded.
+ * (HTTP 500, 502, 503 or 504) from a call before the ref update is retried the same way, after a
+ * backoff, and exhausts into `SERVER_ERROR_EXHAUSTED`; the response body is never kept. A server error from
+ * the ref update itself may hide a write that landed, so it stops at once with `SERVER_ERROR_UNCONFIRMED`.
  *
  * With `handoff`, the handed-off paths are checked first on every attempt against the agent's data
  * commit (`HANDOFF_PAGE_CHANGED`), so a page conflict is never reported as a ref race.
@@ -458,27 +457,16 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
   // Without `baseCommitSha`, the first head read is the base. It is pinned the moment that read succeeds, ahead
   // of every call that can fail, so a retry never adopts a head another writer advanced to during the backoff.
   let pinnedBaseCommitSha = params.baseCommitSha
-  // A commit whose ref update was sent and answered with a server error: it may have landed. Kept across
-  // attempts until a head read settles it, so the writer's own commit is never judged a conflict.
-  let pending: {sha: string; parentSha: string} | undefined
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
     // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
     let updatingRef = false
-    let createdCommitSha: string | undefined
-    let parentSha: string | undefined
     try {
       await assertWritableWikiBranch(octokit, owner, repo, branch)
 
       const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
       pinnedBaseCommitSha ??= head.data.object.sha
-      if (pending !== undefined) {
-        if (await pendingCommitLanded(octokit, owner, repo, head.data.object.sha, pending)) {
-          return {committed: true, commitSha: pending.sha, attempts: attempt}
-        }
-        pending = undefined
-      }
       const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: head.data.object.sha})
       // Resolved once and reused: the base must not move while the write retries. The head is its own base
       // only on the attempt that pinned it; a later attempt reads the pinned commit's tree.
@@ -560,8 +548,6 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         parents: [commit.data.sha],
       })
 
-      createdCommitSha = createdCommit.data.sha
-      parentSha = commit.data.sha
       updatingRef = true
       await octokit.rest.git.updateRef({
         owner,
@@ -580,28 +566,20 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
 
       const serverErrorStatus = serverErrorStatusOf(error)
       if (serverErrorStatus !== undefined) {
-        // The ref update was sent, so a server error does not say whether it landed: ask the ref.
-        if (updatingRef && createdCommitSha !== undefined && parentSha !== undefined) {
-          const refSha = await readRefSha(octokit, owner, repo, branch)
-          if (refSha === createdCommitSha) return {committed: true, commitSha: createdCommitSha, attempts: attempt}
-          // Still on the parent: the update did not land. Anything else, or a failed read, leaves it unresolved
-          // for the next head read to settle.
-          pending = refSha === parentSha ? undefined : {sha: createdCommitSha, parentSha}
+        // The status only: the error's message is GitHub's HTML error page and must never reach a log.
+        if (updatingRef) {
+          // The ref update was sent, so the commit may have landed: neither retry nor guess.
+          throw new WikiIngestError({
+            code: 'SERVER_ERROR_UNCONFIRMED',
+            message: `wiki ingest could not confirm whether its commit reached ${owner}/${repo}@${branch}: GitHub answered the ref update with a server error (HTTP ${serverErrorStatus})`,
+            remediation:
+              'The commit may have landed. Check the data branch head before re-running; a re-run would see it as a conflict.',
+          })
         }
 
         if (attempt < maxRetries) {
           await delayConflictRetry(attempt)
           continue
-        }
-
-        // The status only: the error's message is GitHub's HTML error page and must never reach a log.
-        if (pending !== undefined) {
-          throw new WikiIngestError({
-            code: 'SERVER_ERROR_UNCONFIRMED',
-            message: `wiki ingest could not confirm whether its commit reached ${owner}/${repo}@${branch} after ${maxRetries} attempt(s): GitHub answered with a server error (HTTP ${serverErrorStatus})`,
-            remediation:
-              'The commit may have landed. Check the data branch head before re-running; a re-run would see it as a conflict.',
-          })
         }
 
         throw new WikiIngestError({
@@ -1669,43 +1647,6 @@ const SERVER_ERROR_STATUSES: readonly number[] = [500, 502, 503, 504]
 function serverErrorStatusOf(error: unknown): number | undefined {
   if (!isRecord(error) || typeof error.status !== 'number') return undefined
   return SERVER_ERROR_STATUSES.includes(error.status) ? error.status : undefined
-}
-
-/** The sha `branch` points at, or `undefined` when the read fails: the write is then not confirmed. */
-async function readRefSha(
-  octokit: OctokitClient,
-  owner: string,
-  repo: string,
-  branch: string,
-): Promise<string | undefined> {
-  try {
-    const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
-    return head.data.object.sha
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Whether a commit whose ref update was never confirmed is on `headSha`: it is the head, or an ancestor of it
- * (Compare's `behind_by` is 0 and its merge base is the commit). A head still on the commit's parent has not
- * moved, so the update did not land. A failed compare propagates and is retried like any server error.
- */
-async function pendingCommitLanded(
-  octokit: OctokitClient,
-  owner: string,
-  repo: string,
-  headSha: string,
-  pending: {sha: string; parentSha: string},
-): Promise<boolean> {
-  if (headSha === pending.sha) return true
-  if (headSha === pending.parentSha) return false
-  const comparison = await octokit.rest.repos.compareCommitsWithBasehead({
-    owner,
-    repo,
-    basehead: `${pending.sha}...${headSha}`,
-  })
-  return comparison.data.behind_by === 0 && comparison.data.merge_base_commit.sha === pending.sha
 }
 
 function isApiErrorStatus(error: unknown, status: number): boolean {

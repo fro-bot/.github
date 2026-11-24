@@ -61,14 +61,12 @@ interface MockOverrides {
     parents: string[]
   }) => Promise<unknown>
   updateRef?: (params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>
-  compareCommitsWithBasehead?: (params: {owner: string; repo: string; basehead: string}) => Promise<unknown>
 }
 
 function createOctokitMock(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
       repos: {
-        compareCommitsWithBasehead: overrides?.compareCommitsWithBasehead,
         getBranch:
           overrides?.getBranch ??
           (async ({branch}: {branch: string}) => ({data: {name: branch, commit: {sha: `${branch}-sha`}}})),
@@ -2336,76 +2334,52 @@ describe('commitWikiChanges (GitHub server errors)', () => {
     }
   })
 
-  it('treats a 500 from updateRef as success when the ref already points at this attempt’s commit', async () => {
-    // #given the ref update was applied but its answer was a 500
-    const getRef = getRefReturning('old-tip', 'commit-after-write')
+  it.each([500, 504])('stops at once with SERVER_ERROR_UNCONFIRMED on an updateRef %i', async status => {
+    // #given the ref update answers with a server error, so the commit may or may not have landed
+    const getRef = getRefReturning('old-tip')
     const createCommit = vi.fn(async (_params: {parents: string[]}) => ({data: {sha: 'commit-after-write'}}))
-    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(serverError(500))
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(serverError(status))
 
-    // #when the write runs
-    const result = await commitWikiChanges({
-      ...baseParams,
-      octokit: createOctokitMock({getRef, getCommit: treeOfCommit, createCommit, updateRef}),
-      maxRetries: 3,
-    })
-
-    // #then it succeeds with the commit it created, and nothing is written twice
-    expect(result).toEqual({committed: true, commitSha: 'commit-after-write', attempts: 1})
-    expect(createCommit).toHaveBeenCalledTimes(1)
-    expect(updateRef).toHaveBeenCalledTimes(1)
-  })
-
-  it('checks the ref after an updateRef 5xx even on the last attempt', async () => {
-    // #given a single attempt whose ref update was applied but answered 504
-    const getRef = getRefReturning('old-tip', 'commit-after-write')
-    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(serverError(504))
-
-    // #when the write runs with no retries left
-    const result = await commitWikiChanges({
+    // #when the write runs with retries to spare
+    const outcome = await commitWikiChanges({
       ...baseParams,
       octokit: createOctokitMock({
         getRef,
         getCommit: treeOfCommit,
-        createCommit: async () => ({data: {sha: 'commit-after-write'}}),
+        createCommit,
         updateRef,
       }),
-      maxRetries: 1,
-    })
+      maxRetries: 3,
+    }).then(
+      () => undefined,
+      (error: unknown) => error,
+    )
 
-    // #then the landed commit is reported, not an exhaustion error
-    expect(result).toEqual({committed: true, commitSha: 'commit-after-write', attempts: 1})
+    // #then it is terminal: one ref update, no read-back (one getRef), no retry, no conflict code, no body
+    expect(outcome).toBeInstanceOf(WikiIngestError)
+    const failure = outcome as InstanceType<typeof WikiIngestError>
+    expect(failure.code).toBe('SERVER_ERROR_UNCONFIRMED')
+    expect(failure.message).toContain(String(status))
+    expect(failure.remediation).toContain('data branch head')
+    expect(`${failure.message} ${failure.remediation} ${String(failure.cause)}`).not.toMatch(
+      /DOCTYPE|html|secret-body-marker/i,
+    )
+    expect(updateRef).toHaveBeenCalledTimes(1)
+    expect(getRef).toHaveBeenCalledTimes(1)
+    expect(createCommit).toHaveBeenCalledTimes(1)
   })
 
-  it('retries an updateRef 503 when the ref did not move', async () => {
-    // #given a ref update that did not land: the ref still points at the tip this attempt built on
-    vi.useFakeTimers()
-    const getRef = getRefReturning('old-tip')
-    const createCommit = vi
-      .fn<(params: {parents: string[]}) => Promise<{data: {sha: string}}>>()
-      .mockResolvedValueOnce({data: {sha: 'commit-one'}})
-      .mockResolvedValueOnce({data: {sha: 'commit-two'}})
-    const updateRef = vi
-      .fn<(params: UpdateRefParams) => Promise<unknown>>()
-      .mockRejectedValueOnce(serverError(503))
-      .mockResolvedValueOnce({data: {}})
+  it('raises SERVER_ERROR_EXHAUSTED when the only attempt hits a createBlob 503', async () => {
+    // #given a single attempt and a blob write that fails with a server error
+    const createBlob = vi.fn(async () => {
+      throw serverError(503)
+    })
 
-    try {
-      const resultPromise = commitWikiChanges({
-        ...baseParams,
-        octokit: createOctokitMock({getRef, getCommit: treeOfCommit, createCommit, updateRef}),
-        maxRetries: 3,
-      })
-
-      // #when the backoff elapses
-      await vi.advanceTimersByTimeAsync(30_000)
-      const result = await resultPromise
-
-      // #then the write is retried and the second commit lands
-      expect(result).toEqual({committed: true, commitSha: 'commit-two', attempts: 2})
-      expect(updateRef.mock.calls.map(([params]) => params.sha)).toEqual(['commit-one', 'commit-two'])
-    } finally {
-      vi.useRealTimers()
-    }
+    // #then the budget is spent at once and the error is the exhausted one
+    await expect(
+      commitWikiChanges({...baseParams, octokit: createOctokitMock({createBlob}), maxRetries: 1}),
+    ).rejects.toMatchObject({code: 'SERVER_ERROR_EXHAUSTED'})
+    expect(createBlob).toHaveBeenCalledTimes(1)
   })
 
   it('keeps a createBlob 422 terminal on the first attempt', async () => {
@@ -4337,39 +4311,15 @@ describe('runWikiIngestEntry (exit code for a conflict)', () => {
   })
 })
 
-describe('commitWikiChanges (server errors keep the base and the attempted commit)', () => {
-  interface UpdateRefParams {
-    owner: string
-    repo: string
-    ref: string
-    sha: string
-    force: false
-  }
-
+describe('commitWikiChanges (a server error keeps the pinned write base)', () => {
   const htmlErrorPage = '<!DOCTYPE html><html><body>secret-body-marker</body></html>'
   const serverError = (status: number): Error => Object.assign(new Error(htmlErrorPage), {status})
-  const treeOfCommit = async (params: {commit_sha: string}) => ({
-    data: {sha: params.commit_sha, tree: {sha: `tree-of-${params.commit_sha}`}},
-  })
   const baseParams = {
     owner: 'fro-bot',
     repo: '.github',
     branch: 'data',
     message: 'feat(knowledge): ingest',
     files: {'knowledge/index.md': '# Wiki Index\n'},
-  }
-  type GetRef = (params: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>
-
-  function unconfirmedWrite(thirdHead: string | undefined) {
-    const getRef = vi
-      .fn<GetRef>()
-      .mockResolvedValueOnce({data: {object: {sha: 'old-tip'}}})
-      .mockRejectedValueOnce(serverError(500))
-    if (thirdHead === undefined) getRef.mockRejectedValue(serverError(500))
-    else getRef.mockResolvedValue({data: {object: {sha: thirdHead}}})
-    const createCommit = vi.fn(async (_params: {parents: string[]}) => ({data: {sha: 'attempted-commit'}}))
-    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(serverError(504))
-    return {getRef, createCommit, updateRef}
   }
 
   describe('without an explicit base', () => {
@@ -4444,128 +4394,6 @@ describe('commitWikiChanges (server errors keep the base and the attempted commi
         // #then the retry lands on the advanced head and keeps the concurrent change
         expect(await settled).toMatchObject({committed: true, attempts: 2})
         expect(fake.files()).toMatchObject({[PAGE]: 'ours 2\n', [OTHER]: 'theirs\n'})
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-  })
-
-  describe('an updateRef answered with a server error whose read-back fails', () => {
-    it('succeeds without a second update when the next head is the attempted commit', async () => {
-      vi.useFakeTimers()
-      try {
-        // #given the update landed (the 504 hid it) and the read-back failed
-        const {getRef, createCommit, updateRef} = unconfirmedWrite('attempted-commit')
-        const settled = commitWikiChanges({
-          ...baseParams,
-          octokit: createOctokitMock({getRef, getCommit: treeOfCommit, createCommit, updateRef}),
-          maxRetries: 3,
-        })
-
-        // #when the next attempt reads the head
-        await vi.advanceTimersByTimeAsync(30_000)
-
-        // #then it is reported as the write that landed: one commit, one update, no conflict
-        expect(await settled).toEqual({committed: true, commitSha: 'attempted-commit', attempts: 2})
-        expect(createCommit).toHaveBeenCalledTimes(1)
-        expect(updateRef).toHaveBeenCalledTimes(1)
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('succeeds when a later commit sits on top of the attempted one', async () => {
-      vi.useFakeTimers()
-      try {
-        // #given the attempted commit landed and another writer committed on top of it
-        const {getRef, createCommit, updateRef} = unconfirmedWrite('later-tip')
-        const compare = vi.fn(async (_params: {basehead: string}) => ({
-          data: {behind_by: 0, merge_base_commit: {sha: 'attempted-commit'}},
-        }))
-        const settled = commitWikiChanges({
-          ...baseParams,
-          octokit: createOctokitMock({
-            getRef,
-            getCommit: treeOfCommit,
-            createCommit,
-            updateRef,
-            compareCommitsWithBasehead: compare,
-          }),
-          maxRetries: 3,
-        })
-
-        // #when the next attempt reads the head
-        await vi.advanceTimersByTimeAsync(30_000)
-
-        // #then the attempted commit is an ancestor of the head: success, no second commit or update
-        expect(await settled).toEqual({committed: true, commitSha: 'attempted-commit', attempts: 2})
-        expect(compare.mock.calls.map(([params]) => params.basehead)).toEqual(['attempted-commit...later-tip'])
-        expect(createCommit).toHaveBeenCalledTimes(1)
-        expect(updateRef).toHaveBeenCalledTimes(1)
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('forgets the attempted commit when the head is unrelated to it, and writes normally', async () => {
-      vi.useFakeTimers()
-      try {
-        // #given the head moved to a commit that does not contain the attempted one
-        const {getRef, createCommit, updateRef} = unconfirmedWrite('unrelated-tip')
-        updateRef.mockRejectedValueOnce(serverError(504)).mockResolvedValueOnce({data: {}})
-        createCommit.mockResolvedValueOnce({data: {sha: 'attempted-commit'}}).mockResolvedValueOnce({
-          data: {sha: 'second-commit'},
-        })
-        const settled = commitWikiChanges({
-          ...baseParams,
-          octokit: createOctokitMock({
-            getRef,
-            getCommit: treeOfCommit,
-            createCommit,
-            updateRef,
-            compareCommitsWithBasehead: async () => ({data: {behind_by: 2, merge_base_commit: {sha: 'elsewhere'}}}),
-          }),
-          maxRetries: 3,
-        })
-
-        // #when the next attempt reads the head
-        await vi.advanceTimersByTimeAsync(30_000)
-
-        // #then the write is made onto that head
-        expect(await settled).toEqual({committed: true, commitSha: 'second-commit', attempts: 2})
-        expect(createCommit.mock.calls.map(([params]) => params.parents)).toEqual([['old-tip'], ['unrelated-tip']])
-      } finally {
-        vi.useRealTimers()
-      }
-    })
-
-    it('raises SERVER_ERROR_UNCONFIRMED, never a conflict code, when every later read fails', async () => {
-      vi.useFakeTimers()
-      try {
-        // #given the update was sent and every read after it fails with a server error
-        const {getRef, createCommit, updateRef} = unconfirmedWrite(undefined)
-        const settled = commitWikiChanges({
-          ...baseParams,
-          octokit: createOctokitMock({getRef, getCommit: treeOfCommit, createCommit, updateRef}),
-          maxRetries: 3,
-        }).then(
-          () => undefined,
-          (error: unknown) => error,
-        )
-
-        // #when the whole bound is consumed
-        await vi.advanceTimersByTimeAsync(30_000)
-        const error = await settled
-
-        // #then it fails with the unconfirmed code and a status-only message
-        expect(error).toBeInstanceOf(WikiIngestError)
-        const failure = error as InstanceType<typeof WikiIngestError>
-        expect(failure.code).toBe('SERVER_ERROR_UNCONFIRMED')
-        expect(failure.message).toContain('500')
-        expect(`${failure.message} ${failure.remediation} ${String(failure.cause)}`).not.toMatch(
-          /DOCTYPE|html|secret-body-marker/i,
-        )
-        expect(updateRef).toHaveBeenCalledTimes(1)
       } finally {
         vi.useRealTimers()
       }
