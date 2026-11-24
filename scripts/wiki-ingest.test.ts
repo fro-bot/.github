@@ -61,12 +61,14 @@ interface MockOverrides {
     parents: string[]
   }) => Promise<unknown>
   updateRef?: (params: {owner: string; repo: string; ref: string; sha: string; force: false}) => Promise<unknown>
+  compareCommitsWithBasehead?: (params: {owner: string; repo: string; basehead: string}) => Promise<unknown>
 }
 
 function createOctokitMock(overrides?: MockOverrides): OctokitClient {
   return {
     rest: {
       repos: {
+        compareCommitsWithBasehead: overrides?.compareCommitsWithBasehead,
         getBranch:
           overrides?.getBranch ??
           (async ({branch}: {branch: string}) => ({data: {name: branch, commit: {sha: `${branch}-sha`}}})),
@@ -4331,6 +4333,303 @@ describe('runWikiIngestEntry (exit code for a conflict)', () => {
       expect(process.exitCode).toBeUndefined()
     } finally {
       restoreExitCode()
+    }
+  })
+})
+
+describe('commitWikiChanges (server errors keep the base and the attempted commit)', () => {
+  interface UpdateRefParams {
+    owner: string
+    repo: string
+    ref: string
+    sha: string
+    force: false
+  }
+
+  const htmlErrorPage = '<!DOCTYPE html><html><body>secret-body-marker</body></html>'
+  const serverError = (status: number): Error => Object.assign(new Error(htmlErrorPage), {status})
+  const treeOfCommit = async (params: {commit_sha: string}) => ({
+    data: {sha: params.commit_sha, tree: {sha: `tree-of-${params.commit_sha}`}},
+  })
+  const baseParams = {
+    owner: 'fro-bot',
+    repo: '.github',
+    branch: 'data',
+    message: 'feat(knowledge): ingest',
+    files: {'knowledge/index.md': '# Wiki Index\n'},
+  }
+  type GetRef = (params: {owner: string; repo: string; ref: string}) => Promise<{data: {object: {sha: string}}}>
+
+  function unconfirmedWrite(thirdHead: string | undefined) {
+    const getRef = vi
+      .fn<GetRef>()
+      .mockResolvedValueOnce({data: {object: {sha: 'old-tip'}}})
+      .mockRejectedValueOnce(serverError(500))
+    if (thirdHead === undefined) getRef.mockRejectedValue(serverError(500))
+    else getRef.mockResolvedValue({data: {object: {sha: thirdHead}}})
+    const createCommit = vi.fn(async (_params: {parents: string[]}) => ({data: {sha: 'attempted-commit'}}))
+    const updateRef = vi.fn<(params: UpdateRefParams) => Promise<unknown>>().mockRejectedValue(serverError(504))
+    return {getRef, createCommit, updateRef}
+  }
+
+  describe('without an explicit base', () => {
+    const PAGE = 'knowledge/wiki/topics/ours.md'
+    const OTHER = 'knowledge/wiki/topics/theirs.md'
+    let fake: GitDataFake
+
+    // The first getCommit fails with a 503 while a concurrent writer advances the branch, so the retry reads a
+    // head the first attempt never saw.
+    function octokitWithFlakyFirstGetCommit(concurrent: Record<string, string>): OctokitClient {
+      let failed = false
+      const git = fake.client.rest.git
+      return {
+        rest: {
+          ...fake.client.rest,
+          git: {
+            ...git,
+            getCommit: async (params: Parameters<typeof git.getCommit>[0]) => {
+              if (!failed) {
+                failed = true
+                fake.advance(concurrent)
+                throw serverError(503)
+              }
+              return git.getCommit(params)
+            },
+          },
+        },
+      } as unknown as OctokitClient
+    }
+
+    async function run(concurrent: Record<string, string>) {
+      fake = createGitDataFake({branch: 'data', files: {[PAGE]: 'ours 1\n', 'knowledge/index.md': '# Wiki Index\n'}})
+      return commitWikiChanges({
+        ...baseParams,
+        octokit: octokitWithFlakyFirstGetCommit(concurrent),
+        bootstrapDataBranch: async () => ({created: false, ref: 'refs/heads/data', sha: fake.head()}),
+        files: {[PAGE]: 'ours 2\n'},
+        maxRetries: 3,
+      })
+    }
+
+    it('refuses as a conflict when a write-set path changed while the first getCommit was failing', async () => {
+      vi.useFakeTimers()
+      try {
+        // #given the first getCommit answers 503 and a concurrent writer changes a path in the write set
+        const settled = run({[PAGE]: 'theirs\n'}).then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+
+        // #when the backoff elapses
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        // #then the retry compares the new head with the pinned first head: a conflict, and no ref update
+        expect(await settled).toMatchObject({code: 'CONFLICT_EXHAUSTED'})
+        expect(fake.calls.some(call => call.method === 'updateRef')).toBe(false)
+        expect(fake.files()[PAGE]).toBe('theirs\n')
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('writes onto the new head, with the pinned base, when the concurrent change is an unrelated path', async () => {
+      vi.useFakeTimers()
+      try {
+        // #given the same 503, with a concurrent writer changing a path outside the write set
+        const settled = run({[OTHER]: 'theirs\n'})
+
+        // #when the backoff elapses
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        // #then the retry lands on the advanced head and keeps the concurrent change
+        expect(await settled).toMatchObject({committed: true, attempts: 2})
+        expect(fake.files()).toMatchObject({[PAGE]: 'ours 2\n', [OTHER]: 'theirs\n'})
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
+  describe('an updateRef answered with a server error whose read-back fails', () => {
+    it('succeeds without a second update when the next head is the attempted commit', async () => {
+      vi.useFakeTimers()
+      try {
+        // #given the update landed (the 504 hid it) and the read-back failed
+        const {getRef, createCommit, updateRef} = unconfirmedWrite('attempted-commit')
+        const settled = commitWikiChanges({
+          ...baseParams,
+          octokit: createOctokitMock({getRef, getCommit: treeOfCommit, createCommit, updateRef}),
+          maxRetries: 3,
+        })
+
+        // #when the next attempt reads the head
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        // #then it is reported as the write that landed: one commit, one update, no conflict
+        expect(await settled).toEqual({committed: true, commitSha: 'attempted-commit', attempts: 2})
+        expect(createCommit).toHaveBeenCalledTimes(1)
+        expect(updateRef).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('succeeds when a later commit sits on top of the attempted one', async () => {
+      vi.useFakeTimers()
+      try {
+        // #given the attempted commit landed and another writer committed on top of it
+        const {getRef, createCommit, updateRef} = unconfirmedWrite('later-tip')
+        const compare = vi.fn(async (_params: {basehead: string}) => ({
+          data: {behind_by: 0, merge_base_commit: {sha: 'attempted-commit'}},
+        }))
+        const settled = commitWikiChanges({
+          ...baseParams,
+          octokit: createOctokitMock({
+            getRef,
+            getCommit: treeOfCommit,
+            createCommit,
+            updateRef,
+            compareCommitsWithBasehead: compare,
+          }),
+          maxRetries: 3,
+        })
+
+        // #when the next attempt reads the head
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        // #then the attempted commit is an ancestor of the head: success, no second commit or update
+        expect(await settled).toEqual({committed: true, commitSha: 'attempted-commit', attempts: 2})
+        expect(compare.mock.calls.map(([params]) => params.basehead)).toEqual(['attempted-commit...later-tip'])
+        expect(createCommit).toHaveBeenCalledTimes(1)
+        expect(updateRef).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('forgets the attempted commit when the head is unrelated to it, and writes normally', async () => {
+      vi.useFakeTimers()
+      try {
+        // #given the head moved to a commit that does not contain the attempted one
+        const {getRef, createCommit, updateRef} = unconfirmedWrite('unrelated-tip')
+        updateRef.mockRejectedValueOnce(serverError(504)).mockResolvedValueOnce({data: {}})
+        createCommit.mockResolvedValueOnce({data: {sha: 'attempted-commit'}}).mockResolvedValueOnce({
+          data: {sha: 'second-commit'},
+        })
+        const settled = commitWikiChanges({
+          ...baseParams,
+          octokit: createOctokitMock({
+            getRef,
+            getCommit: treeOfCommit,
+            createCommit,
+            updateRef,
+            compareCommitsWithBasehead: async () => ({data: {behind_by: 2, merge_base_commit: {sha: 'elsewhere'}}}),
+          }),
+          maxRetries: 3,
+        })
+
+        // #when the next attempt reads the head
+        await vi.advanceTimersByTimeAsync(30_000)
+
+        // #then the write is made onto that head
+        expect(await settled).toEqual({committed: true, commitSha: 'second-commit', attempts: 2})
+        expect(createCommit.mock.calls.map(([params]) => params.parents)).toEqual([['old-tip'], ['unrelated-tip']])
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('raises SERVER_ERROR_UNCONFIRMED, never a conflict code, when every later read fails', async () => {
+      vi.useFakeTimers()
+      try {
+        // #given the update was sent and every read after it fails with a server error
+        const {getRef, createCommit, updateRef} = unconfirmedWrite(undefined)
+        const settled = commitWikiChanges({
+          ...baseParams,
+          octokit: createOctokitMock({getRef, getCommit: treeOfCommit, createCommit, updateRef}),
+          maxRetries: 3,
+        }).then(
+          () => undefined,
+          (error: unknown) => error,
+        )
+
+        // #when the whole bound is consumed
+        await vi.advanceTimersByTimeAsync(30_000)
+        const error = await settled
+
+        // #then it fails with the unconfirmed code and a status-only message
+        expect(error).toBeInstanceOf(WikiIngestError)
+        const failure = error as InstanceType<typeof WikiIngestError>
+        expect(failure.code).toBe('SERVER_ERROR_UNCONFIRMED')
+        expect(failure.message).toContain('500')
+        expect(`${failure.message} ${failure.remediation} ${String(failure.cause)}`).not.toMatch(
+          /DOCTYPE|html|secret-body-marker/i,
+        )
+        expect(updateRef).toHaveBeenCalledTimes(1)
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+})
+
+describe('runWikiIngestEntry (server errors exit 1, never 3)', () => {
+  const originalExitCode = process.exitCode
+
+  it.each(['SERVER_ERROR_EXHAUSTED', 'SERVER_ERROR_UNCONFIRMED'] as const)(
+    'rethrows %s without setting exit code 3 and without writing the body to stderr',
+    async code => {
+      process.exitCode = undefined
+      const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+      try {
+        await expect(runWikiIngestEntry(failing(code))).rejects.toMatchObject({code})
+        expect(process.exitCode).toBeUndefined()
+        expect(stderr).not.toHaveBeenCalled()
+      } finally {
+        process.exitCode = originalExitCode
+        vi.restoreAllMocks()
+      }
+    },
+  )
+
+  it('keeps a real exhausted 502 at exit 1 with no response body on stderr', async () => {
+    vi.useFakeTimers()
+    process.exitCode = undefined
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true)
+    const htmlPage = '<!DOCTYPE html><html><body>secret-body-marker</body></html>'
+    try {
+      // #given a writer whose blob call answers with GitHub's HTML error page on every attempt
+      const outcome = runWikiIngestEntry(async () => {
+        await commitWikiChanges({
+          owner: 'fro-bot',
+          repo: '.github',
+          branch: 'data',
+          message: 'feat(knowledge): ingest',
+          files: {'knowledge/index.md': '# Wiki Index\n'},
+          octokit: createOctokitMock({
+            createBlob: async () => {
+              throw Object.assign(new Error(htmlPage), {status: 502})
+            },
+          }),
+          maxRetries: 2,
+        })
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      )
+      await vi.advanceTimersByTimeAsync(30_000)
+      const error = await outcome
+
+      // #then the entry rethrows (a non-zero exit, not the conflict code 3) and nothing carries the body
+      expect(error).toMatchObject({code: 'SERVER_ERROR_EXHAUSTED'})
+      expect(process.exitCode).toBeUndefined()
+      expect(
+        `${String((error as Error).message)} ${stderr.mock.calls.map(call => String(call[0])).join('')}`,
+      ).not.toMatch(/DOCTYPE|secret-body-marker/)
+    } finally {
+      vi.useRealTimers()
+      process.exitCode = originalExitCode
+      vi.restoreAllMocks()
     }
   })
 })
