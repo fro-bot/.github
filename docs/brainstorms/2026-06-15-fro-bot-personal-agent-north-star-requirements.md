@@ -306,9 +306,12 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   infra (hosting). Depends on: S1, S2. Effort/risk: H._ Status: live; interactive approve,
   deny and question accepted on v0.136.4; remaining live gates in #3512.
   _As of 2026-11-25:_ shipped, dashboard 2026.11.29 deployed. The approve, deny and question
-  acceptance is scoped to v0.136.4; for the pair #3512 last recorded (Gateway v0.146.0, dashboard
-  2026.11.29; the Gateway is now v0.148.0 and its acceptance is owed) #3512 lists ready parity, SSE loss and reconnect, cold-start notification taps and the stronger
-  cancel-quiescence gate as open. Ordinary cancel is accepted there.
+  acceptance is scoped to v0.136.4. Ordinary cancel was accepted on Gateway v0.146.0 with
+  dashboard 2026.11.25 ([#3512 Gate 2 pass](https://github.com/fro-bot/.github/issues/3512#issuecomment-7011307458));
+  that credit stays on the tested builds, so ordinary cancel is unverified on the rebuilt Gateway
+  with dashboard 2026.11.29 and on Gateway v0.148.0, whose acceptance is owed. #3512 lists ready
+  parity, SSE loss and reconnect, cold-start notification taps and the stronger cancel-quiescence
+  gate as open.
 - **R2 — Push notifications with action handling.** Surface critical events and let the
   operator respond/approve from the notification. _Owner: dashboard + agent. Depends on:
   S1, S2, R1. Effort/risk: M._ Status: push transport shipped; inline actions decided
@@ -347,8 +350,9 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   with `wiki_search` and `solutions_search` (plan 2026-11-06-001, complete), the daily passes get
   a wiki index and prompt duties for when to use the tools (#4232), and Remediate hands its
   learnings to Observe in a comment (#4214). Capture Learnings run 43791294020 (scheduled,
-  2026-11-16) and Draft Solutions run 43889580298 (2026-11-16) succeeded. Open: whether agents use
-  the tools outside pull request reviews; the 14-day count is due 2026-11-28.
+  2026-11-16) and Draft Solutions run 43889580298 (2026-11-16) succeeded. Outside pull request
+  reviews, Survey Repo run 43681628468 called both knowledge tools successfully. Open: the 14-day
+  call rate and use by Remediate and Observe; the count is due 2026-11-28.
 - **A2 — Self-maintenance & good-GitHub-citizen depth.** Extend autoheal into broader
   self-improvement of repo + control-plane operation. **First two surfaces shipped
   2026-07-03:** status-truth maintenance loop and wiki authority repair. The bounded-PR
