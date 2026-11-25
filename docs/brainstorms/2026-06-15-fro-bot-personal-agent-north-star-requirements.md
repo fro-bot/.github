@@ -175,9 +175,14 @@ Superseded text stays in place and carries a dated note. The words mean this:
   The scheduled tracking runs are green (latest
   [45529024636](https://github.com/fro-bot/.github/actions/runs/45529024636), 2026-11-25). This
   pass did not count other goals.
-- **2026-11-08, Gateway v0.136.4:** the Gateway is now v0.146.0 (workspace-only rebuild, infra run
-  [45323526850](https://github.com/marcusrbrown/infra/actions/runs/45323526850), infra#2058), contract
-  1.15.0, per the #3512 body of 2026-11-24. The v0.136.4 figure was right on 2026-11-08.
+- **2026-11-08, Gateway v0.136.4:** the Gateway is now fro-bot/agent v0.148.0, promoted on
+  2026-11-25 by [marcusrbrown/infra#2081](https://github.com/marcusrbrown/infra/pull/2081) (merged
+  03:56Z; deploy run
+  [45543364079](https://github.com/marcusrbrown/infra/actions/runs/45543364079) succeeded), contract
+  1.15.0. The previous pair was v0.146.0 (workspace-only rebuild, infra run
+  [45323526850](https://github.com/marcusrbrown/infra/actions/runs/45323526850), infra#2058, per the
+  #3512 body of 2026-11-24). The v0.136.4 figure was right on 2026-11-08. Acceptance on the v0.148.0
+  pair is owed (infra runs it); #3512 had not been updated for it when this pass read it.
 - **2026-10-22, D2 "`/fro-bot cancel` is a follow-up":** closed. `/fro-bot cancel` merged in
   [fro-bot/agent#2066](https://github.com/fro-bot/agent/pull/2066) on 2026-11-04 and is in
   v0.146.0's source. Not observed in a live Discord run by this pass.
@@ -193,7 +198,7 @@ Superseded text stays in place and carries a dated note. The words mean this:
 | Promotion self-merge | Shipped | Built in [#4168](https://github.com/fro-bot/.github/pull/4168); `PROMOTION_SELF_MERGE` is `on`. First live merge was [#4175](https://github.com/fro-bot/.github/pull/4175) (run [42942262202](https://github.com/fro-bot/.github/actions/runs/42942262202)), then #4204 and #4225. `docs/plans/2026-11-09-001-feat-promotion-self-merge-plan.md` is complete. Test-covered only, per that plan: a `hold-merge` label stopping a promotion, checks that never settle. |
 | Stale-base replacement of a promotion PR | Built | [#4290](https://github.com/fro-bot/.github/pull/4290), merged 2026-11-18. It fixes the dismissed approval seen on run [44124965721](https://github.com/fro-bot/.github/actions/runs/44124965721) (plan `2026-11-15-003`). A live replacement by the shipped code was not looked for. |
 | Renovate approval sweep | Shipped | [#4186](https://github.com/fro-bot/.github/pull/4186); `RENOVATE_APPROVE` is `on`. It approved #4179 and #4192 merged with no operator action (`docs/plans/2026-11-11-001-feat-renovate-automerge-approval-plan.md`, complete). Still owed in that plan: the grouped-PR label check. |
-| Sweep yields to people | Built | [#4207](https://github.com/fro-bot/.github/pull/4207) (2026-11-12) pauses the sweep while a person's pull request is in review; [#4317](https://github.com/fro-bot/.github/pull/4317) (2026-11-23) runs it only for `renovate/` branches and stops `fro-bot`'s own PRs from causing a yield. No live yield was looked for. |
+| Sweep yields to people | Shipped; the `fro-bot` exemption is built | [#4207](https://github.com/fro-bot/.github/pull/4207) (2026-11-12) pauses the sweep while a person's pull request is in review. The yield was printed live on 2026-11-13: `renovate-approve: #4217 yielded to #4221`, after [#4220](https://github.com/fro-bot/.github/pull/4220) named the blocker (the row text is recorded in `docs/solutions/best-practices/a-status-line-must-not-mean-two-things-2026-11-14.md`; this pass did not find the run to link). [#4317](https://github.com/fro-bot/.github/pull/4317) (2026-11-23) runs the sweep only for `renovate/` branches and stops `fro-bot`'s own PRs from causing a yield. After it, Renovate [#4315](https://github.com/fro-bot/.github/pull/4315) was approved by `fro-bot` at 2026-11-23T20:26:29Z, and it merged three seconds later. No run that yields or does not yield to a `fro-bot`-user PR was observed. |
 | Knowledge tools and prompt duties | Shipped | The `knowledge` server (`wiki_search`, `solutions_search`) is `docs/plans/2026-11-06-001-feat-agent-knowledge-mcp-tools-plan.md` (complete); call logging is [#4136](https://github.com/fro-bot/.github/pull/4136); the prompt duties arrived with [#4232](https://github.com/fro-bot/.github/pull/4232). Run [45530059817](https://github.com/fro-bot/.github/actions/runs/45530059817) logged `mcp connected server=knowledge tools=2`. |
 | Wiki index for the daily passes | Shipped | [#4232](https://github.com/fro-bot/.github/pull/4232). Scheduled runs [43682281142](https://github.com/fro-bot/.github/actions/runs/43682281142) and [43812012295](https://github.com/fro-bot/.github/actions/runs/43812012295) printed `wiki-index: listed=48 held=48 skipped=0` in both Remediate and Observe. The plan (`2026-11-14-001`) is still `active`: the 14-day knowledge-tool count is due 2026-11-28. In its 2026-11-16 sample, only pull request reviews called a knowledge tool; Remediate and Observe made no call. |
 | Agent models by kind of work | Shipped, two paths not seen live | [#4243](https://github.com/fro-bot/.github/pull/4243); plan `2026-11-15-001` is complete. Review run [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) printed `Agent model: … (from FRO_BOT_MODEL_REVIEW)`. The issue and issue-comment light tier and Capture Patterns were not seen live (the plan closes them as deferred); a discussion-comment run cannot occur, since discussions are off. |
@@ -212,7 +217,8 @@ Superseded text stays in place and carries a dated note. The words mean this:
 - S2 (browser sign-in, CSRF, origin binding) was not exercised, since it needs an authenticated
   browser. #3512 still lists CSRF and saved-cookie replay, and session continuity on the current
   pair, as open gates.
-- Whether agent v0.148.0 (released 2026-11-25) has been promoted to the Gateway.
+- The v0.148.0 deploy was read from the infra PR and run records only; the Gateway's live health
+  and contract were not queried.
 - The "25+ repos" figure in the system table and the Current state section.
 - Cross-repo items the plans track in other repositories, for example
   [fro-bot/agent#2187](https://github.com/fro-bot/agent/issues/2187) and fro-bot/dashboard#825
@@ -280,9 +286,11 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   model. _Owner: agent. Depends on: new gateway surface (not just the existing announce
   path) + the S2 auth model. Effort/risk: H._ Status: deployed (Gateway v0.136.4,
   contract 1.15.0); authenticated end-to-end acceptance open in #3512.
-  _As of 2026-11-25:_ shipped and deployed; the Gateway is v0.146.0 on contract 1.15.0 (infra run
-  45323526850, per the #3512 body). Acceptance is not done: #3512 is open, 119 gates ticked and 47
-  open (tracker comment of 2026-11-24). The 2026-11-08 version figure is kept as history.
+  _As of 2026-11-25:_ shipped and deployed; the Gateway is fro-bot/agent v0.148.0 on contract
+  1.15.0 (promoted by infra#2081, deploy run 45543364079). The previous pair, v0.146.0
+  (infra run 45323526850), is what #3512 last recorded. Acceptance is not done: #3512 is open with
+  119 gates ticked and 47 open (tracker comment of 2026-11-24, on the v0.146.0 pair), and
+  acceptance on the v0.148.0 pair is owed. The 2026-11-08 version figure is kept as history.
 - **S2 — Operator identity & web auth.** A real user-auth model (vs the current
   shared-secret HMAC) so a human can authenticate to the control surface from a browser.
   _Owner: agent + infra. Depends on: S1. Effort/risk: M._ Status: live in production
@@ -298,8 +306,8 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   infra (hosting). Depends on: S1, S2. Effort/risk: H._ Status: live; interactive approve,
   deny and question accepted on v0.136.4; remaining live gates in #3512.
   _As of 2026-11-25:_ shipped, dashboard 2026.11.29 deployed. The approve, deny and question
-  acceptance is scoped to v0.136.4; for the current pair (Gateway v0.146.0, dashboard 2026.11.29)
-  #3512 lists ready parity, SSE loss and reconnect, cold-start notification taps and the stronger
+  acceptance is scoped to v0.136.4; for the pair #3512 last recorded (Gateway v0.146.0, dashboard
+  2026.11.29; the Gateway is now v0.148.0 and its acceptance is owed) #3512 lists ready parity, SSE loss and reconnect, cold-start notification taps and the stronger
   cancel-quiescence gate as open. Ordinary cancel is accepted there.
 - **R2 — Push notifications with action handling.** Surface critical events and let the
   operator respond/approve from the notification. _Owner: dashboard + agent. Depends on:
