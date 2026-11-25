@@ -8,7 +8,14 @@
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
 
-import {collectWikiPages, parseWikiPage, splitFrontmatter} from './wiki-utils.ts'
+import {
+  collectWikiPages,
+  parseWikiPage,
+  splitFrontmatter,
+  type SplitFrontmatterResult,
+  type WikiFrontmatterErrorKind,
+  type WikiPage,
+} from './wiki-utils.ts'
 
 const UNCLOSED_TEXT = 'Invalid frontmatter: missing closing --- delimiter'
 const PATH = 'knowledge/wiki/topics/a.md'
@@ -120,6 +127,68 @@ describe('parseWikiPage and collectWikiPages: the kind of a frontmatter error', 
     for (const content of contents) {
       const page = parseWikiPage(PATH, content)
       expect(page.frontmatterErrorKind !== undefined, JSON.stringify(content)).toBe(page.frontmatterError !== undefined)
+    }
+  })
+})
+
+/**
+ * The error text and its kind are one fact, so the types forbid one without the other. These are compile-time
+ * proofs: each `@ts-expect-error` fails the type check when the line below it starts to compile, and the narrowing
+ * helpers fail it when `errorKind` stops being a `WikiFrontmatterErrorKind` after an error check.
+ */
+describe('the error text and its kind cannot be set apart', () => {
+  const page: Omit<WikiPage, 'frontmatterError' | 'frontmatterErrorKind'> = {
+    path: PATH,
+    slug: 'a',
+    title: 'A',
+    type: 'topic',
+    aliases: [],
+    tags: [],
+    body: '',
+    frontmatter: {},
+  }
+
+  it('rejects a split result with an error and no kind, or a kind and no error', () => {
+    const clean: SplitFrontmatterResult = {frontmatter: {}, body: ''}
+    const broken: SplitFrontmatterResult = {frontmatter: {}, body: '', error: 'x', errorKind: 'unclosed'}
+    // @ts-expect-error an error text needs its kind
+    const noKind: SplitFrontmatterResult = {frontmatter: {}, body: '', error: 'x'}
+    // @ts-expect-error a kind needs its error text
+    const noError: SplitFrontmatterResult = {frontmatter: {}, body: '', errorKind: 'unclosed'}
+    expect([clean, broken, noKind, noError]).toHaveLength(4)
+  })
+
+  it('rejects a page with an error and no kind, or a kind and no error', () => {
+    const clean: WikiPage = {...page}
+    const broken: WikiPage = {...page, frontmatterError: 'x', frontmatterErrorKind: 'invalid'}
+    // @ts-expect-error an error text needs its kind
+    const noKind: WikiPage = {...page, frontmatterError: 'x'}
+    // @ts-expect-error a kind needs its error text
+    const noError: WikiPage = {...page, frontmatterErrorKind: 'invalid'}
+    expect([clean, broken, noKind, noError]).toHaveLength(4)
+  })
+
+  it('gives the kind after an error check on a split result', () => {
+    const result = splitFrontmatter('---\ntype: topic\n')
+    if (result.error === undefined) throw new Error('the fixture block must be unclosed')
+    const kind: WikiFrontmatterErrorKind = result.errorKind
+    expect(kind).toBe('unclosed')
+  })
+
+  it('gives the kind after an error check on a page', () => {
+    const parsed = parseWikiPage(PATH, `---\n${BROKEN_YAML}\n---\n`)
+    if (parsed.frontmatterError === undefined) throw new Error('the fixture block must be invalid')
+    const kind: WikiFrontmatterErrorKind = parsed.frontmatterErrorKind
+    expect(kind).toBe('invalid')
+  })
+
+  it('keeps destructuring the pair in either order', () => {
+    const {error, errorKind} = splitFrontmatter('---\ntype: topic\n')
+    if (error === undefined) {
+      expect(errorKind).toBeUndefined()
+    } else {
+      const kind: WikiFrontmatterErrorKind = errorKind
+      expect(kind).toBe('unclosed')
     }
   })
 })
