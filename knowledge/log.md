@@ -11318,3 +11318,27 @@ Repeat survey of marcusrbrown/.github at `d9a5bb9a`. I read the public metadata,
 Nothing material changed, so there is no dated note and no new repository `sources` entry. In [[marcusrbrown--github]] I corrected three outdated current-state version labels where they stand: the structure table's `bfra-me/.github` pin (v4.27.0 → v4.43.0), the CI Prettier version, and the Renovate post-upgrade Prettier version (both 3.9.6 → 3.10.1). I also bumped `updated`. Dated sections were left untouched. No topic, entity or comparison page needed changes. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/.github
+
+## [2026-11-24 16:00] ingest | repo:marcusrbrown/containers
+
+Surveyed marcusrbrown/containers and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/containers. `main` moved `be408246` → `faf07966` (44 commits). I read the repo metadata, the root, `tests/` and workflow directory listings, `mise.toml`, and the compare file list with patches for the workflows, setup action, manifests, `AGENTS.md` and `.yamllint.yaml`. Default branch `main`, public, not archived, MIT, Python/Poetry. Fro Bot and Renovate are both still present. Nothing material changed, so there is no dated note.
+
+Non-material: `fro-bot/agent` v0.126.0 → v0.147.1 with `isolate-agent: true`, checkout `persist-credentials: false`, a step that moves `MISE_DATA_DIR` into the tool cache, and the `omo-providers` input removed (#833). `docker/login-action` v4.7.0 → v4.8.0. `openai` moved to `>=3.0.0,<4.0.0` (#744). Node 24.22.1 and pnpm 11.28.6 in `mise.toml`. Prettier 3.10.0. The long-parked fro-bot PRs #723 (JSON-form HEALTHCHECK) and #740 (yamllint `.yaml` ignore) have merged. Bundled npm 12.2.2 (#853). Added `tests/test_fro_bot_workflow.py`.
+
+Changes to [[marcusrbrown--containers]]: one current-state statement under the title. I also corrected stale current-state values where they stand: the openai/urllib3 constraints, the pnpm version in two places, the mise Node/pnpm pins and the Fro Bot auth secrets. Bumped `updated`; no new repository `sources` entry. In [[docker-containers]] I added a dated update on the DL3025 paragraph (PR #723 merged; alert closure not verified) and one source. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/containers
+
+## [2026-11-24 16:02] ingest | repo:marcusrbrown/opencode-copilot-delegate
+
+Surveyed marcusrbrown/opencode-copilot-delegate and updated the control-plane wiki.
+
+Repeat survey of marcusrbrown/opencode-copilot-delegate. `main` moved `f0d44887` → `b5f11867` (72 commits). I read the repo metadata, the directory listings, the compare file list and commit subjects, README, `package.json` and all eight workflows. The repo is still public, MIT, TypeScript on Bun, default branch `main`, not archived.
+
+The material changes are in host runtime, testing and Fro Bot delivery. Four releases (v0.12.2 → v0.14.1) added OpenCode 2.x support to the same package (#582, #587). The default export is now `{ id, server, setup }`, and both `@opencode-ai/plugin >=1.14.41` and `@opencode/plugin >=2.3.2` are optional peers. CI now runs a dual-host smoke test, `test:tui`, and a path-filtered host-contract matrix (`v1-floor`, `v1-current`, `v2`). CodeQL and Scorecard workflows were added. `fro-bot.yaml` now declares `output-mode: branch-pr` for the daily pass, which closes the delivery mismatch recorded since 2026-09-10. It also adds an approval-rule step with a separate `approval-backstop` job. Fro Bot and Renovate are both present, so no missing-workflow note is needed.
+
+Changes to [[marcusrbrown--opencode-copilot-delegate]]: a current-state statement under the title and one dated 2026-11-24 section. I corrected these current-state lines where they stand: the Biome, peer, runtime-dependency and dev-type rows; the workflow count and table (CI scope, CodeQL, Scorecard, Renovate v4.43.0); the Fro Bot delivery, prompt-coupling, daily-pass, secrets and concurrency bullets; the TUI opt-in and RPC cleanup statements; and the divergence table. Dated sections are untouched. I bumped `updated` and added no repository `sources` entry. [[opencode-plugins]] gets a dated section on the dual-host evidence fields, and [[github-actions-ci]] gets a dated section on the approval backstop and the delivery fix. Each has one new commit-pinned source. The corrections context was empty.
+
+Sources: https://github.com/marcusrbrown/opencode-copilot-delegate

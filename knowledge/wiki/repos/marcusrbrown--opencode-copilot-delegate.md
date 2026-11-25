@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/opencode-copilot-delegate
 created: 2026-04-23
-updated: 2026-11-23
+updated: 2026-11-24
 sources:
   - url: https://github.com/marcusrbrown/opencode-copilot-delegate
     sha: f0d44887e8ec2d37c4162c3c81e2691075ace99a
@@ -84,6 +84,29 @@ node_id: R_kgDOSKIp0Q
 # marcusrbrown/opencode-copilot-delegate
 
 OpenCode plugin that delegates tasks to GitHub Copilot CLI as background subprocesses with async completion notifications.
+
+**Current state (2026-11-24, `b5f11867`):** the manifest declares **0.14.1**. One package now targets both OpenCode 1.x (`@opencode-ai/plugin >=1.14.41`) and 2.x (`@opencode/plugin >=2.3.2`), and each is an optional peer. README lists all four tools. CI runs the unit and TUI suites plus a host-contract matrix against pinned v1 and v2 hosts. The Fro Bot daily pass declares `output-mode: branch-pr`. Where the dated sections below say otherwise, they describe earlier snapshots.
+
+## OpenCode v2 dual-host support and a host-contract CI gate (2026-11-24)
+
+At `b5f11867` the repo is 72 commits past the 2026-11-10 snapshot `f0d44887`. It is still public, MIT, TypeScript on Bun, default branch `main`, not archived. I read the metadata, directory listings, compare file list and commit subjects, README, `package.json` and all eight workflows. I did not read the source, tests, docs, `mise.toml`, `biome.json` or the settings and Renovate configs.
+
+**Purpose unchanged, host surface widened.** Four GitHub releases landed in four days: v0.12.2 (2026-11-20), v0.13.0 (2026-11-21), v0.14.0 (2026-11-22) and v0.14.1 (2026-11-23). #582 (marcusrbrown, merged 2026-11-21) is "support OpenCode V2 from the same package". #587 adds `/copilot-status` on V2, and #580 registers tools for every workspace while sharing process state. The tree now has `src/hosts/v1.ts`, `src/hosts/v2.ts` and `src/core/`. The default export is an object `{ id, server, setup }`: `server()` serves the v1 host and `setup()` the v2 host. The peers are now `@opencode-ai/plugin`, `@opencode/plugin`, `@opentui/core`/`@opentui/solid >=0.4.5` and `solid-js >=1.9.10`, all optional. `@opentui/*` left `dependencies` (the dev pin and override are 0.8.4). The only runtime dependencies are `fkill` 10.0.3 and zod **^4.6.7**; #556 bumped zod to clear GHSA-mrhx-c7xc-m3w5.
+
+According to README, v1 notifications use `client.session.prompt` with `noReply`. v2 uses `session.synthetic`, with `resume: false` for silent notices, `delivery: 'queue'` for the last completion and `delivery: 'steer'` for failures. On v2 the TUI half loads automatically from the server entry, finds the server's port file by the server's pid, and loses running delegations when the last plugin activation ends. This is the README's account. I read no source to confirm it.
+
+**How it tests changed.** `ci.yaml` still installs with a frozen lockfile, then typechecks, lints and builds. The export-shape smoke test now runs under Node 26 and requires a default `{ id, server, setup }`. A new dual-host smoke step calls `server()` with a v1-shaped input and `setup()` with a fake v2 context, and requires each to register exactly the four `copilot_*` tools. The step that runs `test:unit` is now followed by **`test:tui`**. A path-filtered `changes` job controls a `host-contract` matrix (`v1-floor`, `v1-current`, `v2`). The matrix packs the tarball, installs it next to each pinned host from `scripts/opencode-host-pins.json`, and runs `tests/host-contract/run-host.sh` against a replay shim (no model, no auth). The `Host contract matrix` aggregator job passes when the matrix succeeds or is skipped. `test:integration` is still not invoked. Two new workflows were added: `codeql-analysis.yaml` (languages `actions` and `javascript-typescript`, Mondays 05:30 UTC) and `scorecard.yaml`, for eight in total. Release keeps the same trigger and Changesets v1.9.0 shape. It now runs publish on Node 26, uses `persist-credentials: false` and `bun install --ignore-scripts`, and the App-token action is v3.4.0. Whether npm publication succeeded was not checked.
+
+**Fro Bot delivery declared.** `fro-bot/agent` is pinned at **v0.147.2** (`e6386cad`) with `isolate-agent: "true"`. `output-mode` is `branch-pr` for the schedule and for prompt-less `autoheal` dispatches; prompt-only dispatches remain comment-only. That closes the caller/prompt mismatch recorded from 2026-09-10 through 2026-11-10 at the declaration level. The workflow comment cites #556 as proof, and #556 was opened by `fro-bot` from `autoheal/security-zod` and merged on 2026-11-20. The daily prompt (now `AUTOHEAL_PROMPT`) has 11 categories and reports to dated `Daily Fro Bot Report — YYYY-MM-DD (UTC)` issues, rotating older ones closed. The rotation rule also covers legacy #26; I did not check its state. Neither prompt names an SDK peer any more. The review prompt names both host peer floors. Other new job features:
+
+- An approval-rule step allows APPROVE only on marcusrbrown PRs that contain no fro-bot commit.
+- A separate `approval-backstop` job with `permissions: {}` dismisses any disallowed fro-bot approval.
+- Fork and bot-authored PRs are skipped, and comment-triggered PR heads must come from the same repository.
+- Checkout always sets `persist-credentials: false`.
+- Bun comes from `mise.toml` instead of `latest`, in both `fro-bot.yaml` and `copilot-setup-steps.yaml`.
+- `OMO_PROVIDERS` is no longer passed.
+
+Renovate's caller is still at v4.43.0, and settings sync still uses the bare SHA `f6a7976c…` with no version comment. Fro Bot and Renovate are both present, so a missing-workflow proposal is not warranted.
 
 ## Bounded Source Snapshot (2026-11-10)
 
@@ -322,14 +345,14 @@ The common cause in (1) and (4) is worth naming: **a proposed version is not an 
 |--------|--------|
 | Language | TypeScript 7.0.2 (strict, ES2022 target, ESM modules). Bumped from 6.0.3 → 7.0.2 (major) in the 2026-07-24 window. |
 | Runtime/Build | Bun 1.4.2 (both development and production build target; 1.3.14 → 1.4.0 in the 2026-08-25 window via #370, → 1.4.2 by 2026-09-10) |
-| Linting/Formatting | Biome CLI **2.5.12** (NOT ESLint/Prettier — diverges from other Marcus repos using `@bfra.me/eslint-config`). v2.5.0 schema migration landed in #223, which also dropped the deprecated `recommended` field (now expressed as `linter.rules.preset: "recommended"`). **`biome.json`'s `$schema` is pinned at 2.5.5 and has not moved since at least 2026-08-25** — the gap to the installed CLI is 7 patch releases and widening; PR #332 (schema → 2.5.8) has been open since 2026-07-31. See correction (1) above: this is a sync that never lands, not a one-hop lag. |
+| Linting/Formatting | Biome CLI **2.6.8** (manifest pin, 2026-11-24) (NOT ESLint/Prettier — diverges from other Marcus repos using `@bfra.me/eslint-config`). v2.5.0 schema migration landed in #223, which also dropped the deprecated `recommended` field (now expressed as `linter.rules.preset: "recommended"`). **`biome.json`'s `$schema` is pinned at 2.5.5 and has not moved since at least 2026-08-25** — the gap to the installed CLI is 7 patch releases and widening; PR #332 (schema → 2.5.8) has been open since 2026-07-31. See correction (1) above: this is a sync that never lands, not a one-hop lag. |
 | Build script | `bun run clean && bun scripts/build.ts && tsc --emitDeclarationOnly --noEmit false`; `clean` is `rimraf dist` (`rimraf` 6.1.3, devDependency). Present since before 2026-08-25 but first recorded 2026-09-10. |
 | Versioning | Changesets (`@changesets/cli` v2.31.1, OIDC trusted publishing to npm) |
 | Package Manager | Bun (`bun.lock`, `bun install`) |
 | Test Runner | `bun test` — separate scripts for unit, TUI (with `--preload @opentui/solid/preload`), and integration |
-| Peer Dependencies | `@opencode-ai/plugin >=1.14.41` (narrowed from `>=1.14.0` in v0.12.0; dev pin: **1.18.29** as of 2026-09-10, up from 1.18.19). `@opencode-ai/sdk` peer dep removed in v0.6.0 — it was never imported. |
-| Runtime Dependencies | `fkill` 10.0.3 (cross-platform process tree kill); `@opentui/core` + `@opentui/solid` **0.2.7** (TUI; runtime pin held for a third survey — the 0.4.x jump is carried in fro-bot autoheal PR #335, open since 2026-08-01 and untouched since 2026-08-11); `solid-js` **1.9.15** (TUI reactive layer); `zod` ^4.3.0 (pinned with `overrides` to dodge TS2883 from dual-zod trees, added v0.7.0) |
-| Dev Type Packages | `@types/bun` **1.4.1** (up from 1.3.14) and `@types/babel__core` **7.20.5**; `rimraf` **6.1.3** (both devDeps) |
+| Peer Dependencies | As of 2026-11-24, all optional: `@opencode-ai/plugin >=1.14.41` (v1 host), `@opencode/plugin >=2.3.2` (v2 host), `@opentui/core` and `@opentui/solid >=0.4.5`, `solid-js >=1.9.10`. Dev pins: `@opencode-ai/plugin` 1.19.6, `@opencode/plugin` 2.3.2. Earlier history: `@opencode-ai/plugin >=1.14.41` (narrowed from `>=1.14.0` in v0.12.0; dev pin: **1.18.29** as of 2026-09-10, up from 1.18.19). `@opencode-ai/sdk` peer dep removed in v0.6.0 — it was never imported. |
+| Runtime Dependencies | As of 2026-11-24 only `fkill` 10.0.3 and `zod` ^4.6.7 (overridden to match). `@opentui/*` and `solid-js` are now optional peers, with dev pins `@opentui/*` 0.8.4 and `solid-js` 1.9.20 and an `@opentui/core` 0.8.4 override. Earlier: `fkill` 10.0.3 (cross-platform process tree kill); `@opentui/core` + `@opentui/solid` **0.2.7** (TUI; runtime pin held for a third survey — the 0.4.x jump is carried in fro-bot autoheal PR #335, open since 2026-08-01 and untouched since 2026-08-11); `solid-js` **1.9.15** (TUI reactive layer); `zod` ^4.3.0 (pinned with `overrides` to dodge TS2883 from dual-zod trees, added v0.7.0) |
+| Dev Type Packages | `@types/bun` **1.4.5**, `@types/node` **26.6.6** and `@types/babel__core` **7.20.5**; `rimraf` **6.1.4** (all devDeps, 2026-11-24) |
 | License | MIT |
 | Node Engine | >=24 |
 | Package exports | `.` (server plugin), `./plugin` (alias), `./tui` (opt-in TUI entry). `oc-plugin: ["server", "tui"]` declares both halves to OpenCode. |
@@ -466,7 +489,7 @@ OpenCode's plugin loader treats every named export from a plugin entry as a sepa
 
 ### RPC Layer (server ↔ TUI)
 
-The server half exposes a **localhost-only** RPC listener for the TUI. It writes a per-session authenticated port file under `<XDG_CACHE_HOME or ~/.cache>/opencode/copilot-delegate/` so the TUI half can find and authenticate to the right server instance. Cleanup is best-effort: OpenCode's server plugin API has no dispose hook today, so cleanup is tied to process exit signals; the orphan-reaper posture covers missed shutdowns.
+The server half exposes a **localhost-only** RPC listener for the TUI. It writes a per-session authenticated port file under `<XDG_CACHE_HOME or ~/.cache>/opencode/copilot-delegate/` so the TUI half can find and authenticate to the right server instance. Cleanup is best-effort: OpenCode's 1.x server plugin API has no dispose hook, so cleanup there is tied to process exit signals; the orphan-reaper posture covers missed shutdowns. Per the 2026-11-24 README, the directory is keyed by session id on 1.x and by server pid on 2.x, and 2.x cleanup runs when the last plugin activation ends.
 
 ### Async Notification Pattern
 
@@ -486,14 +509,16 @@ Task state is in-memory within a single OpenCode process. `copilot_output` from 
 
 ## CI and Automation
 
-Six workflows on `main`:
+Eight workflows on `main` (2026-11-24):
 
 | Workflow | File | Purpose |
 |----------|------|---------|
-| CI | `ci.yaml` | Lint (Biome), typecheck (tsc --noEmit), build (bun build + tsc declarations), unit tests (bun test) |
+| CI | `ci.yaml` | Lint (Biome), typecheck (tsc --noEmit), build (bun build + tsc declarations), Node 26 export-shape and dual-host smoke tests, unit tests, TUI tests (bun test); path-filtered host-contract matrix (`v1-floor`, `v1-current`, `v2`) with a `Host contract matrix` aggregator |
+| CodeQL | `codeql-analysis.yaml` | `actions` + `javascript-typescript`, `build-mode: none`; push/PR to `main` and Mondays 05:30 UTC |
+| Scorecard | `scorecard.yaml` | OpenSSF Scorecard SARIF upload; push to `main`, branch-protection changes and Mondays 05:30 UTC |
 | Fro Bot | `fro-bot.yaml` | PR review + daily autohealing (16:00 UTC) + @fro-bot mentions + dispatch |
 | Release | `release.yaml` | Changesets version + publish to npm (triggered on CI success on main, or dispatch) |
-| Renovate | `renovate.yaml` | Automated dependency updates via `bfra-me/.github` reusable workflow, `@4861d88a` # **v4.27.0** |
+| Renovate | `renovate.yaml` | Automated dependency updates via `bfra-me/.github` reusable workflow, `@e6a1ab17` # **v4.43.0** |
 | Update Repo Settings | `update-repo-settings.yaml` | Probot settings sync via `bfra-me/.github` reusable workflow, `@f6a7976c` — **bare SHA, no version comment**, `v4.16.8-3-gf6a7976`, dated 2026-04-23. Push on `settings.yml` change + daily `55 2` cron + dispatch. |
 | Copilot Setup Steps | `copilot-setup-steps.yaml` | GitHub Copilot coding agent bootstrap |
 
@@ -506,13 +531,13 @@ Action pins as of 2026-09-10: `actions/checkout@3d3c42e5` # v7.0.1, `actions/set
 ### Fro Bot Integration
 
 - **Agent:** `fro-bot/agent@v0.109.4` (SHA `b799b64d102584774af338ddd26a4803d73ae192`) as of 2026-09-10 — reached through **twelve discrete Renovate PRs** (#378–#390 excluding #382) in sixteen days. (Prior: v0.105.0, SHA `335e4f8`; v0.94.2, SHA `64029d5`.)
-- **Delivery shape:** the job's final step is `Run Fro Bot`. There is **no commit, push, or PR step after the agent**, and the top-level `permissions:` block grants only `contents: read` — write authority reaches the job solely through `secrets.FRO_BOT_PAT`, passed to both `actions/checkout` and the agent. `SCHEDULE_PROMPT` nevertheless instructs the agent to make "commits and pushing fixes directly where possible." Matches the working-dir delivery break diagnosed in [[marcusrbrown--tokentoilet]]; observable consequence here is that the newest `fro-bot`-authored artifact is PR #335 (2026-08-01) while perpetual issue #26 continued receiving updates through 2026-09-09.
-- **Prompt/manifest coupling:** `SCHEDULE_PROMPT` category 3 names the exact devDependency set to watch for majors (`typescript`, `@biomejs/biome`, `@types/bun`, `@types/node`, `rimraf`) — a hand-maintained mirror of `package.json` that will silently under-cover any dependency added later. Instance of the prompt-text-is-an-unmanaged-dependency pattern in [[github-actions-ci]].
+- **Delivery shape (2026-11-24):** `Run Fro Bot` declares `output-mode: branch-pr` for the schedule and for prompt-less `autoheal` dispatches, and leaves it empty, which means comment-only, for prompt-only dispatches. The job grants `contents: read` and `pull-requests: read`. Write authority comes through `secrets.FRO_BOT_PAT`; checkout uses `persist-credentials: false`. A separate `approval-backstop` job dismisses any disallowed fro-bot approval. (Through 2026-11-10 the job ended at `Run Fro Bot` with no `output-mode`, even though the prompt asked for pushes. This matched the working-dir delivery break diagnosed in [[marcusrbrown--tokentoilet]].)
+- **Prompt/manifest coupling:** as of 2026-11-24, `AUTOHEAL_PROMPT` replaces `SCHEDULE_PROMPT` and no longer lists a fixed devDependency set. Its dependency policy checks are now `@types/node` even majors and the `@opencode-ai/plugin` peer floor. The prompt text is still an unmanaged dependency in the sense used in [[github-actions-ci]].
 - **PR review:** Structured verdict format (PASS/CONDITIONAL/REJECT) with plugin-specific focus areas: TypeScript type safety, OpenCode API contracts (tool schema correctness, `ToolResult` shape, peerDependency compatibility), subprocess safety (spawn correctness, stdin/stdout buffering, signal propagation, process-tree kill, no zombies), tool output safety (no secrets/PATs/PII), changeset hygiene
-- **Daily autohealing (16:00 UTC):** 4-category sweep — errored PRs, security, health & maintenance, developer experience. Single perpetual issue ("Daily Autohealing Report" #26) strategy.
-- **Required secrets:** `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OMO_PROVIDERS`, `OPENCODE_CONFIG`
+- **Daily pass (16:00 UTC):** an 11-category pass (category 11 runs on Sundays only) that combines detection, reporting and autohealing. It writes one dated `Daily Fro Bot Report — YYYY-MM-DD (UTC)` issue per day and rotates older ones closed, including legacy "Daily Autohealing Report" #26. Fixes go to `autoheal/<root-cause-slug>` branches and PRs, with a cap on the review backlog.
+- **Required secrets:** `FRO_BOT_PAT`, `OPENCODE_AUTH_JSON`, `OPENCODE_CONFIG` (`OMO_PROVIDERS` no longer passed, 2026-11-24)
 - **Required variables:** `FRO_BOT_MODEL`
-- **Concurrency:** `fro-bot-{issue|pr|discussion|run_id}`, no cancel-in-progress
+- **Concurrency:** scheduled runs and prompt-less dispatches share a `fro-bot-daily` slot; otherwise `fro-bot-{issue|pr|discussion|run_id}`, no cancel-in-progress
 
 ### Renovate Configuration
 
@@ -617,7 +642,7 @@ A second suspected drift on the same line of `README.md` is **not** asserted her
 
 | Aspect | This repo | Other Marcus repos |
 |--------|-----------|-------------------|
-| Linting/Formatting | Biome 2.5.12 | ESLint + Prettier (`@bfra.me/eslint-config`) |
+| Linting/Formatting | Biome 2.6.8 | ESLint + Prettier (`@bfra.me/eslint-config`) |
 | Package Manager | Bun | pnpm (most repos) or Bun (infra) |
 | Test Framework | `bun test` | Vitest (most repos) |
 | CI Build | `bun build` + `tsc --emitDeclarationOnly` | Varies (Vite, tsup, etc.) |
@@ -631,8 +656,8 @@ These divergences are appropriate for an OpenCode plugin — Bun is the OpenCode
 - **Prompt visibility in `ps`:** Copilot CLI accepts the prompt as a command-line argument, exposing full prompt text in `ps` output for any user on the host. Upstream limitation — avoid delegating prompts containing secrets or PII; pass sensitive material via files, env vars, or `--secret-env-vars` instead.
 - **No subprocess lifetime cap:** Hung `copilot` subprocess stays as `running` indefinitely. Cancel manually via `copilot_cancel`. Configurable timeout still planned for v1.x.
 - **Single-process scope:** Task state is in-memory only; cross-process sharing requires future sqlite registry + IPC. `copilot_output` from a different OpenCode process returns `{ status: 'unknown', error: 'task_id not found in this OpenCode process' }`.
-- **RPC cleanup is best-effort:** OpenCode's server plugin API has no dispose hook today, so RPC server cleanup relies on process-exit signals and the orphan-reaper posture for missed shutdowns.
-- **TUI is opt-in:** Server plugin works alone. `/copilot-status` requires explicitly installing the TUI half in `tui.jsonc` — see the README for the dual-config snippet.
+- **RPC cleanup is best-effort:** OpenCode's 1.x server plugin API has no dispose hook, so RPC server cleanup there relies on process-exit signals and the orphan-reaper posture for missed shutdowns. On 2.x, README says the cleanup of the last plugin activation closes the server and removes its port file (2026-11-24).
+- **TUI is opt-in:** Server plugin works alone. On OpenCode 1.x, `/copilot-status` requires explicitly installing the TUI half in `tui.jsonc` — see the README for the dual-config snippet. On 2.x the README says the TUI loads the `./tui` entry automatically from the server's plugin list (2026-11-24).
 - **Integration tests not in CI:** Test directory exists but tracked as issue #38. Suite skips when neither `GH_TOKEN` nor `COPILOT_PAT` is set.
 
 ## PR review: mandatory persona pipeline and method disclosure (2026-11-22)

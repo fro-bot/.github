@@ -2,8 +2,11 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-23
+updated: 2026-11-24
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate/blob/b5f118679c955951dda14f3d007908ccbbac9bfd/.github/workflows/fro-bot.yaml
+    sha: b5f118679c955951dda14f3d007908ccbbac9bfd
+    accessed: 2026-11-24
   - url: https://github.com/marcusrbrown/metacogs/blob/61065ee1d7daa97213d57d77f53e4d44332e9df2/.github/workflows/fro-bot.yaml
     sha: 61065ee1d7daa97213d57d77f53e4d44332e9df2
     accessed: 2026-11-23
@@ -446,6 +449,14 @@ related:
 ---
 
 # GitHub Actions CI
+
+## A prompt rule needs a deterministic backstop job (2026-11-24)
+
+[[marcusrbrown--opencode-copilot-delegate]] at `b5f11867` enforces a review-approval policy in two layers. The first is a pre-agent step that fails closed. With `pipefail`, any API error yields `allowed=false`. The step decides whether Fro Bot may APPROVE: the PR must be authored by marcusrbrown and contain no fro-bot commit. It appends the matching rule sentence to the review prompt. The second layer is a separate `approval-backstop` job that runs whenever the agent job was not skipped and approval was not allowed. It runs on a fresh runner with `permissions: {}` and no checkout. It lists the PR's reviews and dismisses every fro-bot `APPROVED` review, and it fails if a list or dismissal call fails. Comment-triggered runs get no prompt rule, so for them the backstop is the only guard. The general point is that a prompt instruction is advice to the agent and a post-job API check is enforcement. The enforcing step also runs where nothing the agent left behind can reach the PAT.
+
+The same workflow resolves the delivery mismatch this page has tracked for that repository. The daily pass now declares `output-mode: branch-pr` and prompt-only dispatches stay comment-only. The workflow comment names #556 (`autoheal/security-zod`, fro-bot, merged 2026-11-20) as the first delivered fix. Per [Retire a delivery diagnosis when the declared channel changes](#retire-a-delivery-diagnosis-when-the-declared-channel-changes-2026-11-07), the older "no output-mode" findings for this repo are historical.
+
+Sources: [fro-bot.yaml](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/b5f118679c955951dda14f3d007908ccbbac9bfd/.github/workflows/fro-bot.yaml). This is a workflow declaration; I observed no backstop run.
 
 ## Readability does not contradict archived lifecycle exclusion (2026-11-12)
 
