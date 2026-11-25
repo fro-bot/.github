@@ -671,6 +671,112 @@ describe('cross-repo-dispatch track (bun, cross-repo-dispatch.yaml: argv `track`
   })
 })
 
+describe('cross-repo-dispatch decline flow (bun: planner comment → marker → dispatch → declined receipt → track)', () => {
+  const PROMPT = 'Update the agent docs'
+  const RAW_NONCE = Buffer.alloc(32, PINNED_FILL).toString('base64url')
+
+  it('a worker that declines in the receipt comment it posts ends the item blocked, with the reason, and closes the goal', async () => {
+    // 1. The planner's checklist comment and the approved marker, as the dispatch workflow finds them.
+    const checklist = decomposition(`- [ ] fro-bot/agent: ${PROMPT}`)
+    const pending = parseDecomposition(checklist).items[0]
+    if (pending === undefined) throw new TypeError('the fixture checklist did not parse')
+    const approved = {
+      goal: 'issue-50',
+      items: [pending],
+      approvalFingerprint: computeApprovalFingerprint([pending]),
+      markerHash: '',
+    }
+    const correlationId = computeCorrelationId('issue-50', pending.id, RAW_NONCE)
+    const intent = {
+      ...approved,
+      items: [{...pending, status: 'intent' as const, correlationId, nonceHash: hashNonce(RAW_NONCE)}],
+    }
+    const planner = comment(1, checklist)
+    const approvedMarker = comment(2, buildMarkerComment(approved))
+    const intentMarker = comment(2, buildMarkerComment(intent))
+
+    // 2. Dispatch through the real entrypoint: the marker writes and the prompt the worker receives.
+    const dispatchCwd = checkout({'event.json': JSON.stringify(EVENT), 'metadata/repos.yaml': REPOS_YAML})
+    const dispatched = await run(
+      'cross-repo-dispatch',
+      ['dispatch'],
+      [
+        goalIssues(50),
+        issueComments(
+          50,
+          [planner, approvedMarker],
+          [planner, approvedMarker],
+          [planner, approvedMarker],
+          [planner, intentMarker],
+        ),
+        anyCommentPatch,
+        route('POST', '/repos/fro-bot/agent/actions/workflows/fro-bot.yaml/dispatches', {s: 204}),
+      ],
+      {cwd: dispatchCwd, env: crossRepoEnv(dispatchCwd), pinNonce: true},
+    )
+    expect(dispatched.exitCode).toBe(0)
+    const writes = requests().filter(line => !line.startsWith('GET '))
+    const [, dispatchWrite, confirmWrite] = writes as [string, string, string]
+    const prompt = dispatchBody(dispatchWrite).inputs.prompt
+    expect(prompt).toContain('`declined`')
+    expect(prompt).toContain('`countered`')
+    const confirmedBody = writtenState(confirmWrite).body
+    fake?.cleanup()
+
+    // 3. The worker answers from the prompt it was given: the receipt carries the id and nonce it read there,
+    // inside the region, among prose, authored by the Fro Bot App.
+    const workerCorrelation = /^correlation_id: (\S+)$/mu.exec(prompt)?.[1]
+    const workerNonce = /^nonce: (\S+)$/mu.exec(prompt)?.[1]
+    if (workerCorrelation === undefined || workerNonce === undefined)
+      throw new TypeError('the prompt carries no contract')
+    const declined = [
+      'This repository does not carry that file, so I am not making the change.',
+      '',
+      buildResultMarker({
+        correlationId: workerCorrelation,
+        nonce: workerNonce,
+        status: 'declined',
+        summary: 'The agent docs live in another repository.',
+      }),
+    ].join('\n')
+
+    // 4. Track through the real entrypoint, on the marker the dispatch wrote.
+    const trackCwd = checkout({'metadata/repos.yaml': REPOS_YAML})
+    const tracked = await run(
+      'cross-repo-dispatch',
+      ['track'],
+      [
+        goalIssues(50),
+        issueComments(50, [planner, comment(2, confirmedBody), comment(3, declined)]),
+        anyCommentPatch,
+        anyCommentPost,
+        route('PATCH', `${CONTROL}/issues/50`, {b: {}}),
+      ],
+      {cwd: trackCwd, env: crossRepoEnv(trackCwd, {GITHUB_EVENT_PATH: undefined})},
+    )
+
+    expect(tracked.exitCode).toBe(0)
+    expect(expectResult(tracked, join(trackCwd, 'result.json'), TRACK_COUNT_KEYS)).toMatchObject({
+      goalsProcessed: 1,
+      itemsBlocked: 1,
+      itemsCompleted: 0,
+      itemsNeedsAttention: 0,
+      goalsClosed: 1,
+    })
+    const patches = requestsTo('PATCH /repos/fro-bot/.github/issues/comments/2')
+    expect(patches).toHaveLength(1)
+    expect(writtenState(patches[0] as string).marker.state.items[0]).toMatchObject({
+      status: 'blocked',
+      blockedReason: 'declined',
+    })
+    expect(requestsTo('POST /repos/fro-bot/.github/issues/50/comments')[0]).toContain(
+      'Goal complete. completed=0 failed=0 blocked=1',
+    )
+    expect(requestsTo('PATCH /repos/fro-bot/.github/issues/50 ')[0]).toContain('"state":"closed"')
+    expect(unhandledMutations()).toStrictEqual([])
+  })
+})
+
 describe('cross-repo-dispatch argv (bun)', () => {
   const MODE_ERROR = 'cross-repo-dispatch: expected argv[2] to be "dispatch" or "track"\n'
 

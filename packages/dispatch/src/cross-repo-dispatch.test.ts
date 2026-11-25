@@ -32,11 +32,19 @@ import {
   CROSS_REPO_GOAL_LABEL,
   MARKER_PREFIX,
   MAX_ITEMS_PER_GOAL,
+  MAX_PROMPT_LENGTH,
   RECEIPT_SLA_MS,
   REQUIRED_APPROVER,
   TARGET_WORKFLOW_ID,
 } from './dispatch-model.ts'
-import {classifyReceiptCapability, gateTarget, planDispatch, planSnapshot} from './dispatch-plan.ts'
+import {
+  buildDispatchPrompt,
+  classifyReceiptCapability,
+  gateTarget,
+  isPromptSafe,
+  planDispatch,
+  planSnapshot,
+} from './dispatch-plan.ts'
 import {
   buildResultMarker,
   extractItemPrompts,
@@ -4393,40 +4401,40 @@ describe('runTrack — production fixture regression (#3652: five targets, two w
 
 // ─── Receipt statuses and the SLA, pinned before decline/counter joined the vocabulary ───
 
+const RAW = 'raw-nonce-statuses'
+const EPOCH = 1_000_000
+const HOUR_MS = 60 * 60 * 1000
+
+function pinnedItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
+  return makeDispatchedItem({
+    id: 'item-1',
+    correlationId: 'c1',
+    epoch: EPOCH,
+    nonceHash: hashNonce(RAW),
+    ...overrides,
+  })
+}
+
+async function track(items: DispatchItem[], receipts: CrossRepoResult[], now: number, login = 'fro-bot') {
+  const goalIssue = makeOpenGoal({goal: 'g', items, markerHash: ''})
+  const {octokit, comments} = mockOctokitForGoal(goalIssue, {comments: receipts.map(r => makeReceiptComment(r, login))})
+  const update = vi.fn(async () => ({data: {}}))
+  const result = await runTrack({
+    octokit: {
+      ...octokit,
+      rest: {...octokit.rest, issues: {...octokit.rest.issues, update}},
+    },
+    repo: REPO,
+    loadOpenGoalIssues: async () => [goalIssue],
+    loadRegistry: async () => [gateEntryFor(TARGET_A)],
+    findRunConclusion: async () => undefined,
+    now: () => now,
+  })
+  const written = extractMarker(comments[0]?.body ?? '')
+  return {result, written: written?.state.items ?? [], update, comments}
+}
+
 describe('runTrack — receipt status mapping and the receipt SLA (characterization)', () => {
-  const RAW = 'raw-nonce-statuses'
-  const EPOCH = 1_000_000
-  const HOUR_MS = 60 * 60 * 1000
-
-  function pinnedItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
-    return makeDispatchedItem({
-      id: 'item-1',
-      correlationId: 'c1',
-      epoch: EPOCH,
-      nonceHash: hashNonce(RAW),
-      ...overrides,
-    })
-  }
-
-  async function track(items: DispatchItem[], receipts: CrossRepoResult[], now: number) {
-    const goalIssue = makeOpenGoal({goal: 'g', items, markerHash: ''})
-    const {octokit, comments} = mockOctokitForGoal(goalIssue, {comments: receipts.map(r => makeReceiptComment(r))})
-    const update = vi.fn(async () => ({data: {}}))
-    const result = await runTrack({
-      octokit: {
-        ...octokit,
-        rest: {...octokit.rest, issues: {...octokit.rest.issues, update: update as never}},
-      },
-      repo: REPO,
-      loadOpenGoalIssues: async () => [goalIssue],
-      loadRegistry: async () => [gateEntryFor(TARGET_A)],
-      findRunConclusion: async () => undefined,
-      now: () => now,
-    })
-    const written = extractMarker(comments[0]?.body ?? '')
-    return {result, written: written?.state.items ?? [], update, comments}
-  }
-
   it.each([
     ['success', 'completed'],
     ['noop', 'completed'],
@@ -4508,5 +4516,229 @@ describe('runTrack — receipt status mapping and the receipt SLA (characterizat
       EPOCH + HOUR_MS,
     )
     expect(written[0]?.status).toBe('failed')
+  })
+})
+
+// ─── A worker may decline or counter the ask (R15) ───
+
+/** Length of `buildDispatchPrompt` with an empty item prompt, a 20-char correlation id, a 43-char nonce and fro-bot/.github#50. */
+const PROMPT_OVERHEAD = 1821
+
+describe('a declined or countered receipt ends the dispatch attempt', () => {
+  const declined = (overrides: Partial<CrossRepoResult> = {}) =>
+    makeReceipt({
+      correlationId: 'c1',
+      nonce: RAW,
+      status: 'declined',
+      summary: 'Out of scope for this repo.',
+      ...overrides,
+    })
+  const countered = (overrides: Partial<CrossRepoResult> = {}) =>
+    makeReceipt({correlationId: 'c1', nonce: RAW, status: 'countered', summary: 'Do X instead.', ...overrides})
+
+  describe('the three-gate resolver', () => {
+    const item = pinnedItem()
+    const from = (login: string, receipt: CrossRepoResult): TrackerComment => ({
+      author: {login},
+      body: buildResultMarker(receipt),
+    })
+
+    it.each(['declined', 'countered'] as const)(
+      'an authentic %s receipt resolves terminal with that status',
+      status => {
+        const resolutions = resolveReceipts(
+          [item],
+          [from('fro-bot', makeReceipt({correlationId: 'c1', nonce: RAW, status}))],
+        )
+        expect(resolutions.get('item-1')?.terminal).toBe(status)
+      },
+    )
+
+    it.each(['declined', 'countered'] as const)('gate (c): a %s receipt with a wrong nonce is ignored', status => {
+      const resolutions = resolveReceipts(
+        [item],
+        [from('fro-bot', makeReceipt({correlationId: 'c1', nonce: 'forged', status}))],
+      )
+      expect(resolutions.get('item-1')).toBeUndefined()
+    })
+
+    it.each(['declined', 'countered'] as const)('gate (a): a %s receipt from an unlisted author is ignored', status => {
+      const resolutions = resolveReceipts(
+        [item],
+        [from('someone-else', makeReceipt({correlationId: 'c1', nonce: RAW, status}))],
+      )
+      expect(resolutions.get('item-1')).toBeUndefined()
+    })
+
+    it.each(['declined', 'countered'] as const)(
+      'gate (b): a %s receipt whose correlation id maps to no item is ignored',
+      status => {
+        const resolutions = resolveReceipts(
+          [item],
+          [from('fro-bot', makeReceipt({correlationId: 'other', nonce: RAW, status}))],
+        )
+        expect(resolutions.size).toBe(0)
+      },
+    )
+
+    it('the earliest authentic receipt is final: a success after a declined is ignored, and the reverse', () => {
+      const first = resolveReceipts(
+        [item],
+        [
+          from('fro-bot', declined()),
+          from('fro-bot', makeReceipt({correlationId: 'c1', nonce: RAW, status: 'success'})),
+        ],
+      )
+      expect(first.get('item-1')?.terminal).toBe('declined')
+      const second = resolveReceipts(
+        [item],
+        [
+          from('fro-bot', makeReceipt({correlationId: 'c1', nonce: RAW, status: 'success'})),
+          from('fro-bot', countered()),
+        ],
+      )
+      expect(second.get('item-1')?.terminal).toBe('success')
+    })
+  })
+
+  describe('runTrack', () => {
+    it.each([
+      ['declined', declined],
+      ['countered', countered],
+    ] as const)(
+      'a %s receipt blocks the item with that reason, and the goal closes when every item is terminal',
+      async (reason, make) => {
+        const {result, written, update, comments} = await track([pinnedItem()], [make()], EPOCH + HOUR_MS)
+        expect(written[0]).toMatchObject({status: 'blocked', blockedReason: reason})
+        expect(written[0]?.needsAttentionReason).toBeUndefined()
+        expect(result.counts.itemsBlocked).toBe(1)
+        expect(result.counts.itemsCompleted).toBe(0)
+        expect(result.counts.goalsClosed).toBe(1)
+        expect(update).toHaveBeenCalledWith(expect.objectContaining({state: 'closed'}))
+        // The marker the track wrote reloads with its reason, and the next pass leaves the goal alone.
+        const reloaded = selectStateMarker(comments.map(c => ({author: {login: c.login}, body: c.body})))
+        expect(reloaded?.state.items[0]).toMatchObject({status: 'blocked', blockedReason: reason})
+      },
+    )
+
+    it('a goal with a declined item and a still-dispatched item stays open', async () => {
+      const other = pinnedItem({id: 'item-2', correlationId: 'c2', nonceHash: hashNonce('other-raw')})
+      const {result, written, update} = await track([pinnedItem(), other], [declined()], EPOCH + HOUR_MS)
+      expect(written.map(item => item.status)).toStrictEqual(['blocked', 'dispatched'])
+      expect(result.counts.goalsClosed).toBe(0)
+      expect(update).not.toHaveBeenCalled()
+    })
+
+    it('a countered receipt before the SLA stops the aging: no needs-attention at +48 h', async () => {
+      const first = await track([pinnedItem()], [countered()], EPOCH + HOUR_MS)
+      const settled = first.written[0]
+      expect(settled?.status).toBe('blocked')
+
+      // A later pass, two days on, sees the blocked item in the marker and the same comments.
+      const later = await track(settled === undefined ? [] : [settled], [countered()], EPOCH + 48 * HOUR_MS)
+      expect(later.written[0]).toMatchObject({status: 'blocked', blockedReason: 'countered'})
+      expect(later.result.counts.itemsNeedsAttention).toBe(0)
+      expect(later.result.counts.idempotentNoop).toBe(1)
+    })
+
+    it('a declined receipt seen only after the SLA already fired resolves the item and clears the attention flag', async () => {
+      const flagged = pinnedItem({
+        status: 'needs-attention',
+        needsAttentionReason: 'no-receipt',
+        noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+      })
+      const {written} = await track([flagged], [declined()], EPOCH + 48 * HOUR_MS)
+      expect(written[0]).toMatchObject({status: 'blocked', blockedReason: 'declined'})
+      expect(written[0]?.needsAttentionReason).toBeUndefined()
+      expect(written[0]?.noReceiptDiagnostic).toBeUndefined()
+    })
+
+    it.each(['declined', 'countered'] as const)(
+      'a %s receipt with the wrong nonce is ignored and the item ages as before',
+      async status => {
+        const receipt = makeReceipt({correlationId: 'c1', nonce: 'forged', status})
+        const early = await track([pinnedItem()], [receipt], EPOCH + HOUR_MS)
+        expect(early.written[0]?.status).toBe('dispatched')
+        expect(early.result.counts.idempotentNoop).toBe(1)
+
+        const late = await track([pinnedItem()], [receipt], EPOCH + RECEIPT_SLA_MS + 1)
+        expect(late.written[0]).toMatchObject({status: 'needs-attention', needsAttentionReason: 'no-receipt'})
+        expect(late.written[0]).not.toHaveProperty('blockedReason')
+      },
+    )
+
+    it.each(['declined', 'countered'] as const)(
+      'a %s receipt from an unlisted author is ignored and the item ages as before',
+      async status => {
+        const receipt = makeReceipt({correlationId: 'c1', nonce: RAW, status})
+        const late = await track([pinnedItem()], [receipt], EPOCH + RECEIPT_SLA_MS + 1, 'random-user')
+        expect(late.written[0]).toMatchObject({status: 'needs-attention', needsAttentionReason: 'no-receipt'})
+      },
+    )
+
+    it('a success receipt after a declined one is ignored: the item stays blocked', async () => {
+      const {written, result} = await track(
+        [pinnedItem()],
+        [declined(), makeReceipt({correlationId: 'c1', nonce: RAW, status: 'success'})],
+        EPOCH + HOUR_MS,
+      )
+      expect(written[0]).toMatchObject({status: 'blocked', blockedReason: 'declined'})
+      expect(result.counts.itemsCompleted).toBe(0)
+    })
+  })
+
+  describe('the marker', () => {
+    it('round-trips blockedReason through serialize and extract', () => {
+      for (const blockedReason of ['declined', 'countered'] as const) {
+        const state = makeState({items: [makeItem({status: 'blocked', blockedReason})]})
+        const extracted = extractMarker(buildMarkerComment(state))
+        expect(extracted?.state.items[0]).toMatchObject({status: 'blocked', blockedReason})
+      }
+    })
+
+    it('a marker written before the field existed still loads', () => {
+      const legacy = `<!-- ${MARKER_PREFIX}${JSON.stringify({
+        hash: 'h',
+        state: {goal: 'g', items: [{id: 'item-1', target: TARGET_A, promptHash: 'p', status: 'blocked'}]},
+      })} -->`
+      const extracted = extractMarker(legacy)
+      expect(extracted?.state.items[0]?.status).toBe('blocked')
+      expect(extracted?.state.items[0]?.blockedReason).toBeUndefined()
+    })
+
+    it.each(['bogus', '', 'blocked', 1, null])('rejects blockedReason %j', blockedReason => {
+      const body = `<!-- ${MARKER_PREFIX}${JSON.stringify({
+        hash: 'h',
+        state: {
+          goal: 'g',
+          items: [{id: 'item-1', target: TARGET_A, promptHash: 'p', status: 'blocked', blockedReason}],
+        },
+      })} -->`
+      expect(extractMarker(body)).toBeNull()
+    })
+  })
+
+  describe('the dispatch prompt', () => {
+    const base = {
+      itemPrompt: '',
+      correlationId: 'a'.repeat(20),
+      rawNonce: 'n'.repeat(43),
+      coordinationIssue: {owner: 'fro-bot', repo: '.github', number: 50},
+    }
+
+    it('names both statuses, with the reason or proposal in the summary and an instruction to post before any work', () => {
+      const prompt = buildDispatchPrompt(base)
+      expect(prompt).toContain('`declined`')
+      expect(prompt).toContain('`countered`')
+      expect(prompt).toMatch(/declined[^\n]*will not do/u)
+      expect(prompt).toMatch(/countered[^\n]*different change/u)
+      expect(prompt).toMatch(/before (?:doing )?any work/u)
+    })
+
+    it('keeps the item-prompt limit as it was and the fixed overhead pinned', () => {
+      expect(isPromptSafe('x'.repeat(MAX_PROMPT_LENGTH))).toBe(true)
+      expect(isPromptSafe('x'.repeat(MAX_PROMPT_LENGTH + 1))).toBe(false)
+      expect(buildDispatchPrompt(base).length).toBe(PROMPT_OVERHEAD)
+    })
   })
 })

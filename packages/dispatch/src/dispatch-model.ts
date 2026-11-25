@@ -61,6 +61,11 @@ export interface DispatchItem {
    * semantics identically to an explicit `legacy-best-effort` value.
    */
   receiptContract?: ReceiptCapability
+  /**
+   * Set only when a worker's authentic `declined` or `countered` receipt made this item `blocked`. A gate-blocked
+   * item carries none. Optional so a marker written before the field existed still loads.
+   */
+  blockedReason?: BlockedReason
 }
 
 export interface GoalState {
@@ -88,8 +93,15 @@ export interface DecompositionResult {
   reason?: 'too-many-items' | 'no-items' | 'malformed'
 }
 
-/** Worker-reported outcome vocabulary for a completion receipt. `blocked` is the pre-dispatch gate outcome, never a worker status. */
-export type ResultStatus = 'success' | 'noop' | 'failed'
+/**
+ * Worker-reported outcome vocabulary for a receipt. `blocked` is the pre-dispatch gate outcome, never a worker
+ * status. `declined` (the worker will not do the ask) and `countered` (it proposes a different change) end the
+ * dispatch attempt without completing it: the tracker maps both to a terminal `blocked` item.
+ */
+export type ResultStatus = 'success' | 'noop' | 'failed' | 'declined' | 'countered'
+
+/** Why an item is `blocked` by a worker's answer rather than by the registry gate. */
+export type BlockedReason = 'declined' | 'countered'
 
 /**
  * Completion receipt posted by a worker to the coordination issue. `nonce`
@@ -253,6 +265,13 @@ function isDispatchItem(value: unknown): value is DispatchItem {
     record.receiptContract !== undefined &&
     record.receiptContract !== 'receipt-accountable' &&
     record.receiptContract !== 'legacy-best-effort'
+  ) {
+    return false
+  }
+  if (
+    record.blockedReason !== undefined &&
+    record.blockedReason !== 'declined' &&
+    record.blockedReason !== 'countered'
   ) {
     return false
   }
