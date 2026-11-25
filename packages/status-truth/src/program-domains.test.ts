@@ -80,6 +80,23 @@ describe('parseProgramDomains: a valid file', () => {
     expect(parseOne({brief}).brief.automation).toEqual(['One automation standard'])
   })
 
+  it.each([
+    ['security and automation', [1, 1, 0]],
+    ['security and developer experience', [1, 0, 1]],
+    ['automation and developer experience', [0, 1, 1]],
+    ['security alone', [1, 0, 0]],
+    ['developer experience alone', [0, 0, 1]],
+  ])('accepts standards in %s', (_name, [security, automation, developerExperience]) => {
+    const standards = (count: number | undefined): string[] => Array.from({length: count ?? 0}, () => 'A standard')
+    const brief = validBrief({
+      security: standards(security),
+      automation: standards(automation),
+      developerExperience: standards(developerExperience),
+    })
+
+    expect(parseOne({brief}).brief.security).toHaveLength(security ?? 0)
+  })
+
   it('drops fields it does not read', () => {
     const domain = parseOne({extra: 'x', brief: validBrief({more: 1})})
 

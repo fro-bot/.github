@@ -87,7 +87,9 @@ function parseBrief(value: unknown, at: string, repos: readonly ConfirmedRepo[])
   const automation = parseStandards(value.automation, `${at}.automation`)
   const developerExperience = parseStandards(value.developerExperience, `${at}.developerExperience`)
   const exceptions = parseExceptions(value.exceptions, `${at}.exceptions`, repos)
-  if (security.length + automation.length + developerExperience.length === 0) throw new Error(`${at} is empty`)
+  if ([security, automation, developerExperience].every(standards => standards.length === 0)) {
+    throw new Error(`${at} is empty`)
+  }
   return {security, automation, developerExperience, exceptions}
 }
 
@@ -120,14 +122,14 @@ export function parseProgramDomains(text: string): ProgramDomains {
   }
 
   const entries = domains.map((raw, index) => parseDomain(raw, index))
-  const seen = new Set<string>()
   for (const [index, entry] of entries.entries()) {
-    if (entries.slice(0, index).some(other => other.key === entry.key)) throw new Error('duplicate domain key')
-    for (const repo of entry.repos) {
-      const folded = repo.nameWithOwner.toLowerCase()
-      if (seen.has(folded)) throw new Error('a repo is listed in two domains')
-      seen.add(folded)
-    }
+    const earlier = entries.slice(0, index)
+    if (earlier.some(other => other.key === entry.key)) throw new Error('duplicate domain key')
+    const listed = earlier.flatMap(other => other.repos)
+    const shared = entry.repos.some(repo =>
+      listed.some(other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase()),
+    )
+    if (shared) throw new Error('a repo is listed in two domains')
   }
   return {domains: entries}
 }
