@@ -30,7 +30,7 @@ The Renovate approver yields: it approves nothing while an open, non-draft pull 
 1. **List every account your automation acts as** (the App, any bot account, any service user) before writing the rule.
 2. **Exempt the service account by exact login,** with the constant the module already has. The approver compares against `identity().approver`, the login it approves as.
 3. **Let doubt still yield.** An unreadable author type yields before the login is compared.
-4. **Test the near misses.** `Fro-Bot`, `fro-bot-2` and `fro-bot[bot]` still yield, and so does a `fro-bot` login whose type cannot be read.
+4. **Test the near misses.** As `User` authors, `Fro-Bot`, `fro-bot-2` and `fro-bot[bot]` still yield, and so does a `fro-bot` login whose type cannot be read. The real App is type `Bot` and never pauses approvals.
 
 ## Why This Matters
 

@@ -31,7 +31,7 @@ Retry a server error only before the call that publishes the change. If that cal
 ## Guidance
 
 1. **Retry before the publishing call.** A 500, 502, 503 or 504 from a read inside the attempt loop, or from creating the blob, tree or commit, is retried, because none of them moves the branch. The hand-off base check and the first data-branch bootstrap run before the loop and are not retried.
-2. **Pin the base before the first call that can fail.** Without an explicit base, the writer records the first head it reads and uses that commit as the base on every retry. Otherwise a retry can take a head that another writer reached during the backoff as its base, and the conflict check then sees no change and lets the write overwrite the other writer's edit.
+2. **Pin the base as soon as a head read succeeds.** Without an explicit base, the writer records the first head it reads successfully, before any further call, and uses that commit as the base on every retry. A change made before that first read is not part of the check. Otherwise a retry can take a head that another writer reached during the backoff as its base, and the conflict check then sees no change and lets the write overwrite the other writer's edit.
 3. **Stop at an ambiguous publish.** A server error from `updateRef` raises `SERVER_ERROR_UNCONFIRMED`, which names the attempted commit so an operator can check whether it is in the branch history.
 4. **Pick the exit code by what the caller does with it.** Exit 3 tells a survey that another writer changed `data`, and the survey dispatches itself again. An outage is not that, so both server-error codes exit 1.
 
