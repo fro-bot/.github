@@ -447,6 +447,8 @@ env:
     before finishing — the workflow hands that diff to a separate trusted ingest
     job, which validates it and commits it to the data branch for you. Do not
     commit those changes yourself.
+    Take the time in every knowledge/log.md entry heading from `date -u +"%Y-%m-%d %H:%M"`
+    run at the moment you write the entry; never estimate or reuse a time.
 
     REMEDIATION LEARNINGS
     Before you create today's report, find this run's Remediation handoff comment:
@@ -475,11 +477,16 @@ env:
     is dropped without being counted or mentioned. The trusted ingest job writes the
     staged pages after this run. Count the items as you go: the report states the
     result in one line under "### Remediation Learnings", as "Remediation
-    learnings: N staged for the wiki, M skipped." When the remediation job failed or
-    was skipped, posted no such comment, or its section says "None.", there is
-    nothing to record: the line is "Remediation learnings: no handoff comment
-    found; nothing to record." or "Remediation learnings: none reported."
-    accordingly.
+    learnings: N staged for the wiki, M skipped (handoff comment <comment URL>)."
+    <comment URL> is the URL of the handoff comment you read. Use exactly one of
+    these four lines, so the report shows what the lookup found: the line above
+    when the section has items; when the section says "None.", "Remediation
+    learnings: none reported (handoff comment <comment URL>)."; when no comment
+    carries this run's URL (the remediation job failed, was skipped or posted
+    none), "Remediation learnings: no handoff comment found for this run."; when
+    the newest comment that carries it is not by `fro-bot`, or its author cannot
+    be read, "Remediation learnings: handoff comment not by fro-bot; ignored." and
+    name no URL on that line.
 
   OBSERVE_CATEGORIES: |
     CATEGORIES (work in order)
