@@ -2361,7 +2361,9 @@ describe('commitWikiChanges (GitHub server errors)', () => {
     expect(failure.code).toBe('SERVER_ERROR_UNCONFIRMED')
     expect(failure.message).toContain(String(status))
     expect(failure.message).toContain('commit-after-write')
-    expect(failure.remediation).toContain('reachable from the data branch head')
+    expect(failure.remediation).toBe(
+      'The commit may have landed. Check whether commit-after-write is reachable from the data branch head; if it is, do not re-run.',
+    )
     expect(`${failure.message} ${failure.remediation} ${String(failure.cause)}`).not.toMatch(
       /DOCTYPE|html|secret-body-marker/i,
     )
