@@ -2,8 +2,13 @@
 type: topic
 title: Security remediation integration and evidence boundaries
 created: 2026-09-30
-updated: 2026-11-19
+updated: 2026-11-25
 sources:
+  - url: https://github.com/fro-bot/.github/security/code-scanning/9
+    sha: 1bb3368
+    accessed: 2026-11-25
+  - url: https://github.com/advisories/GHSA-g3hv-75wg-m249
+    accessed: 2026-11-25
   - url: https://github.com/fro-bot/.github/blob/0c04b6a/packages/ci-checks/src/check-override-floors.ts
     sha: 0c04b6a
     accessed: 2026-11-19
@@ -96,3 +101,10 @@ That is a different claim from the floors described above. A `pnpm-workspace.yam
 fro-bot/.github's `accepted-advisories.json` accepted picomatch advisory [GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) (bun audit id 1247710, high) until 2026-12-17, because no fixed release existed. The GitHub Advisory Database records the advisory as withdrawn at 2026-11-18 15:38 UTC. After that, `bun audit` stopped reporting it, and `scripts/check-override-floors.ts` on `main` at `0c04b6a` exited 0 with a notice that the accepted entry "matches no reported advisory". The gate still fails an expired entry even when nothing reports it, so the notice is the only early signal; an unexpired stale entry otherwise sits quietly until its date.
 
 The practical rule: treat that notice as a removal trigger, not as noise to wait out. A leftover acceptance keyed to a withdrawn advisory would let the same id back through without review if it were ever republished. The removal ([#4299](https://github.com/fro-bot/.github/pull/4299), open at this observation) also flips the test that pinned the committed file, so it asserts the advisory fails the gate again. An open PR is not the repaired default branch; check `main` before calling the entry gone.
+
+## 2026-11-25 — a Scorecard alert's severity is the check's, not the advisory's
+
+On fro-bot/.github `main` at `1bb3368`, OpenSSF Scorecard's open [Vulnerabilities alert #9](https://github.com/fro-bot/.github/security/code-scanning/9) carries `security_severity_level: high`. The only advisory behind it is minimatch [GHSA-g3hv-75wg-m249](https://github.com/advisories/GHSA-g3hv-75wg-m249) (vulnerable `>=7.0.0 <11.0.1`, first patched 11.0.1), which the GitHub Advisory Database rates **medium** and `bun audit` reports as **moderate**, reached through eslint, typescript-estree and Stryker at minimatch 10.2.4. The same alert listing rates the Code-Review process score (#6) "high" as well, which shows the level belongs to the Scorecard check, not to any advisory.
+
+A code-scanning "high" from Scorecard is therefore not evidence of a high advisory. Before the label decides anything, such as whether a security remediation threshold is met, resolve the advisory the alert cites and use its own severity, cross-checked with the package audit. Here that meant the finding stayed below the critical/high bar, and its only fix crosses a major inside a transitive lint dependency, so it was left to Renovate and upstream.
+

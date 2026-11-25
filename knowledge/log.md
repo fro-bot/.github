@@ -11342,3 +11342,15 @@ The material changes are in host runtime, testing and Fro Bot delivery. Four rel
 Changes to [[marcusrbrown--opencode-copilot-delegate]]: a current-state statement under the title and one dated 2026-11-24 section. I corrected these current-state lines where they stand: the Biome, peer, runtime-dependency and dev-type rows; the workflow count and table (CI scope, CodeQL, Scorecard, Renovate v4.43.0); the Fro Bot delivery, prompt-coupling, daily-pass, secrets and concurrency bullets; the TUI opt-in and RPC cleanup statements; and the divergence table. Dated sections are untouched. I bumped `updated` and added no repository `sources` entry. [[opencode-plugins]] gets a dated section on the dual-host evidence fields, and [[github-actions-ci]] gets a dated section on the approval backstop and the delivery fix. Each has one new commit-pinned source. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/opencode-copilot-delegate
+
+## [2026-11-25 08:02] manual-edit | topic:security-remediation-integration
+
+Daily Observe pass: staged one remediation learning after checking it myself. Code-scanning alert #9 (Scorecard Vulnerabilities) on `1bb3368` reports `security_severity_level: high`, while the advisory it cites, GHSA-g3hv-75wg-m249, is medium in the GitHub Advisory Database and moderate in `bun audit`. Added a dated 2026-11-25 section to [[security-remediation-integration]] on reading a Scorecard alert's severity as the check's, not the advisory's, and two sources; bumped `updated`.
+
+Sources: https://github.com/fro-bot/.github/security/code-scanning/9, https://github.com/advisories/GHSA-g3hv-75wg-m249
+
+## [2026-11-25 08:06] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@1bb33684d91bb60b3f24d5131ea8c5897279bcaa
