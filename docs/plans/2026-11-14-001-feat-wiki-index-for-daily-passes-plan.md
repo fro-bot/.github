@@ -381,9 +381,9 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 **Results (2026-11-16):**
 
 - [x] **The second scheduled run prints the same line.** The scheduled run [43812012295](https://github.com/fro-bot/.github/actions/runs/43812012295) (2026-11-16) printed `wiki-index: listed=48 held=48 skipped=0 sentences=kept` in both the Remediate job (`bytes=7478`) and the Observe job (`bytes=7478`). The first run, [43682281142](https://github.com/fro-bot/.github/actions/runs/43682281142), printed `bytes=7374` in both. In each of the four jobs the agent step's `WIKI_CONTEXT` env read `Wiki index: 48 of 48 pages listed.`, so the prompt received that line.
-- **Survey with two tools.** The survey run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468) worked with the two tools: its summaries show `solutions_search` and `wiki_search` called, each `ok`. This is still the called tools, not the offered list, so the unticked "server lists two tools" item above stays open.
+- **Survey with two tools.** The survey run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468) worked with the two tools: its summaries show `solutions_search` and `wiki_search` called, each `ok`. This is still the called tools, not the offered list, so the unticked "server lists two tools" item above stays open. (Historical: run 45530059817 later settled the offered count; see the 2026-11-15 list.)
 - **Tally since the merge (a sample of 38 agent jobs, taken 2026-11-16; not re-derived here).** 17 jobs made at least one knowledge-tool call, and all 17 were pull request reviews. Remediate, Observe and the issue runs made none. 4 jobs printed `Knowledge tools: no call log found (...)`, all on runs of the `isolate-agent/opt-in` branch.
-- **Still open.** The 14-day count is due 2026-11-28 and nothing in this unit that depends on it is ticked. Unit 5 stays unticked.
+- **Still open (as of 2026-11-25).** Only the 14-day count, due 2026-11-28. Unit 5 stays unticked until it is recorded.
 
 ## System-Wide Impact
 

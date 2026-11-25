@@ -195,8 +195,9 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 - **Owner and next action.** Every sampled item carries an owner, one next action, `first seen` and a `key:` line.
 - **Three consecutive reports.** Every key live on three reports in a row was linked or excluded: the Scorecard key to #4164, the survey-conflict key to #4226, the sandbox git-trust key to #4284; the Gateway, VPN-deploy and isolate-agent keys pointed at existing issues. No run opened more than two `attention-tracking` issues.
-- **Re-check at publish.** Spot-checked, not item by item: #4227 dropped the resolved Gateway key and #4274 the resolved promotion-leak key. No sampled item had resolved before its report.
-- **Public only.** No report names a private repository.
+- **Re-check at publish.** Each of the 41 items across the ten reports was read against its object's state at the report's `createdAt`. None had resolved before publish. Two were close: #4200's two #4184 items, which closed 10 seconds after that report was created. The survey-conflict key, on seven reports from #4200 to #4292, rested on a wrong premise: the re-run path had already run on 2026-11-09 (run [42630239474](https://github.com/fro-bot/.github/actions/runs/42630239474)), which #4226 recorded before it was closed on 2026-11-18. It had not resolved; it was never open in the sense the item claimed.
+- **Public only.** No report names a private repository, and neither do the three `attention-tracking` issues (#4164, #4226, #4284), which name only `fro-bot/.github` and `fro-bot/agent`.
+- **Gaps, not filed.** #4227 calls the Gateway delivery-projection key resolved while #3512 stays open; the key tracked a projection, not the issue. #4216 lists the isolate-agent key two days before its tracking issue #4236 existed. Neither breaks a criterion.
 
 ## System-Wide Impact
 

@@ -258,11 +258,11 @@ The light and act values are never used for a review tier, and the reverse.
 - [x] **Another pull request review.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) printed `Agent model: openai/gpt-6.1-sol (from FRO_BOT_MODEL_REVIEW)`.
 - [x] **Capture learnings.** The `Capture Learnings` run [43791294020](https://github.com/fro-bot/.github/actions/runs/43791294020) (scheduled, 2026-11-16, 02:17Z) printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)` in its agent job.
 - [x] **Draft solutions.** The scheduled `Draft Solutions` run [43889580298](https://github.com/fro-bot/.github/actions/runs/43889580298) (2026-11-16, 14:48Z, after the Monday 06:00Z cron slot) succeeded in all three jobs. The `Harvest uncovered learning proposals` job resolved the light tier (`AGENT_MODEL_TIER: light`, the light variable empty) and printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)`. In the `Draft solution docs` job the guard step `Require the resolved agent model` passed with `AGENT_MODEL: anthropic/claude-opus-5-5`, and the agent step after it succeeded.
-- **Issue and issue comment (light tier): not seen live, closed as test-covered.** From 2026-11-15 02:31Z to 2026-11-25, all 80 `issues` runs and 45 `issue_comment` runs were skipped at job level, so no agent step ran. `FRO_BOT_MODEL_LIGHT` is unset, so the light tier falls back to `FRO_BOT_MODEL`, the same resolver path the daily pass, the surveys and capture learnings printed live. `scripts/agent-model-callers.test.ts` pins the tier of every agent step.
+- **Issue and issue comment (light tier): deferred, not observed live.** From 2026-11-15 02:31Z to 2026-11-25, all 80 `issues` runs and 45 `issue_comment` runs were skipped at job level, so no agent step ran. `FRO_BOT_MODEL_LIGHT` is unset, so the light tier falls back to `FRO_BOT_MODEL`, the same resolver path the daily pass, the surveys and capture learnings printed live. `scripts/agent-model-callers.test.ts` pins the tier of every agent step.
 - **Discussion comment: cannot occur.** Discussions are off for this repository (`has_discussions: false`), so no `discussion_comment` run can start.
-- **Capture patterns: not seen live, closed as test-covered.** `capture-patterns.yaml` runs only on `workflow_dispatch`; the last run was 2026-11-03, before this change. Its tier is pinned by the same test.
+- **Capture patterns: deferred, not observed live.** `capture-patterns.yaml` runs only on `workflow_dispatch`; the last run was 2026-11-03, before this change. Its tier is pinned by the same test.
 
-Unit 4 stays unticked until the three owed items are seen.
+Unit 4 is closed with these two paths deferred: no live run has shown which model an issue, issue-comment or capture-patterns agent step used. The caller test shows the wiring, not a live run. Read the `Agent model:` line on the first such run.
 
 ## System-Wide Impact
 
