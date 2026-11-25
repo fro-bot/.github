@@ -98,6 +98,8 @@ Sources: <URLs or references>
 
 Operations: `ingest`, `query`, `lint`, `manual-edit`.
 
+Take the time from `date -u +"%Y-%m-%d %H:%M"` run when you write the entry; never estimate it.
+
 ## Repo Renames
 
 When a tracked repository is renamed on GitHub, the **Rename Tracked Repo** workflow (see [`metadata/README.md`](../metadata/README.md#applying-a-rename)) updates the wiki in the same commit that renames the `metadata/repos.yaml` row:
