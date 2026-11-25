@@ -26,17 +26,16 @@ tags:
 
 A `workflow_run` trigger with no `branches:` filter starts on every completion of every listed workflow, on any branch. Filter it on the branch of the triggering run, and list only workflows whose runs can carry that branch.
 
-`.github/workflows/renovate-approve.yaml` started a full approval sweep when Main, CodeQL, Dependency Review, Renovate or Check Private Leak completed. A sweep can only approve a Renovate PR, but it ran for every `main` push, every `data` promotion and every other PR as well. In the 7 days to 2026-11-23 it started 875 times from `workflow_run`, 176 of those starts were cancelled while pending, and 11 PRs were approved ([#4317](https://github.com/fro-bot/.github/pull/4317)).
+A sweep is one run of `.github/workflows/renovate-approve.yaml`: it lists the open Renovate pull requests and approves at most one that is ready. It started when Main, CodeQL, Dependency Review, Renovate or Check Private Leak completed on any branch, so it ran for every `main` push, every promotion of the `data` branch (where the bot stores its automated changes) and every other pull request. In the 7 days to 2026-11-23 it started 875 times from `workflow_run`, 176 of those starts were cancelled while pending, and 11 pull requests were approved ([#4317](https://github.com/fro-bot/.github/pull/4317)).
 
 ## Symptoms
 
-- Hundreds of sweep runs for a handful of approvals.
 - Many runs cancelled by the workflow's own concurrency group, which keeps one running and one pending sweep.
 - The header comment said `Check Private Leak` "posts the last required status", so it had to be listed. On the Renovate PRs measured it was never the last check.
 
 ## What Didn't Work
 
-- **Triggering on the Renovate workflow alone.** On most Renovate PRs another required check (`Test` or `Check Mutation Guards`) finished after Renovate's own run. A Renovate-only trigger would leave those approvals to the 30-minute backstop schedule, which GitHub starts late and often skips.
+- **Triggering on the Renovate workflow alone.** On 7 of the 10 Renovate pull requests measured, Renovate's own check did not finish last. A Renovate-only trigger would leave those approvals to the 30-minute backstop schedule, which GitHub starts late and often skips.
 - **Keeping `Check Private Leak` behind the filter.** Its runs are themselves started by `workflow_run`, and such a run's head branch is the default branch. A `renovate/**` filter can never match it.
 
 ## Solution
@@ -51,11 +50,11 @@ on:
     types: [completed]
 ```
 
-Over the measured week the filter would have removed 551 of the 875 starts and kept the start behind every approval. The first Renovate PR after the merge, [#4315](https://github.com/fro-bot/.github/pull/4315), was approved 22 seconds after its last required check, and the merge's own `Main` run on `main` started no sweep.
+Over the measured week the filter would have removed 551 of the 875 starts and kept the start behind every approval. The first Renovate pull request after the merge, [#4315](https://github.com/fro-bot/.github/pull/4315), was approved 22 seconds after its last required check.
 
 ## Why This Works
 
-GitHub applies `workflow_run.branches` to the head branch of the run that completed. Only a run on a `renovate/` branch can make a Renovate PR ready, so every other start was wasted work. The schedule still covers a missed event.
+GitHub applies `workflow_run.branches` to the head branch of the run that completed. Every measured approval was started by a run on a `renovate/` branch, and the schedule still covers a missed event.
 
 ## Prevention
 
