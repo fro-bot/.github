@@ -640,7 +640,7 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
 
     it('scopes the review to fro-bot/.github, because a bare issue number resolves against the current repository', () => {
       expect(closeDuty).toContain(
-        '`gh issue list --repo fro-bot/.github --label attention-tracking --author fro-bot --state open --json url,number,title`',
+        '`gh issue list --repo fro-bot/.github --label attention-tracking --author fro-bot --state open --limit 100 --json url,number,title`',
       )
       expect(closeDuty).toContain('no issue in another repository')
     })
@@ -662,34 +662,37 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
       expect(closeDuty).toContain('if any check fails, write nothing and keep the item')
     })
 
-    it('requires branch-specific evidence for a path that has not yet run, and keeps the issue open when runs cannot tell branches apart', () => {
-      expect(closeDuty).toContain('a run that exercised that path and succeeded, on a revision that contains the path')
+    it('never closes an issue whose subject is that a path, branch or recovery has not yet run, and keeps its item', () => {
       expect(closeDuty).toContain(
-        'When several branches lead to the same job or workflow, a successful run of that job or workflow is not enough',
+        'An issue whose subject is that a path, branch or recovery has not yet run is never closed by Observe',
       )
       expect(closeDuty).toContain(
-        "require a signal specific to the branch in the run's logs or outputs, such as the exact error code or log line the issue names",
-      )
-      expect(closeDuty).toContain(
-        "read it from the step's output, not from the echoed script (`gh run view <run-id> --log-failed`)",
-      )
-      expect(closeDuty).toContain(
-        'If the run data cannot tell the branches apart, leave the issue open and keep its item',
+        'it stays open and its item stays in the report, naming the run you found if you found one, so the operator decides',
       )
     })
 
-    it('searches past runs for the branch signal rather than forcing a failure', () => {
+    it('does not carry the removed path-has-run evidence kind or the rules that existed only for it', () => {
+      expect(closeDuty).not.toContain('a run that exercised that path')
+      expect(closeDuty).not.toContain('on a revision that contains the path')
+      expect(closeDuty).not.toContain('When several branches lead to the same job or workflow')
+      expect(closeDuty).not.toContain('a signal specific to the branch')
+      expect(closeDuty).not.toContain('--log-failed')
+      expect(closeDuty).not.toContain('--json jobs')
+      expect(closeDuty).not.toContain('tell the branches apart')
+      expect(closeDuty).not.toContain('search the failed steps')
+    })
+
+    it('lists up to 100 issues and reports an incomplete scan when the list is full', () => {
+      expect(closeDuty).toContain('--state open --limit 100 --json url,number,title`')
       expect(closeDuty).toContain(
-        "list the jobs of past runs (`gh run view <run-id> --json jobs`) and search the failed steps' output for that signal",
+        'If the list returns 100 issues, the scan is incomplete: review the issues returned and end the report line with "; scan incomplete"',
       )
+      expect(closeDuty).toContain('"Tracking issues: N closed on evidence, M kept open; scan incomplete."')
     })
 
     it('closes on repository state it reads itself, across the evidence kinds the operator closes on by hand', () => {
       expect(closeDuty).toContain(
         'Close one only on affirmative evidence that its problem is resolved, read from repository state yourself',
-      )
-      expect(closeDuty).toContain(
-        'for a key whose problem is that a path has not yet run, a run that exercised that path and succeeded',
       )
       expect(closeDuty).toContain(
         'for a key whose subject no longer applies, the merged PR or default-branch commit that superseded or removed it',
