@@ -17,6 +17,7 @@ import {
   TARGET_WORKFLOW_ID,
   TARGET_WORKFLOW_REF,
   TERMINAL_STATUSES,
+  type BlockedReason,
   type CrossRepoDispatchOctokitClient,
   type DecompositionResult,
   type DispatchItem,
@@ -26,6 +27,7 @@ import {
   type ItemStatus,
   type MarkerData,
   type ReceiptCapability,
+  type ResultStatus,
   type SnapshotSignals,
   type TrackerComment,
 } from './dispatch-model.ts'
@@ -527,6 +529,24 @@ function flipItemStatus(
   return {...nextState, markerHash: serialized.hash}
 }
 
+/**
+ * The item state an authentic receipt status resolves to. Explicit per status, with no default branch, so a new
+ * status fails to compile here instead of silently completing the item. `declined` and `countered` end the attempt
+ * as terminal `blocked`: the item is neither completed nor left to age into `needs-attention`.
+ */
+function itemOutcomeForReceipt(status: ResultStatus): {status: ItemStatus; blockedReason?: BlockedReason} {
+  switch (status) {
+    case 'success':
+    case 'noop':
+      return {status: 'completed'}
+    case 'failed':
+      return {status: 'failed'}
+    case 'declined':
+    case 'countered':
+      return {status: 'blocked', blockedReason: status}
+  }
+}
+
 export interface OpenGoalIssue {
   issueNumber: number
   marker: MarkerData
@@ -636,12 +656,13 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
 
       const resolution = receiptResolutions.get(item.id)
       if (resolution?.terminal !== undefined) {
-        const nextStatus: ItemStatus = resolution.terminal === 'failed' ? 'failed' : 'completed'
+        const outcome = itemOutcomeForReceipt(resolution.terminal)
         return {
           ...item,
-          status: nextStatus,
+          status: outcome.status,
           needsAttentionReason: undefined,
           noReceiptDiagnostic: undefined,
+          ...(outcome.blockedReason === undefined ? {} : {blockedReason: outcome.blockedReason}),
         }
       }
       if (resolution?.attentionReason !== undefined) {

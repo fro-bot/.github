@@ -33,7 +33,7 @@ const RESULT_REGION_END = '<!-- fro-bot:cross-repo-result:end -->'
 /** Marker prefix identifying a completion-receipt HTML comment. */
 const RESULT_MARKER_PREFIX = 'fro-bot:cross-repo-result '
 
-const RESULT_STATUSES: ReadonlySet<ResultStatus> = new Set(['success', 'noop', 'failed'])
+const RESULT_STATUSES: ReadonlySet<ResultStatus> = new Set(['success', 'noop', 'failed', 'declined', 'countered'])
 
 /**
  * Extract the substring between the delimited region markers, if both are
