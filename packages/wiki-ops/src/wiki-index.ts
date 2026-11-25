@@ -338,7 +338,7 @@ export interface WikiTree {
  * The reader's error message quotes the parser for invalid YAML and so can carry page text; only the kind of
  * failure the reader sets next to it is kept. Anything but an unclosed block reads as invalid frontmatter.
  */
-function skippedPageReason(kind: WikiFrontmatterErrorKind | undefined): SkippedPageReason {
+function skippedPageReason(kind: WikiFrontmatterErrorKind): SkippedPageReason {
   return kind === 'unclosed' ? 'unclosed-frontmatter' : 'invalid-frontmatter'
 }
 

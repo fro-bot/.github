@@ -575,7 +575,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
           throw new WikiIngestError({
             code: 'SERVER_ERROR_UNCONFIRMED',
             message: `wiki ingest could not confirm whether its commit ${attemptedCommitSha} reached ${owner}/${repo}@${branch}: GitHub answered the ref update with a server error (HTTP ${serverErrorStatus})`,
-            remediation: `The commit may have landed. Check whether ${attemptedCommitSha} is reachable from the data branch head before re-running; a re-run would see it as a conflict.`,
+            remediation: `The commit may have landed. Check whether ${attemptedCommitSha} is reachable from the data branch head; if it is, do not re-run.`,
           })
         }
 
