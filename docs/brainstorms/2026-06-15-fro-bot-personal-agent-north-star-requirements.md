@@ -31,6 +31,12 @@ across repos, other agents, and eventually domains beyond software.
 | **Workflows** | Systematic (`marcusrbrown/systematic`) | Durable structured workflows (brainstorm/plan/work/review/compound) | The discipline layer for cross-repo planning and durable agent learning |
 | **Dashboard** | net-new | — | The operator's window and command surface (PWA) |
 
+_Note (2026-11-25): the "Role today" column is the 2026-06-15 snapshot, kept as written. The
+dashboard is no longer net-new: it is deployed at `dashboard.fro.bot` (release 2026.11.29, infra
+run [45110702686](https://github.com/marcusrbrown/infra/actions/runs/45110702686), per the
+[#3512](https://github.com/fro-bot/.github/issues/3512) state of 2026-11-24). The gateway is no
+longer outbound-only (see S1). The "25+ repos" figure was not recounted._
+
 ## Rebaseline (2026-06-21) — program is running concurrent, not serial
 
 This doc's original roadmap recommended a serial Phase 1 → 2 → 3. Reality has diverged, and
@@ -139,7 +145,87 @@ this doc's status claims against live state, since the doc drifted in four place
 months. F1 needs a work-offer substrate, and `packages/dispatch`'s hash-bound receipts are
 the natural base. F1 needs its own brainstorm first.
 
+## Reconciliation (2026-11-25) — status-truth pass
+
+This is the status-truth reconciliation the 2026-11-08 pass asked for. Every requirement, tier
+item and status claim in this doc was checked on 2026-11-25 against `origin/main` at `7edd2808`,
+the `status` fields in `docs/plans/`, merged pull requests, issue state and workflow runs. It was
+done by hand: `docs/brainstorms/` is excluded from the status-truth scan
+(`SCAN_EXCLUDE_PATTERNS` in `packages/status-truth/src/detect-extract.ts`), so no loop checks this
+doc and it drifts unless someone reads it against live state.
+
+Superseded text stays in place and carries a dated note. The words mean this:
+
+- **Shipped:** merged and seen working in a run, with the run or commit cited.
+- **Built:** merged and covered by tests, not yet seen in a live run.
+- **Partly built:** the part that exists is named.
+- **Not built**, or **dropped** with the decision that dropped it.
+
+### Corrections to earlier reconciliations
+
+- **2026-11-08, "only A3 is scheduled":** wrong. Improvement Metrics (O8) has run weekly on
+  `0 23 * * 0` since [#3779](https://github.com/fro-bot/.github/pull/3779) (2026-08-27). Scheduled
+  runs [43793481768](https://github.com/fro-bot/.github/actions/runs/43793481768) (2026-11-16) and
+  [45107165592](https://github.com/fro-bot/.github/actions/runs/45107165592) (2026-11-23) succeeded.
+  Capture Patterns (C4) is `workflow_dispatch` only; its last run was
+  [41724214832](https://github.com/fro-bot/.github/actions/runs/41724214832) on 2026-11-03.
+- **2026-11-08, A3 "green runs do not show a dispatch succeeded end to end":** the end-to-end
+  proof exists. Goal issue [#3633](https://github.com/fro-bot/.github/issues/3633) (closed
+  2026-07-04) ends with `Goal complete. completed=2 failed=0 blocked=0` and hash-bound item state.
+  The scheduled tracking runs are green (latest
+  [45529024636](https://github.com/fro-bot/.github/actions/runs/45529024636), 2026-11-25). This
+  pass did not count other goals.
+- **2026-11-08, Gateway v0.136.4:** the Gateway is now v0.146.0 (workspace-only rebuild, infra run
+  [45323526850](https://github.com/marcusrbrown/infra/actions/runs/45323526850), infra#2058), contract
+  1.15.0, per the #3512 body of 2026-11-24. The v0.136.4 figure was right on 2026-11-08.
+- **2026-10-22, D2 "`/fro-bot cancel` is a follow-up":** closed. `/fro-bot cancel` merged in
+  [fro-bot/agent#2066](https://github.com/fro-bot/agent/pull/2066) on 2026-11-04 and is in
+  v0.146.0's source. Not observed in a live Discord run by this pass.
+- **2026-11-08, R3 editable "production enablement unverified":** a save through the dashboard
+  wrote commit `5ba9bd0` on `data` on 2026-11-18 (recorded in
+  `docs/plans/2026-11-15-003-feat-repo-lifecycle-archive-declared-rename-plan.md`; the commit
+  subject is `docs(knowledge): manual edit …`).
+
+### Control-plane work since 2026-11-08
+
+| Item | Status 2026-11-25 | Evidence |
+| --- | --- | --- |
+| Promotion self-merge | Shipped | Built in [#4168](https://github.com/fro-bot/.github/pull/4168); `PROMOTION_SELF_MERGE` is `on`. First live merge was [#4175](https://github.com/fro-bot/.github/pull/4175) (run [42942262202](https://github.com/fro-bot/.github/actions/runs/42942262202)), then #4204 and #4225. `docs/plans/2026-11-09-001-feat-promotion-self-merge-plan.md` is complete. Test-covered only, per that plan: a `hold-merge` label stopping a promotion, checks that never settle. |
+| Stale-base replacement of a promotion PR | Built | [#4290](https://github.com/fro-bot/.github/pull/4290), merged 2026-11-18. It fixes the dismissed approval seen on run [44124965721](https://github.com/fro-bot/.github/actions/runs/44124965721) (plan `2026-11-15-003`). A live replacement by the shipped code was not looked for. |
+| Renovate approval sweep | Shipped | [#4186](https://github.com/fro-bot/.github/pull/4186); `RENOVATE_APPROVE` is `on`. It approved #4179 and #4192 merged with no operator action (`docs/plans/2026-11-11-001-feat-renovate-automerge-approval-plan.md`, complete). Still owed in that plan: the grouped-PR label check. |
+| Sweep yields to people | Built | [#4207](https://github.com/fro-bot/.github/pull/4207) (2026-11-12) pauses the sweep while a person's pull request is in review; [#4317](https://github.com/fro-bot/.github/pull/4317) (2026-11-23) runs it only for `renovate/` branches and stops `fro-bot`'s own PRs from causing a yield. No live yield was looked for. |
+| Knowledge tools and prompt duties | Shipped | The `knowledge` server (`wiki_search`, `solutions_search`) is `docs/plans/2026-11-06-001-feat-agent-knowledge-mcp-tools-plan.md` (complete); call logging is [#4136](https://github.com/fro-bot/.github/pull/4136); the prompt duties arrived with [#4232](https://github.com/fro-bot/.github/pull/4232). Run [45530059817](https://github.com/fro-bot/.github/actions/runs/45530059817) logged `mcp connected server=knowledge tools=2`. |
+| Wiki index for the daily passes | Shipped | [#4232](https://github.com/fro-bot/.github/pull/4232). Scheduled runs [43682281142](https://github.com/fro-bot/.github/actions/runs/43682281142) and [43812012295](https://github.com/fro-bot/.github/actions/runs/43812012295) printed `wiki-index: listed=48 held=48 skipped=0` in both Remediate and Observe. The plan (`2026-11-14-001`) is still `active`: the 14-day knowledge-tool count is due 2026-11-28. In its 2026-11-16 sample, only pull request reviews called a knowledge tool; Remediate and Observe made no call. |
+| Agent models by kind of work | Shipped, two paths not seen live | [#4243](https://github.com/fro-bot/.github/pull/4243); plan `2026-11-15-001` is complete. Review run [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) printed `Agent model: … (from FRO_BOT_MODEL_REVIEW)`. The issue and issue-comment light tier and Capture Patterns were not seen live (the plan closes them as deferred); a discussion-comment run cannot occur, since discussions are off. |
+| Repeat surveys update in place | Built, live check partly done | Writer [#4244](https://github.com/fro-bot/.github/pull/4244), prompt and schema [#4247](https://github.com/fro-bot/.github/pull/4247). Plan `2026-11-15-002` is still `active`. Seen: a repeat survey of an unchanged repository left the page untouched and added one log entry (run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468)). Not recorded: the first three scheduled repeat surveys and the 30-day measure. |
+| Skip a repeat survey when nothing changed | Dropped | [#4242](https://github.com/fro-bot/.github/issues/4242) was closed as not planned on 2026-11-24; `docs/ideation/2026-11-07-open-ideation.md` item 5 records that the agent still runs for every survey. |
+| Repo lifecycle: archive and unarchive | Archive shipped; unarchive built | Registry state [#4265](https://github.com/fro-bot/.github/pull/4265), active jobs skip [#4270](https://github.com/fro-bot/.github/pull/4270), leak gates [#4273](https://github.com/fro-bot/.github/pull/4273), reconcile [#4278](https://github.com/fro-bot/.github/pull/4278), actions and index [#4281](https://github.com/fro-bot/.github/pull/4281). Plan `2026-11-15-003` is complete. Archive run [44019346503](https://github.com/fro-bot/.github/actions/runs/44019346503), promotion [#4287](https://github.com/fro-bot/.github/pull/4287), and a seven-day check with no survey or dispatch for the archived row. `unarchive` is test-only; the plan says no real need arose. |
+| Declared rename (lifecycle phase 2) | Not built, descoped | The plan's Phase 2 section: "Not built. Decided 2026-11-16"; the existing rename workflow is unchanged. |
+| Remediate learnings handoff | Shipped for the Remediate side | [#4214](https://github.com/fro-bot/.github/pull/4214). The Remediation handoff comment is on the daily report [#4314](https://github.com/fro-bot/.github/issues/4314) (run [45363171280](https://github.com/fro-bot/.github/actions/runs/45363171280)). Observe's staging of a non-empty list was not seen: the reports checked say `Remediation learnings: none reported.` A wiki handoff for Remediate itself was not built (`docs/ideation/2026-11-07-open-ideation.md` item 6). |
+| Remediate PR self-review | Shipped | [#4291](https://github.com/fro-bot/.github/pull/4291) (2026-11-18). [#4299](https://github.com/fro-bot/.github/pull/4299), opened by `fro-bot` on 2026-11-19, got a [`fro-bot` comment review](https://github.com/fro-bot/.github/pull/4299#pullrequestreview-5970661631) from run [44475929758](https://github.com/fro-bot/.github/actions/runs/44475929758), which succeeded. |
+| Wiki writer retries a GitHub 5xx | Built | [#4325](https://github.com/fro-bot/.github/pull/4325), merged 2026-11-25. No run that hit a server error was looked for. |
+| Review the settled PR head | Dropped | `docs/ideation/2026-11-07-open-ideation.md` item 1: 172 reviews in 30 days, 2 superseded. The defect found instead, a second review on an unchanged head, is open as [fro-bot/agent#2341](https://github.com/fro-bot/agent/issues/2341). |
+| Actionable attention list | Shipped as prompt duties | [#4160](https://github.com/fro-bot/.github/pull/4160); plan `2026-11-08-003` is complete with a ten-report readback. The hypotheses section and the approval table were not built. |
+
+### Not verified in this pass
+
+- S2 (browser sign-in, CSRF, origin binding) was not exercised, since it needs an authenticated
+  browser. #3512 still lists CSRF and saved-cookie replay, and session continuity on the current
+  pair, as open gates.
+- Whether agent v0.148.0 (released 2026-11-25) has been promoted to the Gateway.
+- The "25+ repos" figure in the system table and the Current state section.
+- Cross-repo items the plans track in other repositories, for example
+  [fro-bot/agent#2187](https://github.com/fro-bot/agent/issues/2187) and fro-bot/dashboard#825
+  (dashboard-started programs).
+
 ## Current state (verified 2026-06-15)
+
+> **Historical snapshot (note 2026-11-25).** Kept as written. Superseded since: the gateway has an
+> authenticated inbound operator surface (S1, deployed, contract 1.15.0), operator web auth is live
+> (S2), the dashboard exists, and `/fro-bot cancel` joined the Discord commands
+> ([fro-bot/agent#2066](https://github.com/fro-bot/agent/pull/2066), merged 2026-11-04). "No HTTP
+> command/mission/state API; no web/user auth concept" is no longer true. See the 2026-11-25
+> reconciliation above for the current statuses.
 
 Grounded against live source, not aspiration:
 
@@ -194,10 +280,16 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   model. _Owner: agent. Depends on: new gateway surface (not just the existing announce
   path) + the S2 auth model. Effort/risk: H._ Status: deployed (Gateway v0.136.4,
   contract 1.15.0); authenticated end-to-end acceptance open in #3512.
+  _As of 2026-11-25:_ shipped and deployed; the Gateway is v0.146.0 on contract 1.15.0 (infra run
+  45323526850, per the #3512 body). Acceptance is not done: #3512 is open, 119 gates ticked and 47
+  open (tracker comment of 2026-11-24). The 2026-11-08 version figure is kept as history.
 - **S2 — Operator identity & web auth.** A real user-auth model (vs the current
   shared-secret HMAC) so a human can authenticate to the control surface from a browser.
   _Owner: agent + infra. Depends on: S1. Effort/risk: M._ Status: live in production
   (OAuth/PKCE/session/CSRF/origin binding), logout bug fixed.
+  _As of 2026-11-25:_ shipped; `fro-bot/dashboard#156` is still closed (2026-07-08). Not
+  re-exercised in a browser by this pass; the CSRF and saved-cookie replay check and the session
+  continuity check on the current pair are still open gates in #3512.
 
 ### Tier 1 — Operator reach (depends on the spine)
 
@@ -205,10 +297,18 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   launch "missions," see agent state — Hermes/OpenClaw-style. _Owner: dashboard (new) +
   infra (hosting). Depends on: S1, S2. Effort/risk: H._ Status: live; interactive approve,
   deny and question accepted on v0.136.4; remaining live gates in #3512.
+  _As of 2026-11-25:_ shipped, dashboard 2026.11.29 deployed. The approve, deny and question
+  acceptance is scoped to v0.136.4; for the current pair (Gateway v0.146.0, dashboard 2026.11.29)
+  #3512 lists ready parity, SSE loss and reconnect, cold-start notification taps and the stronger
+  cancel-quiescence gate as open. Ordinary cancel is accepted there.
 - **R2 — Push notifications with action handling.** Surface critical events and let the
   operator respond/approve from the notification. _Owner: dashboard + agent. Depends on:
   S1, S2, R1. Effort/risk: M._ Status: push transport shipped; inline actions decided
   against (`fro-bot/agent#1917`, not planned). Notifications deep-link to the dashboard.
+  _As of 2026-11-25:_ unchanged. `fro-bot/agent#1917` is still closed as not planned
+  (2026-11-05). Dashboard 2026.11.29 added push-settings retry and aborted-subscription cleanup
+  (dashboard#881, #884, per the #3512 comment of 2026-11-23): delivery, not push acceptance, and
+  the real notification-tap gates are still open in #3512.
 - **R3 — Web-viewable/editable wiki.** The Obsidian-based Karpathy wiki rendered on the
   web, with operator edits that flow back through the `data`-branch authority model.
   _Owner: control plane + dashboard. Depends on: R1 (for the editable path; read-only
@@ -216,6 +316,12 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   `fro.bot/.github` (Quartz v5, pinned-SHA fetch-at-build, fail-closed plugin-lockfile
   gate, emergency unpublish). Editable path built (plan 2026-08-29-001 complete); production
   enablement unverified.
+  _As of 2026-11-25:_ both halves shipped. Read-only: `fro.bot/.github` returns HTTP 200 and the
+  latest Publish Wiki run on `main`,
+  [45549235701](https://github.com/fro-bot/.github/actions/runs/45549235701), succeeded.
+  Editable: a dashboard save wrote commit `5ba9bd0` on `data` on 2026-11-18, and dashboard#870
+  (rejected saves now say why, closing dashboard#861) is merged. One save was observed; whether the
+  Edit affordance is on for every page type was not checked.
 
 ### Tier 2 — Autonomy depth (mostly control-plane-native)
 
@@ -229,32 +335,59 @@ effort/risk signal (L/M/H). Effort/risk are directional, for sequencing — not 
   proven live; the first enriched batch yielded five authored learnings. _Owner: control
   plane. Most control-plane-native of all capabilities — shipped without the spine, as
   predicted._
+  _As of 2026-11-25:_ still running, and retrieval has grown. Agents get a `knowledge` MCP server
+  with `wiki_search` and `solutions_search` (plan 2026-11-06-001, complete), the daily passes get
+  a wiki index and prompt duties for when to use the tools (#4232), and Remediate hands its
+  learnings to Observe in a comment (#4214). Capture Learnings run 43791294020 (scheduled,
+  2026-11-16) and Draft Solutions run 43889580298 (2026-11-16) succeeded. Open: whether agents use
+  the tools outside pull request reviews; the 14-day count is due 2026-11-28.
 - **A2 — Self-maintenance & good-GitHub-citizen depth.** Extend autoheal into broader
   self-improvement of repo + control-plane operation. **First two surfaces shipped
   2026-07-03:** status-truth maintenance loop and wiki authority repair. The bounded-PR
   correction machinery has graduated, with `plan-consistency` as the first active graduated
   claim kind. _Owner: control plane. Depends on: nothing new (autoheal is the seed).
   Effort/risk: M._
+  _As of 2026-11-25:_ shipped; `GRADUATED_CLAIM_KINDS` in
+  `packages/status-truth/src/status-truth-prs.ts` still holds only `plan-consistency`. The
+  "good-GitHub-citizen" half has grown: promotion self-merge, the Renovate approval sweep and its
+  yield rule, the actionable attention list and the repo lifecycle actions (table in the
+  2026-11-25 reconciliation). The status-truth scan excludes `docs/brainstorms/`, so it does not
+  cover this doc.
 - **A3 — Cross-repo planning & agent dispatch. SHIPPED, proven in production.** Plan work
   spanning related repos and dispatch agents in those repos to coordinate — owner-aware
   two-App dispatch, prompt-only with correlation embedded in the prompt, hash-bound worker
   completion receipts, watchdog tracking. _Owner: control plane + Systematic + agent.
   Depends on: A1/A2 maturity; partial on S1 for cross-agent coordination. Effort/risk: H._
+  _As of 2026-11-25:_ shipped. End-to-end proof: goal #3633 closed 2026-07-04 with `completed=2
+  failed=0 blocked=0`. `cross-repo-dispatch.yaml` runs every six hours and its recent runs are
+  green (latest 45529024636). Other goals were not counted. The cross-repo program tracker (plan
+  `2026-11-08-002`, complete) builds on it; dashboard-started programs are not built.
 - **C4 — Recurring-pattern synthesis. SHIPPED.** A control-plane loop that clusters
   repeated signals across proposal/solution history and opens `pattern-proposal` issues for
   human triage. Manual-dispatch, dry-run-default, report-only. _Owner: control plane._
+  _As of 2026-11-25:_ unchanged and verified: `capture-patterns.yaml` has only a
+  `workflow_dispatch` trigger; last run 41724214832 (2026-11-03, success).
 - **O8 — Self-improvement metric loop. SHIPPED, proven live.** Measures whether the
   self-improvement loops actually reduce repeated work: pairs discovery (newly codified
   classes, keyed on immutable git add-date) with human-confirmed recidivism, plus a
   pending-confirmation backlog, rendered to one perpetual report issue. Manual-dispatch,
   dry-run-default, report-only. _Owner: control plane._
+  _As of 2026-11-25:_ no longer manual-dispatch only. It runs weekly (`0 23 * * 0`, #3779, since
+  2026-08-27); scheduled runs 43793481768 and 45107165592 succeeded and the perpetual report issue
+  #3674 was updated 2026-11-23. Manual dispatches still default to dry run.
 
 ### Tier 3 — The frontier (needs Tiers 1+2)
 
 - **F1 — Agent-to-agent & human work negotiation.** Offer and consume work from other
   agents or humans. _Owner: agent + control plane. Depends on: S1, A3. Effort/risk: H._
+  _As of 2026-11-25:_ not started. No requirements doc or plan exists for it; the nearest
+  artifact is the "Negotiable work objects" idea in `docs/ideation/2026-09-04-open-ideation.md`,
+  status Unexplored. A work-offer brainstorm is the next step, on `packages/dispatch`'s hash-bound
+  receipts (see Next step).
 - **F2 — Personal-assistant expansion beyond software.** Fro Bot serves daily tasks
   outside software development. _Owner: all. Depends on: most of the above. Effort/risk: H._
+  _As of 2026-11-25:_ not started. No requirements doc or plan exists; this map and
+  `docs/ideation/2026-09-04-open-ideation.md` only name it.
 
 ## The dependency spine (text diagram)
 
@@ -326,6 +459,9 @@ foundation and the autonomy engine follow.
   **A1 skill-learning and A2 self-maintenance's first two surfaces have already shipped**
   ahead of Phase 3, as the dependency model predicted (control-plane-native, no spine
   needed); A2 bounded-PR graduation remains open.
+  _Note (2026-11-25): the graduation closed in 2026-07; see the 2026-07-10 reconciliation. Phases
+  1 to 3 are built and Phase 4's A3 shipped; only the live acceptance tail in #3512 and the Tier-3
+  frontier remain._
 - **Phase 4:** A3 cross-repo coordination + Tier-3 frontier (negotiation, then
   beyond-software).
 
@@ -370,6 +506,8 @@ Rationale:
    A1 shipped 2026-06-22 and A2's first two surfaces (status-truth loop, wiki authority
    repair) shipped 2026-07-03, all independent of the spine. A2's bounded-PR graduation is
    still open, pending accepted-outcome signal.
+   _(Superseded 2026-11-25: the bounded-PR graduation is done. `plan-consistency` is graduated in
+   `packages/status-truth/src/status-truth-prs.ts`; see the 2026-07-10 reconciliation.)_
 4. **The surfaces share one ownership model.** The gateway is the authority; Discord and the
    web operator API are peer write transports over shared primitives, not separate control
    planes (see D2).
@@ -399,6 +537,10 @@ acute near-term pain, per the stated motivation.
   (add-project, clear-queue, locks, checkout recovery) are Discord-only by design. Open
   parity gaps: cancel is web-only, so `/fro-bot cancel` is a follow-up. Push notifications
   carry no actions by decision (R2). (Raised by design review.)
+  _Update 2026-11-25:_ the cancel gap is closed. `/fro-bot cancel` merged in
+  [fro-bot/agent#2066](https://github.com/fro-bot/agent/pull/2066) on 2026-11-04 and reuses the
+  cancellation engine the web route uses. The rest of the decision stands; no live Discord run of
+  the command was checked.
 - **D3 — Spine trust boundary (Phase 2):** S1's inbound control surface widens the trust
   boundary the current outbound-only announce model avoids. Web-launched missions MUST route
   through the same fail-closed approval gate as Discord-triggered work, and operator wiki
@@ -408,12 +550,31 @@ acute near-term pain, per the stated motivation.
 - **D4 — A1 skill definition (Phase 3):** Does "skill" mean reusable agent procedures
   (Hermes-style) captured into the wiki, control-plane workflow refinements, or both?
   (Shapes the A1 brainstorm.)
+  _Update 2026-11-25: resolved by the A1 requirements, `docs/brainstorms/2026-06-22-skill-saving-grow-and-learn-requirements.md`
+  (Non-goals): a skill is durable knowledge, a compound doc or wiki page that Fro Bot reads and
+  applies, not a generated runnable tool._
 - **D5 — Cross-repo tracking:** Capabilities owned by `fro-bot/agent` and
   `marcusrbrown/infra` will need their own tracking issues there once their phase starts
   (notably the S1/S2 spine, which lives in `fro-bot/agent`).
+  _Update 2026-11-25: resolved for the spine. It was tracked in `fro-bot/agent#907` (closed
+  2026-06-26), and the cross-repo rollout is tracked in `fro-bot/.github#3512` (open; 148
+  Project-derived dependencies, 147 Done per its body of 2026-11-24). Tracking for the items the
+  other repositories own beyond those was not checked._
 
 ## Next step
 
 As of 2026-11-08, the open north-star threads are the #3512 live acceptance tail (S1/S2/R1),
 R3 editable-path enablement, and the Tier-3 frontier. The next control-plane moves are
 status-truth reconciliation of this doc and an F1 work-offer brainstorm.
+
+As of 2026-11-25, the reconciliation is done (the 2026-11-25 section above). R3's editable path
+is no longer an open thread. The open north-star threads are the #3512 live acceptance tail
+(S1/S2/R1; 47 gates open on 2026-11-24) and the Tier-3 frontier, where F1 and F2 have not
+started. The next control-plane move is the F1 work-offer brainstorm. It has no document yet and
+starts from `packages/dispatch`'s hash-bound receipts.
+
+Dated checks that are still owed elsewhere: the 14-day knowledge-tool count, due 2026-11-28
+(`docs/plans/2026-11-14-001-feat-wiki-index-for-daily-passes-plan.md`, Unit 5), and the 30-day
+repeat-survey measure (`docs/plans/2026-11-15-002-feat-repeat-surveys-update-in-place-plan.md`,
+Unit 5). Both plans are still `active`. This doc is outside the status-truth scan, so the next
+reconciliation is a hand pass again.
