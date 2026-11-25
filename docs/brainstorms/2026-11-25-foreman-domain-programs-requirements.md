@@ -81,16 +81,16 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - R11. A proposal the operator closed is not proposed again unless the gap changed materially (a new affected repository, a regression, or a changed condition), and the new proposal says what changed. A fresh report of the same finding is not a change.
 
 **Repository agents**
-- R12. Each dispatched part carries the program goal and a reference to its domain's brief on main. A missing or unreadable brief, or a part that would exceed dispatch's prompt limit, stops that dispatch visibly.
+- R12. Each dispatched part carries the program goal and a reference to its domain's brief pinned to a commit on main, so the operator's approval covers that exact brief. A change of target, ask or brief commit needs a fresh approval. A missing or unreadable brief, or a part that would exceed dispatch's prompt limit, stops that dispatch visibly.
 - R13. The repository agent answers before it works, on its own part issue: an accepted, declined or countered label with its reason in plain prose.
 - R14. The repository agent decides under its own `AGENTS.md`. The foreman never instructs it to override its own rules.
-- R15. Work starts only after an accept, and the existing completion receipt keeps its meaning: it reports the finished work and is final.
+- R15. Work starts only after an accept, and the existing completion receipt keeps its meaning: it reports the finished work and is final. A decline or counter, verified as coming from that repository's agent for that attempt, ends the attempt without a completion and without a missing-receipt alert; a revised ask is a new attempt with a fresh approval.
 - R16. The tracker shows each part's answer and reason, its pull request when accepted, and its outcome. A decline or counter goes to the operator, and the foreman does not reroute it without the operator.
-- R17. The tracker wakes on a changed answer and on a part's age: a part with no answer, or no outcome after an accept, past its stall window is marked stalled and listed in the daily report. A failed read of a part leaves it unknown, not stalled.
+- R17. The tracker wakes on a changed answer and on a part's age. The answer clock starts at confirmed delivery and the outcome clock at the accept; a part past either window is marked stalled and listed in the daily report. A part waiting on approval or on a prerequisite is shown as held, not stalled, and a failed read leaves it unknown.
 
 **First program**
 - R18. The first program, automation parity for harness tools, starts with an inventory of which of this repository's agent automation applies to each repository and the exceptions, and the brief records it.
-- R19. Part 0 in `marcusrbrown/systematic` and `fro-bot/space-bus` is that repository's agent adopting dispatch-to-pull-request routing, as `fro-bot/dashboard` does, through the path that already produces pull requests there. The parity parts are dispatched after Part 0 merges.
+- R19. Part 0 in `marcusrbrown/systematic` and `fro-bot/space-bus` is that repository adopting dispatch-to-pull-request routing, as `fro-bot/dashboard` does. It is raised on the part issue as an operator-authorized ask to the repository's agent, not through dispatch. When that repository's issue path cannot open a pull request that changes workflows, the operator authors the change instead. Part 0 is tracked separately from the parity parts, and their dispatch is approved only after the tracker shows Part 0 merged in that repository.
 
 ---
 
@@ -105,7 +105,9 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - AE7. **Covers R17.** Given a part with no answer past its stall window, the tracker marks it stalled on its next run and the daily report lists it. Given a part whose issue could not be read, it is shown as unknown.
 - AE8. **Covers R12.** Given a brief that cannot be read on main, the dispatch for that program stops and the tracker says why.
 - AE9. **Covers R3.** Given a domain file that lists a private or untracked repository, its pull request fails the check.
-- AE10. **Covers R19.** Given Part 0 not yet merged in `fro-bot/space-bus`, its parity parts are not dispatched.
+- AE10. **Covers R19.** Given Part 0 not yet merged in `fro-bot/space-bus`, its parity parts show as held and are not dispatched; once the tracker shows Part 0 merged, the operator approves the parity dispatch separately.
+- AE11. **Covers R15, R17.** Given `marcusrbrown/systematic` counters and the operator has not answered for two days, the part shows the counter, no missing-receipt alert fires, and nothing is marked complete.
+- AE12. **Covers R12.** Given an approved dispatch whose brief changes on main before the part is sent, the changed part is not sent until the operator approves it again.
 
 ---
 
@@ -144,7 +146,9 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - Answers live on each repository's own part issue as a label and a plain-prose reason: the skill already files that issue, and labels add no comment syntax. The completion receipt is not reused as the answer, because it is final.
 - Build on cross-repo dispatch, the program-tracker skill and trackers, with no new state store: this follows the operator's autonomy direction (fix routing, prompt duties and acceptance coverage; add no writer layer or comment syntax).
 - The operator acts three times per program before work starts (approve a proposal when there is one, merge the start pull request, approve dispatch), then on counters and pull requests.
-- Part 0 fixes the delivery path in the program itself, so the first program's own repositories fix the gap that blocks it.
+- Part 0 fixes the delivery path in the program itself, so the first program's own repositories fix the gap that blocks it. It can't travel over dispatch, the path it fixes, so it is an operator-authorized ask on the part issue, with the operator authoring the change as the fallback.
+- The brief is pinned to a commit: dispatch fingerprints the prompt text, so a commit in the reference makes the approval cover the brief's content.
+- A decline or counter ends the dispatch attempt rather than completing it, so the completion receipt keeps one meaning and a counter never looks like a missing receipt.
 - F1 runs over GitHub; Space Bus runs live sessions: the two don't depend on each other.
 - Prior art: "work offers" (ideation 2026-09-04 item 7, recorded as Unexplored) and "freshness leases" (item 3, Unexplored). This doc takes the offer idea as negotiation between foreman and repository agents, keeps it on existing GitHub surfaces, and defers leases.
 - `marcusrbrown/systematic` is the Systematic repository; `fro-bot/systematic` has no agent and is not onboarded.
@@ -169,7 +173,8 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - [Affects R17][Technical] The stall windows (before an answer, after an accept), when each clock starts, and which tracker run checks them.
 - [Affects R3][Technical] Which check enforces the domain file's public-tracked rule.
 - [Affects R18][Needs research] The inventory itself: which of this repository's automation (repo skills, model tiers, Renovate approval, review triggers, dispatch routing) applies to each harness-tools repository.
-- [Affects R19][Technical] How Part 0 is raised in each repository without dispatch (an issue mention to its agent, or a part issue the agent picks up).
+- [Affects R19][Technical] Whether each repository's issue path can open a pull request that changes workflows, and so whether Part 0 there falls back to the operator.
+- [Affects R15][Technical] How dispatch's tracking verifies an answer's author and attempt, and which item status a decline or counter maps to.
 
 ---
 
