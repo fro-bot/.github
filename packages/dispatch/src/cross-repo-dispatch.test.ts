@@ -4390,3 +4390,123 @@ describe('runTrack — production fixture regression (#3652: five targets, two w
     expect(silent?.noReceiptDiagnostic).toBe('dispatch-accepted-no-receipt')
   })
 })
+
+// ─── Receipt statuses and the SLA, pinned before decline/counter joined the vocabulary ───
+
+describe('runTrack — receipt status mapping and the receipt SLA (characterization)', () => {
+  const RAW = 'raw-nonce-statuses'
+  const EPOCH = 1_000_000
+  const HOUR_MS = 60 * 60 * 1000
+
+  function pinnedItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
+    return makeDispatchedItem({
+      id: 'item-1',
+      correlationId: 'c1',
+      epoch: EPOCH,
+      nonceHash: hashNonce(RAW),
+      ...overrides,
+    })
+  }
+
+  async function track(items: DispatchItem[], receipts: CrossRepoResult[], now: number) {
+    const goalIssue = makeOpenGoal({goal: 'g', items, markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {comments: receipts.map(r => makeReceiptComment(r))})
+    const update = vi.fn(async () => ({data: {}}))
+    const result = await runTrack({
+      octokit: {
+        ...octokit,
+        rest: {...octokit.rest, issues: {...octokit.rest.issues, update: update as never}},
+      },
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(TARGET_A)],
+      findRunConclusion: async () => undefined,
+      now: () => now,
+    })
+    const written = extractMarker(comments[0]?.body ?? '')
+    return {result, written: written?.state.items ?? [], update, comments}
+  }
+
+  it.each([
+    ['success', 'completed'],
+    ['noop', 'completed'],
+    ['failed', 'failed'],
+  ] as const)('an authentic %s receipt moves the item to %s and nothing else', async (status, expected) => {
+    const {result, written, update} = await track(
+      [pinnedItem()],
+      [makeReceipt({correlationId: 'c1', nonce: RAW, status})],
+      EPOCH + HOUR_MS,
+    )
+    expect(written).toHaveLength(1)
+    expect(written[0]?.status).toBe(expected)
+    expect(written[0]?.needsAttentionReason).toBeUndefined()
+    expect(written[0]).not.toHaveProperty('blockedReason')
+    expect(result.counts.goalsClosed).toBe(1)
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({state: 'closed'}))
+  })
+
+  it('a receipt of any status outside the vocabulary is malformed, so the item is flagged unparseable-receipt and stays open', async () => {
+    const goalIssue = makeOpenGoal({goal: 'g', items: [pinnedItem()], markerHash: ''})
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {
+      comments: [
+        {
+          id: 0,
+          login: 'fro-bot',
+          body: `<!-- fro-bot:cross-repo-result ${JSON.stringify({correlation_id: 'c1', nonce: RAW, status: 'bogus', summary: 's'})} -->`,
+        },
+      ],
+    })
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(TARGET_A)],
+      findRunConclusion: async () => undefined,
+      now: () => EPOCH + HOUR_MS,
+    })
+    const item = extractMarker(comments[0]?.body ?? '')?.state.items[0]
+    expect(item?.status).toBe('needs-attention')
+    expect(item?.needsAttentionReason).toBe('unparseable-receipt')
+    expect(result.counts.goalsClosed).toBe(0)
+  })
+
+  it('with no receipt, an item inside the SLA stays dispatched and past it needs attention (no-receipt)', async () => {
+    const inside = await track([pinnedItem()], [], EPOCH + RECEIPT_SLA_MS)
+    expect(inside.written[0]?.status).toBe('dispatched')
+    expect(inside.result.counts.idempotentNoop).toBe(1)
+
+    const past = await track([pinnedItem()], [], EPOCH + RECEIPT_SLA_MS + 1)
+    expect(past.written[0]?.status).toBe('needs-attention')
+    expect(past.written[0]?.needsAttentionReason).toBe('no-receipt')
+    expect(past.result.counts.itemsNeedsAttention).toBe(1)
+    expect(past.result.counts.goalsClosed).toBe(0)
+  })
+
+  it('a receipt resolves an item the SLA had already flagged: the receipt clears the attention fields', async () => {
+    const flagged = pinnedItem({
+      status: 'needs-attention',
+      needsAttentionReason: 'no-receipt',
+      noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+    })
+    const {written} = await track(
+      [flagged],
+      [makeReceipt({correlationId: 'c1', nonce: RAW, status: 'success'})],
+      EPOCH + 48 * HOUR_MS,
+    )
+    expect(written[0]?.status).toBe('completed')
+    expect(written[0]?.needsAttentionReason).toBeUndefined()
+    expect(written[0]?.noReceiptDiagnostic).toBeUndefined()
+  })
+
+  it('a later receipt never flips an earlier one: failed then success stays failed', async () => {
+    const {written} = await track(
+      [pinnedItem()],
+      [
+        makeReceipt({correlationId: 'c1', nonce: RAW, status: 'failed'}),
+        makeReceipt({correlationId: 'c1', nonce: RAW, status: 'success'}),
+      ],
+      EPOCH + HOUR_MS,
+    )
+    expect(written[0]?.status).toBe('failed')
+  })
+})
