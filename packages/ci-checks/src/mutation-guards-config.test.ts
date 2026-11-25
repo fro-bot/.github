@@ -454,8 +454,10 @@ describe('the shard and merge modules and the shard composite are fixed triggers
  * checkout with its first test-file frame, loaded through `NODE_OPTIONS=--require`; no script for it is kept, because
  * registering one in `scripts/` or `packages/ci-checks` costs more than the list it would feed) and dropping the reads whose content cannot change an assertion: `knowledge/` (read by
  * `runWikiIngestCli` in corrections-survival.test.ts, only to collect existing pages that no assertion looks at),
- * `metadata/repos.yaml` (read by the privacy token loaders in two CLI tests that accept either failure flag), and
- * absence probes such as `.drafted-solutions/drafted-solutions-digest.json`.
+ * and absence probes such as `.drafted-solutions/drafted-solutions-digest.json`. `metadata/repos.yaml` was dropped
+ * while only the privacy token loaders read it (two CLI tests that accept either failure flag); it is listed now
+ * because `program-domains.test.ts` asserts on its content: each repository of the committed domain file must be
+ * tracked there, public and not archived.
  */
 const RUNTIME_READ_TRIGGERS: readonly {
   readonly path: string
@@ -479,6 +481,18 @@ const RUNTIME_READ_TRIGGERS: readonly {
     path: 'program-trackers.json',
     reader: 'packages/status-truth/src/program-trackers.test.ts',
     marker: 'program-trackers.json',
+    onDisk: true,
+  },
+  {
+    path: 'program-domains.json',
+    reader: 'packages/status-truth/src/program-domains.test.ts',
+    marker: 'program-domains.json',
+    onDisk: true,
+  },
+  {
+    path: 'metadata/repos.yaml',
+    reader: 'packages/status-truth/src/program-domains.test.ts',
+    marker: 'metadata/repos.yaml',
     onDisk: true,
   },
   {
@@ -558,7 +572,7 @@ describe(
       },
     )
 
-    it('does not make a file nothing reads a trigger: docs, other workflows, knowledge/ and metadata/ stay out', () => {
+    it('does not make a file nothing reads a trigger: docs, other workflows and knowledge/ stay out', () => {
       for (const path of [
         'README.md',
         'docs/ideation/2026-11-07-open-ideation.md',
@@ -566,7 +580,7 @@ describe(
         '.github/renovate.json5',
         'default.json',
         'knowledge/index.md',
-        'metadata/repos.yaml',
+        'metadata/README.md',
         'packages/test-kit/src/workflow-expression.ts',
       ]) {
         expect(changedFilesIntersectTriggerSet([path], triggerSet), path).toBe(false)

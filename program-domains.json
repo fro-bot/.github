@@ -1,0 +1,30 @@
+{
+  "domains": [
+    {
+      "key": "harness-tools",
+      "repos": [
+        {"nameWithOwner": "marcusrbrown/systematic", "nodeId": "R_kgDORAJegA"},
+        {"nameWithOwner": "fro-bot/space-bus", "nodeId": "R_kgDOTMGFnQ"},
+        {"nameWithOwner": "fro-bot/dashboard", "nodeId": "R_kgDOS6ys-g"}
+      ],
+      "brief": {
+        "security": [
+          "Every job that runs on a pull request, an issue or a comment checks out with persist-credentials: false.",
+          "Every agent step runs with isolate-agent.",
+          "The agent action is pinned to a release, not to a moving ref."
+        ],
+        "automation": [
+          "Agent steps set repo-skills so the agent loads the repository's own skills from the default branch, on the triggers this repository allows: schedule and workflow_dispatch always, and issues, comments and pull requests only from an owner, member or collaborator on a same-repository head.",
+          "Each job resolves its agent model once through the agent-model resolver, before its first agent step, and no agent step reads a model variable directly.",
+          "The agent reviews pull requests opened by the fro-bot user, which GitHub cannot request a review for.",
+          "A prompt dispatched to the repository's agent is routed to a branch and a pull request, not kept comment-only and not run in a discarded working directory.",
+          "Renovate Approve applies only to a repository that uses Renovate automerge."
+        ],
+        "developerExperience": [
+          "The repository has an AGENTS.md that states the rules its agent works under; the agent holds every ask in this brief against it and may decline or counter."
+        ],
+        "exceptions": []
+      }
+    }
+  ]
+}

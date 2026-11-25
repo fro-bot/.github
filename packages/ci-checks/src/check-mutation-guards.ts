@@ -1512,10 +1512,12 @@ export function buildImportClosure(
  *
  * The last group is files a listed test reads from the repository at run time without importing them, so the
  * import closure never reaches them (the protection-drift test's two settings files, the committed program
- * tracker config, the Quartz config and lock the lockfile-gate test checks, the mutation-report fixtures the
- * merge test loads, and a test file whose import closure the reach test measures). They are a pinned list, not
- * a detector: `mutation-guards-config.test.ts` names each reading test. Reads whose content cannot change an
- * assertion stay out (`knowledge/` and `metadata/repos.yaml`), which keeps a promotion not-applicable.
+ * tracker config, the committed domain config and the registry it is checked against, the Quartz config and
+ * lock the lockfile-gate test checks, the mutation-report fixtures the merge test loads, and a test file whose
+ * import closure the reach test measures). They are a pinned list, not a detector:
+ * `mutation-guards-config.test.ts` names each reading test. Reads whose content cannot change an assertion stay
+ * out (`knowledge/`), which keeps a promotion of knowledge pages not-applicable. `metadata/repos.yaml` is in:
+ * `program-domains.test.ts` asserts that every listed repository is public, tracked and not archived there.
  */
 export const FIXED_TRIGGER_FILES: readonly string[] = [
   'stryker.config.json',
@@ -1543,6 +1545,8 @@ export const FIXED_TRIGGER_FILES: readonly string[] = [
   'common-settings.yaml',
   '.github/settings.yml',
   'program-trackers.json',
+  'program-domains.json',
+  'metadata/repos.yaml',
   'quartz-site/quartz.config.yaml',
   'quartz-site/quartz.lock.json',
   'packages/ci-checks/fixtures/mutation-report-baseline.json',

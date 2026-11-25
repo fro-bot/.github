@@ -28,6 +28,8 @@ export interface ProgramEntry {
   readonly operator: {readonly id: number; readonly login: string}
   readonly evidence: EvidenceKind
   readonly repos?: readonly ConfirmedRepo[]
+  /** The key of the domain in `program-domains.json` this program runs in; the file's checks live there. */
+  readonly domain?: string
 }
 
 export interface ProgramTrackers {
@@ -59,7 +61,8 @@ function matches(pattern: RegExp, value: unknown): value is string {
   return typeof value === 'string' && pattern.test(value)
 }
 
-function parseRepos(value: unknown, at: string): ConfirmedRepo[] {
+/** Parse a list of confirmed repos: `nameWithOwner` and `nodeId` each, no repo twice (names compare ignoring case). */
+export function parseRepos(value: unknown, at: string): ConfirmedRepo[] {
   if (!Array.isArray(value)) throw new Error(`${at} is invalid`)
   const repos: ConfirmedRepo[] = []
   for (const [index, raw] of value.entries()) {
@@ -80,7 +83,7 @@ function parseEntry(raw: unknown, index: number): ProgramEntry {
   const at = `programs[${index}]`
   if (!isRecord(raw)) throw new Error(`${at} must be an object`)
 
-  const {key, issue, project, operator, evidence, repos} = raw
+  const {key, issue, project, operator, evidence, repos, domain} = raw
   if (!matches(/^[a-z0-9][a-z0-9-]*$/, key)) throw new Error(`${at}.key is invalid`)
   if (!matches(/^[\w.-]+\/[\w.-]+#[1-9]\d*$/, issue)) throw new Error(`${at}.issue is invalid`)
 
@@ -96,6 +99,7 @@ function parseEntry(raw: unknown, index: number): ProgramEntry {
   if (!matches(/^[a-z0-9-]+$/i, operator.login)) throw new Error(`${at}.operator.login is invalid`)
 
   if (!isEvidenceKind(evidence)) throw new Error(`${at}.evidence is invalid`)
+  if (domain !== undefined && !matches(/^[a-z0-9][a-z0-9-]*$/, domain)) throw new Error(`${at}.domain is invalid`)
 
   const base = {
     key,
@@ -104,7 +108,8 @@ function parseEntry(raw: unknown, index: number): ProgramEntry {
     operator: {id: operator.id, login: operator.login},
     evidence,
   }
-  return repos === undefined ? base : {...base, repos: parseRepos(repos, `${at}.repos`)}
+  const withRepos = repos === undefined ? base : {...base, repos: parseRepos(repos, `${at}.repos`)}
+  return domain === undefined ? withRepos : {...withRepos, domain}
 }
 
 /**

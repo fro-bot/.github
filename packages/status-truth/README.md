@@ -29,6 +29,7 @@ Each CLI keeps a `scripts/<name>.ts` entrypoint of six lines: `main` from the pa
 | `@fro-bot/status-truth/prs-cli` | `statusTruthPrsCli`, `main` | The goke CLI. |
 | `@fro-bot/status-truth/rollout-tracker-snapshot` | `runRolloutTrackerSnapshot`, `buildSnapshot`, `hashSnapshot`, `decideComment`, the marker and mention helpers, the types | The preflight. Reads through `gh` and the health endpoint. Takes its tracker issue, Project and operator from the program config. |
 | `program-trackers` (relative import, not exported) | `parseProgramTrackers`, `loadProgramTrackers`, `selectProgram`, `issueRef`, `isOperatorComment`, `isAuthorizedTrigger`, `confirmedReposMissing`, `isPublicVisibility`, the entry types | Reads and validates [`program-trackers.json`](../../program-trackers.json) and holds the pure predicates the snapshot uses. Every failure is an `Error` with a fixed message. Mutated by Stryker. |
+| `program-domains` (relative import, not exported) | `parseProgramDomains`, `loadProgramDomains`, `selectDomain`, `checkDomainReposInRegistry`, `checkProgramDomainRefs`, the domain, brief and registry types | Reads and validates [`program-domains.json`](../../program-domains.json): each domain's repositories (by name and node ID, a repository in at most one domain) and its brief, the bar for security, agent automation and developer experience as standards plus per-repository exceptions. `checkDomainReposInRegistry` requires each listed repository to be tracked in `metadata/repos.yaml`, public, not archived and with the registry's node ID; `checkProgramDomainRefs` requires every `domain` of a program in `program-trackers.json` to name a listed domain. Every failure is an `Error` with a fixed message that names a position, never content. Mutated by Stryker. |
 | `@fro-bot/status-truth/rollout-tracker-snapshot-cli` | `rolloutTrackerSnapshotCli`, `main` | The goke CLI. |
 
 ## CLIs
@@ -47,6 +48,8 @@ Every CLI declares one root command with no positional and no option. Any argume
 A thrown error prints its message and exits 1; no stack trace reaches stderr.
 
 ## The program config
+
+`program-domains.json` at the repository root groups repositories into domains and gives each a brief; a program entry in `program-trackers.json` may name its `domain`, which must be a key there. The first domain is `harness-tools` (`marcusrbrown/systematic`, `fro-bot/space-bus`, `fro-bot/dashboard`). Nothing in the tracker reads either field yet; the parsers and their committed-file checks are the only consumers.
 
 `program-trackers.json` at the repository root maps each cross-repo program to its tracker issue, its Project and its operator. #3512 is the `gateway` entry. `rollout-tracker-snapshot` reads the entry named by `ROLLOUT_TRACKER_PROGRAM` (default `gateway`) from the file at `ROLLOUT_TRACKER_CONFIG` (default: the committed file). A missing file, malformed JSON, a duplicate key or issue, a bad field or an unknown program key prints `rollout-tracker-snapshot: FATAL — program config: <fixed message>` and exits 1 before any read.
 
@@ -107,6 +110,7 @@ C4Component
     Component(prscli, "prs-cli", "TypeScript", "goke CLI: bounded correction PRs")
     Component(model, "report-model", "TypeScript", "Claim kinds, finding and report types, fingerprint, artifact validator")
     Component(programs, "program-trackers", "TypeScript", "Program config parser and the operator, trigger and bootstrap predicates")
+    Component(domains, "program-domains", "TypeScript", "Domain config parser, its briefs, and the registry and program checks")
     Component(snapshot, "rollout-tracker-snapshot", "TypeScript", "Tracker preflight: snapshot, hash, wake decision")
     Component(snapshotcli, "rollout-tracker-snapshot-cli", "TypeScript", "goke CLI: print the preflight result")
     Component(prs, "status-truth-prs", "TypeScript", "Correction-PR planner, executor, env-backed deps")
@@ -141,6 +145,7 @@ C4Component
   Rel(rollout, model, "imports")
   Rel(rollout, snapshot, "imports")
   Rel(snapshot, programs, "imports")
+  Rel(domains, programs, "imports")
   Rel(pexec, outcomes, "imports")
   Rel(pexec, pplan, "imports")
   Rel(pexec, labels, "imports")
