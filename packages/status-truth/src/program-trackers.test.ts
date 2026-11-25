@@ -83,6 +83,14 @@ describe('parseProgramTrackers: a valid file', () => {
     expect(entryOf({domain: 'harness-tools'}).domain).toBe('harness-tools')
   })
 
+  it('keeps both the domain and the confirmed repos when an entry has them', () => {
+    const repos = [{nameWithOwner: 'marcusrbrown/opencode-a', nodeId: 'R_kgDOA'}]
+    const entry = entryOf({domain: 'harness-tools', repos})
+
+    expect(entry.domain).toBe('harness-tools')
+    expect(entry.repos).toEqual(repos)
+  })
+
   it('leaves domain out when an entry has none', () => {
     expect('domain' in entryOf()).toBe(false)
   })

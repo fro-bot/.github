@@ -199,7 +199,7 @@ sequenceDiagram
 
 **Approach:**
 - Parse domains with `key`, `repos[{nameWithOwner, nodeId}]` and `brief` (security, automation, developer-experience standards, per-repository exceptions). Fixed-message errors that never echo content.
-- The committed-file test also checks every listed repository against `metadata/repos.yaml` on main: present, `private: false`, not archived. A repository in two domains fails.
+- The domain file's pull request checks structure only: a repository in two domains, or a node ID listed twice anywhere in the file, fails. Eligibility is checked at use, so a registry change never blocks a promotion: `checkDomainReposInRegistry` is a pure function that requires each listed repository's name and node ID to resolve to exactly one `metadata/repos.yaml` row that is public and not archived (a name or node ID matching several rows, or pointing at different rows, fails). The tracker's preflight (Unit 2) calls it and reports an ineligible repository; dispatch's eligibility gate (`gateTarget`) refuses it.
 - Seed the harness-tools domain with the three repositories and an inventory-based brief (Unit 7 fills the parity bar).
 
 **Execution note:** Test-first; the module joins `mutate`, so tests import it by relative path.
@@ -208,7 +208,7 @@ sequenceDiagram
 
 **Test scenarios:**
 - Happy path: the committed file parses; harness-tools lists three repositories.
-- Error path: duplicate domain key, a repository in two domains, an empty brief, a missing `nodeId`, a repository marked private or archived or absent from the registry each fail with a fixed message naming no content.
+- Error path: duplicate domain key, a repository in two domains (including one of several shared), a node ID listed twice, an empty brief and a missing `nodeId` each fail the parser with a fixed message naming no content. `checkDomainReposInRegistry` fails the same way for a repository that is private, archived, absent from the registry, with a node ID that differs, or that does not resolve to exactly one registry row (name or node ID matching several rows, in either order; name and node ID pointing at different rows).
 - Edge case: case-only duplicate `nameWithOwner` is a duplicate.
 - Integration: a program config with `domain: "harness-tools"` parses; with an unknown domain it fails.
 
@@ -230,6 +230,7 @@ sequenceDiagram
 - For a program with a `domain`, the bootstrap body states the goal, links `program-domains.json` at the commit on main the preflight read, and gives the protocol: check the ask against your `AGENTS.md` and repository state; answer with `part-accepted`, `part-declined` or `part-countered` (create the label if missing) and one comment with the reason; start work only after accepting; never override your own rules.
 - For a repository listed with Part 0, the body's first ask is Part 0 (adopt dispatch-to-pull-request routing), with the parity ask to follow on the same issue.
 - Preflight emits the brief commit, or a fixed brief error that stops goal creation (Key Technical Decisions).
+- Preflight runs `checkDomainReposInRegistry` against `metadata/repos.yaml` and reports a listed repository that is not eligible (private, archived, untracked or ambiguous), leaving it out of the part issues and goal batches.
 - A program without a `domain` keeps today's bootstrap text exactly.
 
 **Test scenarios:**
@@ -237,6 +238,7 @@ sequenceDiagram
 - Edge case: #3512's config (no domain) yields byte-identical bootstrap text and golden stdout.
 - Integration: a Part 0 repository's part issue body leads with the Part 0 ask; a re-run reuses the same issue.
 - Error path: a program whose domain is missing from `program-domains.json`, or whose brief is empty, yields the fixed brief error in preflight and no goal.
+- Error path: a domain repository that has turned private or been archived is reported as ineligible by preflight and gets no part issue; the domain file's pull request is unaffected.
 
 **Verification:** Prompt pins pass; #3512's golden hash test is unchanged.
 

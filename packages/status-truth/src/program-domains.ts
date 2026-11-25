@@ -130,6 +130,10 @@ export function parseProgramDomains(text: string): ProgramDomains {
       listed.some(other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase()),
     )
     if (shared) throw new Error('a repo is listed in two domains')
+    for (const [repoIndex, repo] of entry.repos.entries()) {
+      const repeated = [...listed, ...entry.repos.slice(0, repoIndex)].some(other => other.nodeId === repo.nodeId)
+      if (repeated) throw new Error(`domains[${index}].repos[${repoIndex}] repeats a node ID`)
+    }
   }
   return {domains: entries}
 }
@@ -156,19 +160,27 @@ export function selectDomain(config: ProgramDomains, key: string): DomainEntry {
 }
 
 /**
- * Check every listed repository against the registry: it must be tracked there, public, not archived, and carry
- * the node ID the registry holds. Names compare ignoring case. The first problem in file order is the error,
- * and the message names the position, never the repository.
+ * Check every listed repository against the registry at the point of use: the name and the node ID must resolve
+ * to exactly one registry row (names compare ignoring case), and that row must be public and not archived. A
+ * name or node ID that matches several rows, or a name and node ID that point at different rows, is ambiguous
+ * and fails whatever order the rows come in. The first problem in file order is the error, and the message
+ * names the position, never the repository.
  */
 export function checkDomainReposInRegistry(config: ProgramDomains, registry: readonly RegistryRepo[]): void {
   for (const [domainIndex, domain] of config.domains.entries()) {
     for (const [repoIndex, repo] of domain.repos.entries()) {
       const at = `domains[${domainIndex}].repos[${repoIndex}]`
-      const tracked = registry.find(other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase())
+      const [tracked, ...otherNames] = registry.filter(
+        other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase(),
+      )
+      const [identified, ...otherIds] = registry.filter(other => other.nodeId === repo.nodeId)
       if (tracked === undefined) throw new Error(`${at} is not in metadata/repos.yaml`)
+      if (otherNames.length > 0) throw new Error(`${at} matches more than one row of metadata/repos.yaml by name`)
+      if (identified === undefined) throw new Error(`${at} has a node ID that differs from metadata/repos.yaml`)
+      if (otherIds.length > 0) throw new Error(`${at} matches more than one row of metadata/repos.yaml by node ID`)
+      if (tracked !== identified) throw new Error(`${at} has a name and a node ID that name different registry rows`)
       if (tracked.private) throw new Error(`${at} is private`)
       if (tracked.archived) throw new Error(`${at} is archived`)
-      if (tracked.nodeId !== repo.nodeId) throw new Error(`${at} has a node ID that differs from metadata/repos.yaml`)
     }
   }
 }

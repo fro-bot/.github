@@ -246,6 +246,71 @@ describe('parseProgramDomains: rejects with a fixed message', () => {
     )
   })
 
+  it('a domain that shares exactly one of several repos with an earlier domain', () => {
+    const second = validDomain({
+      key: 'other',
+      repos: [
+        {nameWithOwner: 'a/unshared-one', nodeId: 'R_u1'},
+        {nameWithOwner: 'fro-bot/space-bus', nodeId: 'R_space_bus_second'},
+        {nameWithOwner: 'a/unshared-two', nodeId: 'R_u2'},
+      ],
+    })
+
+    expect(() => parseProgramDomains(configText(validDomain(), second))).toThrow(
+      new Error('a repo is listed in two domains'),
+    )
+  })
+
+  it('a domain whose repo matches only the last of several repos of an earlier domain', () => {
+    const second = validDomain({
+      key: 'other',
+      repos: [{nameWithOwner: 'marcusrbrown/SYSTEMATIC', nodeId: 'R_other_id'}],
+    })
+    const first = validDomain({
+      repos: [
+        {nameWithOwner: 'a/one', nodeId: 'R_1'},
+        {nameWithOwner: 'a/two', nodeId: 'R_2'},
+        {nameWithOwner: 'marcusrbrown/systematic', nodeId: 'R_systematic'},
+      ],
+    })
+
+    expect(() => parseProgramDomains(configText(first, second))).toThrow(new Error('a repo is listed in two domains'))
+  })
+
+  it('distinct repos that share a node ID inside one domain', () => {
+    const repos = [
+      {nameWithOwner: 'a/one', nodeId: 'R_same'},
+      {nameWithOwner: 'a/two', nodeId: 'R_same'},
+    ]
+
+    expect(() => parseProgramDomains(configText(validDomain({repos})))).toThrow(
+      new Error('domains[0].repos[1] repeats a node ID'),
+    )
+  })
+
+  it('distinct repos that share a node ID across domains, naming the later position', () => {
+    const second = validDomain({
+      key: 'other',
+      repos: [
+        {nameWithOwner: 'a/one', nodeId: 'R_one'},
+        {nameWithOwner: 'a/two', nodeId: 'R_space_bus'},
+      ],
+    })
+
+    expect(() => parseProgramDomains(configText(validDomain(), second))).toThrow(
+      new Error('domains[1].repos[1] repeats a node ID'),
+    )
+  })
+
+  it('node IDs that differ only in case are different node IDs', () => {
+    const repos = [
+      {nameWithOwner: 'a/one', nodeId: 'R_abc'},
+      {nameWithOwner: 'a/two', nodeId: 'R_ABC'},
+    ]
+
+    expect(parseOne({repos}).repos).toHaveLength(2)
+  })
+
   it.each([
     ['missing', undefined],
     ['null', null],
@@ -462,14 +527,87 @@ describe('checkDomainReposInRegistry', () => {
     )
   })
 
-  it('reports absent before private, private before archived, archived before a node ID mismatch', () => {
-    const both = withRepo('marcusrbrown/systematic', {private: true, archived: true, nodeId: 'R_x'})
-    expect(() => checkDomainReposInRegistry(config, both)).toThrow(new Error('domains[0].repos[0] is private'))
+  it('reports a private repository before an archived one', () => {
+    const both = withRepo('marcusrbrown/systematic', {private: true, archived: true})
 
-    const archivedAndMismatch = withRepo('marcusrbrown/systematic', {archived: true, nodeId: 'R_x'})
-    expect(() => checkDomainReposInRegistry(config, archivedAndMismatch)).toThrow(
-      new Error('domains[0].repos[0] is archived'),
+    expect(() => checkDomainReposInRegistry(config, both)).toThrow(new Error('domains[0].repos[0] is private'))
+  })
+
+  it('reports a node ID mismatch before private or archived', () => {
+    const mismatch = withRepo('marcusrbrown/systematic', {archived: true, private: true, nodeId: 'R_x'})
+
+    expect(() => checkDomainReposInRegistry(config, mismatch)).toThrow(
+      new Error('domains[0].repos[0] has a node ID that differs from metadata/repos.yaml'),
     )
+  })
+
+  describe('a name and node ID that do not resolve to exactly one registry row', () => {
+    const publicRow: RegistryRepo = {
+      nameWithOwner: 'fro-bot/space-bus',
+      nodeId: 'R_space_bus',
+      private: false,
+      archived: false,
+    }
+    const privateRow: RegistryRepo = {...publicRow, private: true}
+    const single = parseProgramDomains(
+      configText(validDomain({repos: [{nameWithOwner: 'fro-bot/space-bus', nodeId: 'R_space_bus'}]})),
+    )
+    const byName = 'domains[0].repos[0] matches more than one row of metadata/repos.yaml by name'
+    const byId = 'domains[0].repos[0] matches more than one row of metadata/repos.yaml by node ID'
+
+    it.each([
+      ['public row first', [publicRow, privateRow]],
+      ['private row first', [privateRow, publicRow]],
+    ])('rejects two rows with the same name and node ID, %s', (_name, rows) => {
+      expect(() => checkDomainReposInRegistry(single, rows)).toThrow(new Error(byName))
+    })
+
+    it.each([
+      ['public row first', [publicRow, {...privateRow, nodeId: 'R_other_id'}]],
+      ['private row first', [{...privateRow, nodeId: 'R_other_id'}, publicRow]],
+    ])('rejects two rows with the same name and different node IDs, %s', (_name, rows) => {
+      expect(() => checkDomainReposInRegistry(single, rows)).toThrow(new Error(byName))
+    })
+
+    it.each([
+      ['public row first', [publicRow, {...privateRow, nameWithOwner: 'fro-bot/renamed'}]],
+      ['private row first', [{...privateRow, nameWithOwner: 'fro-bot/renamed'}, publicRow]],
+    ])('rejects distinct names that share the node ID, %s', (_name, rows) => {
+      expect(() => checkDomainReposInRegistry(single, rows)).toThrow(new Error(byId))
+    })
+
+    it('rejects a name differing only in case that matches two rows', () => {
+      const rows = [publicRow, {...privateRow, nameWithOwner: 'FRO-BOT/Space-Bus', nodeId: 'R_x'}]
+
+      expect(() => checkDomainReposInRegistry(single, rows)).toThrow(new Error(byName))
+    })
+
+    it.each([
+      [
+        'name row first',
+        [
+          {...publicRow, nodeId: 'R_x'},
+          {...publicRow, nameWithOwner: 'fro-bot/renamed'},
+        ],
+      ],
+      [
+        'node ID row first',
+        [
+          {...publicRow, nameWithOwner: 'fro-bot/renamed'},
+          {...publicRow, nodeId: 'R_x'},
+        ],
+      ],
+    ])('rejects a name and node ID that point at different rows, %s', (_name, rows) => {
+      expect(() => checkDomainReposInRegistry(single, rows)).toThrow(
+        new Error('domains[0].repos[0] has a name and a node ID that name different registry rows'),
+      )
+    })
+
+    it('accepts the one row that holds both, among other rows', () => {
+      const rows = [{...publicRow, nameWithOwner: 'fro-bot/other', nodeId: 'R_other'}, publicRow]
+
+      expect(() => checkDomainReposInRegistry(single, rows)).not.toThrow()
+    })
   })
 
   it('names the domain index in the message', () => {
@@ -540,8 +678,8 @@ describe('the committed program-domains.json', () => {
   const root = resolve(import.meta.dirname, '../../..')
   const committed = loadProgramDomains(resolve(root, 'program-domains.json'))
 
-  // The check against metadata/repos.yaml lives in program-domains-registry.test.ts, outside Stryker's
-  // testFiles, so a registry change does not make the mutation gate applicable.
+  // Whether each listed repository is tracked, public and not archived is checked where the domain is used
+  // (checkDomainReposInRegistry), not here: a registry change must never fail a pull request or a promotion.
 
   it('lists the harness-tools domain with its three repositories', () => {
     const harness = selectDomain(committed, 'harness-tools')
