@@ -1,7 +1,7 @@
 ---
 title: "feat: make the daily report's attention list live and actionable"
 type: feat
-status: active
+status: complete
 date: 2026-11-08
 origin: docs/brainstorms/2026-11-08-actionable-attention-list-requirements.md
 ---
@@ -161,7 +161,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 **Verification:** the settings tests pass. After merge, the Update Repo Settings run creates the label.
 
-- [ ] **Unit 3: Live readback**
+- [x] **Unit 3: Live readback**
 
 **Goal:** Check the success criteria against the first ten reports after release.
 
@@ -190,6 +190,15 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 - **Re-check.** #4227 dropped the Gateway delivery key as resolved, and #4169 dropped the uncovered-learning-backlog key.
 - **Public only.** The attention sections of the six reports link only `fro-bot/.github`, `fro-bot/agent` and `marcusrbrown/infra`, which are all public.
 - **Still owed.** Four more reports, and a report-by-report check that no item's key had resolved at publish time and that every item has an owner and a next action.
+
+**Readback over ten reports (2026-11-25):** #4163, #4169, #4182, #4200, #4216, #4227, #4249, #4274, #4285 and #4292.
+
+- **Owner and next action.** Every sampled item carries an owner, one next action, `first seen` and a `key:` line.
+- **Three consecutive reports.** Every key live on three reports in a row was linked or excluded: the Scorecard key to #4164, the survey-conflict key to #4226, the sandbox git-trust key to #4284; the Gateway, VPN-deploy and isolate-agent keys pointed at existing issues. No run opened more than two `attention-tracking` issues.
+- **Re-check at publish.** Each of the 40 items across the ten reports was read against its object's state at the report's `createdAt`. None had resolved before publish. The closest were #4200's two #4184 items, which closed 10 seconds after that report was created.
+- **The survey-conflict key (gap, waived).** Seven reports, #4200 to #4292, carried it, and it was escalated to #4226. The item said the survey re-run path had never run. That was wrong for the page-changed conflict: run [42630239474](https://github.com/fro-bot/.github/actions/runs/42630239474) re-ran and persisted on 2026-11-09, before the reports. It was right for the second conflict kind #4189 added (`CONFLICT_EXHAUSTED`, a write between the persist job's sync and its write), which has still not occurred live; the 2026-11-22 conflict re-run was again the page-changed kind. The escalation rested on the broader claim, so it is recorded as a gap. The `CONFLICT_EXHAUSTED` path stays covered by #4189's tests until a survey hits it, as [the #4226 readback](https://github.com/fro-bot/.github/issues/4226#issuecomment-6879322030) records; no follow-up is filed.
+- **Public only.** No report names a private repository, and neither do the three `attention-tracking` issues (#4164, #4226, #4284), which name only `fro-bot/.github` and `fro-bot/agent`.
+- **Gaps, not filed.** #4227 calls the Gateway delivery-projection key resolved while #3512 stays open; the key tracked a projection, not the issue. #4216 lists the isolate-agent key two days before its tracking issue #4236 existed. Neither breaks a criterion.
 
 ## System-Wide Impact
 

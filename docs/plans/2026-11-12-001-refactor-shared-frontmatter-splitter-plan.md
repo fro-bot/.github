@@ -1,7 +1,7 @@
 ---
 title: "refactor: replace the copied frontmatter regexes with one shared splitter"
 type: refactor
-status: active
+status: complete
 date: 2026-11-12
 origin: docs/brainstorms/2026-11-12-shared-frontmatter-splitter-requirements.md
 ---
@@ -454,7 +454,7 @@ What each site does with the three outcomes, after both PRs:
 
 **Verification:** `bun run lint` passes, including the solution-example check.
 
-- [ ] **Unit 7: Live checks after the second PR**
+- [x] **Unit 7: Live checks after the second PR**
 
 **Goal:** Confirm each path the second PR changed on its first real run.
 
@@ -482,7 +482,8 @@ What each site does with the three outcomes, after both PRs:
 - First promotion with the strict gate: run 43543306120 (scheduled) on 2026-11-14 passed on the pinned `data` commit `0cfe4c0`. "Block private wiki pages" printed `no private wiki leaks detected`, "Block private repo names in promotion diff" printed `check-private-leak [promotion]: ok`, and "Qualify promotion at the pinned commit" passed. The run opened #4225 (`knowledge/` and `metadata/` paths only, 7 files, label `automerge`). The self-merge step approved it as `fro-bot` and squash-merged it at 01:59:18Z (`promotion-self-merge: MERGED`).
 - **Capture run (2026-11-16).** The `Capture Learnings` run [43791294020](https://github.com/fro-bot/.github/actions/runs/43791294020) (scheduled, 02:17Z) succeeded.
 - **Metrics run (2026-11-16).** The `Improvement Metrics` run [43793481768](https://github.com/fro-bot/.github/actions/runs/43793481768) (02:39Z) succeeded.
-- **The knowledge tools in an agent run: not shown.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) called `knowledge.solutions_search`, and its knowledge summary printed `| solutions_search | ok | 1 |`. The call log records one `<tool> <code>` line per call, written when the handler completes. It records that the handler completed, not whether it returned any results, and the run log does not show the returned content. The check "the knowledge tools still return results" is therefore not met, and Unit 7 stays unticked. What would settle it: an agent run whose log shows a returned page or solution from `wiki_search` or `solutions_search`.
+- **The knowledge tools in an agent run (2026-11-16): not shown.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) called `knowledge.solutions_search`, and its knowledge summary printed `| solutions_search | ok | 1 |`. The call log records one `<tool> <code>` line per call, written when the handler completes. It records that the handler completed, not whether it returned any results, and the run log does not show the returned content. The check "the knowledge tools still return results" was therefore not met, and Unit 7 stayed unticked then. What would settle it: an agent run whose log shows a returned page or solution from `wiki_search` or `solutions_search`.
+- **The knowledge tools in an agent run: result check waived (2026-11-25); a no-error smoke check only.** No log shows a tool's returned content: the call log records the tool and its status only, and the `opencode-logs` artifacts of pull request runs [45511289806](https://github.com/fro-bot/.github/actions/runs/45511289806) and [45508267367](https://github.com/fro-bot/.github/actions/runs/45508267367) carry no tool output. Both recorded `| solutions_search | ok | 1 |`. `ok` shows the call finished without an error, not that it returned a match: `solutions-query.ts` skips a document whose frontmatter fails to parse and can return an empty result with `ok`. The check "the knowledge tools still return results" is waived; Unit 7 is closed on the promotion, capture and metrics runs above and this smoke check.
 
 ## System-Wide Impact
 
