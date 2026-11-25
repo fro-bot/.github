@@ -1,6 +1,7 @@
 ---
 title: A status line must not mean two things
 date: 2026-11-14
+last_updated: 2026-11-25
 category: best-practices
 module: packages/wiki-ops/src/knowledge-mcp.ts
 problem_type: best_practice
@@ -26,7 +27,7 @@ tags:
 
 The knowledge-tool summary step printed `Knowledge tools: no calls recorded.` when the server ran and no tool was called, and when the call log never existed. The line could not say whether the tools were there. The summary came with [#4136](https://github.com/fro-bot/.github/pull/4136) and the step-log copy with [#4188](https://github.com/fro-bot/.github/pull/4188). Counting the `fro-bot.yaml` runs created between the merges of #4188 and #4219, and matching the emitted line in each run log, gives 33 such lines across 31 runs from 2026-11-12 to 2026-11-13, for example run 43489008878. [#4219](https://github.com/fro-bot/.github/pull/4219) split the line into three outcomes.
 
-The Renovate approver had the same shape. When it holds a ready Renovate PR because another open pull request from this repository, by a user account, comes first, the row is `yielded`. That row named no PR in the step log, only in the job summary, which the run-log CLI and the REST API do not return ([#4220](https://github.com/fro-bot/.github/pull/4220), on the yield rule of [#4207](https://github.com/fro-bot/.github/pull/4207)).
+The Renovate approver had the same shape. When it holds a ready Renovate PR because another open pull request from this repository, by a user account other than Fro Bot's own `fro-bot` service account, comes first, the row is `yielded`. That row named no PR in the step log, only in the job summary, which the run-log CLI and the REST API do not return ([#4220](https://github.com/fro-bot/.github/pull/4220), on the yield rule of [#4207](https://github.com/fro-bot/.github/pull/4207)).
 
 ## Guidance
 
@@ -81,6 +82,12 @@ export function stdoutRow(row: Row): string {
 
 ```text
 renovate-approve: #4217 yielded to #4221
+```
+
+A refusal has the same problem from the other side. The promotion self-merge printed only `MERGE_BLOCKED` when GitHub refused the merge with a 405, and its summary opened with one cause: "the approval did not count or a change request is outstanding". [#4305](https://github.com/fro-bot/.github/pull/4305) was refused in [run 44858434517](https://github.com/fro-bot/.github/actions/runs/44858434517) with a valid approval, every required check passed and the branch up to date, so the line named a cause that did not apply and hid the real one. [#4318](https://github.com/fro-bot/.github/pull/4318) records GitHub's own `message` and the pull request's settled `mergeable_state` in the job summary, on one line, capped and escaped, and the opening sentence now states only the fact: "GitHub refused the merge. The pull request stays open." stderr keeps its fixed code. A refusal line has this shape (the message is an illustration, not #4305's cause, which was never recorded):
+
+```text
+- Merge refused (405): Repository rule violations found; mergeable_state: blocked
 ```
 
 ## Related
