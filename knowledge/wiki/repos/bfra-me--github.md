@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/.github
 created: 2026-05-20
-updated: 2026-11-12
+updated: 2026-11-25
 sources:
   - url: https://github.com/bfra-me/.github
     sha: 737d27ff96c848836cd46f38c7c6ac81cf488d53
@@ -67,6 +67,8 @@ node_id: R_kgDOHBEXpg
 ---
 
 # bfra-me/.github
+
+Current state (2026-11-25, `main` at `7b018e2a`): `fro-bot.yaml` checks out with an unconditional `persist-credentials: false`, so the omitted `pull_request_review_comment` and `discussion_comment` triggers noted below no longer persist credentials. The agent is pinned to v0.144.2 with `isolate-agent: true` (#2919). The workflow still ends at `Run Fro Bot`, sets no `output-mode`, and its prompt still carries the agent-owned DELIVERY CONTRACT.
 
 ## Unchanged-source re-verification (2026-11-12)
 

@@ -11354,3 +11354,15 @@ Sources: https://github.com/fro-bot/.github/security/code-scanning/9, https://gi
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@1bb33684d91bb60b3f24d5131ea8c5897279bcaa
+
+## [2026-11-25 15:46] ingest | repo:bfra-me/.github
+
+Surveyed bfra-me/.github and updated the control-plane wiki.
+
+Repeat survey of bfra-me/.github. `main` moved `737d27ff` → `7b018e2a`, one commit: `ci: run Fro Bot with isolate-agent` (#2919), which touches only `.github/workflows/fro-bot.yaml`. I read the repo metadata, the compare file list and patch, and `fro-bot.yaml` at the new SHA. The repo is still public, an MIT template, TypeScript, default branch `main`, not archived. Fro Bot and Renovate are both present, so no missing-workflow note is needed.
+
+Nothing material changed. Checkout now uses an unconditional `persist-credentials: false`, which closes the `pull_request_review_comment`/`discussion_comment` gap recorded in earlier sections. The agent moved v0.125.1 → v0.144.2 and gained `isolate-agent: true`. The workflow still ends at `Run Fro Bot` with no `output-mode`, and the prompt still carries the agent-owned DELIVERY CONTRACT.
+
+Changes to [[bfra-me--github]]: one current-state statement under the title. Dated sections are untouched. I bumped `updated` and added no repository `sources` entry. [[github-actions-ci]] gets a dated 2026-11-25 note on the credential-scoping paragraph and one commit-pinned source. The corrections context was empty.
+
+Sources: https://github.com/bfra-me/.github
