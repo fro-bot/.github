@@ -5,10 +5,17 @@
  * The texts are pinned here byte for byte: they are what wiki lint prints and what the dashboard shows. The kind is
  * present exactly when the error is.
  */
-import {describe, expect, it} from 'vitest'
+import {describe, expect, expectTypeOf, it} from 'vitest'
 import {parse} from 'yaml'
 
-import {collectWikiPages, parseWikiPage, splitFrontmatter} from './wiki-utils.ts'
+import {
+  collectWikiPages,
+  parseWikiPage,
+  splitFrontmatter,
+  type SplitFrontmatterResult,
+  type WikiFrontmatterErrorKind,
+  type WikiPage,
+} from './wiki-utils.ts'
 
 const UNCLOSED_TEXT = 'Invalid frontmatter: missing closing --- delimiter'
 const PATH = 'knowledge/wiki/topics/a.md'
@@ -65,6 +72,8 @@ describe('splitFrontmatter: the kind of a frontmatter error', () => {
   ])('has no error and no kind for %s', (_name, content) => {
     const result = splitFrontmatter(content)
     expect(Object.keys(result)).toStrictEqual(['frontmatter', 'body'])
+    expect(Object.hasOwn(result, 'error')).toBe(false)
+    expect(Object.hasOwn(result, 'errorKind')).toBe(false)
     expect(result.errorKind).toBeUndefined()
   })
 })
@@ -90,6 +99,9 @@ describe('parseWikiPage and collectWikiPages: the kind of a frontmatter error', 
     const page = parseWikiPage(PATH, content)
     expect(page.frontmatterError).toBeUndefined()
     expect(page.frontmatterErrorKind).toBeUndefined()
+    // Both keys are own properties holding `undefined`, as before the union.
+    expect(Object.hasOwn(page, 'frontmatterError')).toBe(true)
+    expect(Object.hasOwn(page, 'frontmatterErrorKind')).toBe(true)
   })
 
   it('carries each page its own kind through collectWikiPages', () => {
@@ -120,6 +132,83 @@ describe('parseWikiPage and collectWikiPages: the kind of a frontmatter error', 
     for (const content of contents) {
       const page = parseWikiPage(PATH, content)
       expect(page.frontmatterErrorKind !== undefined, JSON.stringify(content)).toBe(page.frontmatterError !== undefined)
+    }
+  })
+})
+
+/**
+ * The error text and its kind are one fact, so the types forbid one without the other. These are compile-time
+ * proofs checked by `bun run check-types`: each `.not.toExtend` names the exact shape that must stay unassignable,
+ * so an unrelated error on the line cannot satisfy it the way a `@ts-expect-error` directive would. The narrowing
+ * helpers fail the type check when `errorKind` stops being a `WikiFrontmatterErrorKind` after an error check.
+ */
+describe('the error text and its kind cannot be set apart', () => {
+  interface SplitBase {
+    frontmatter: Record<string, unknown>
+    body: string
+  }
+  type PageBase = Omit<WikiPage, 'frontmatterError' | 'frontmatterErrorKind'>
+
+  const page: PageBase = {
+    path: PATH,
+    slug: 'a',
+    title: 'A',
+    type: 'topic',
+    aliases: [],
+    tags: [],
+    body: '',
+    frontmatter: {},
+  }
+
+  it('accepts a split result with both fields or neither', () => {
+    expectTypeOf<SplitBase>().toExtend<SplitFrontmatterResult>()
+    expectTypeOf<SplitBase & {error: string; errorKind: WikiFrontmatterErrorKind}>().toExtend<SplitFrontmatterResult>()
+    const clean: SplitFrontmatterResult = {frontmatter: {}, body: ''}
+    const broken: SplitFrontmatterResult = {frontmatter: {}, body: '', error: 'x', errorKind: 'unclosed'}
+    expect([clean, broken]).toHaveLength(2)
+  })
+
+  it('rejects a split result with an error and no kind, or a kind and no error', () => {
+    expectTypeOf<SplitBase & {error: string}>().not.toExtend<SplitFrontmatterResult>()
+    expectTypeOf<SplitBase & {errorKind: WikiFrontmatterErrorKind}>().not.toExtend<SplitFrontmatterResult>()
+  })
+
+  it('accepts a page with both fields or neither', () => {
+    expectTypeOf<PageBase>().toExtend<WikiPage>()
+    expectTypeOf<
+      PageBase & {frontmatterError: string; frontmatterErrorKind: WikiFrontmatterErrorKind}
+    >().toExtend<WikiPage>()
+    const clean: WikiPage = {...page}
+    const broken: WikiPage = {...page, frontmatterError: 'x', frontmatterErrorKind: 'invalid'}
+    expect([clean, broken]).toHaveLength(2)
+  })
+
+  it('rejects a page with an error and no kind, or a kind and no error', () => {
+    expectTypeOf<PageBase & {frontmatterError: string}>().not.toExtend<WikiPage>()
+    expectTypeOf<PageBase & {frontmatterErrorKind: WikiFrontmatterErrorKind}>().not.toExtend<WikiPage>()
+  })
+
+  it('gives the kind after an error check on a split result', () => {
+    const result = splitFrontmatter('---\ntype: topic\n')
+    if (result.error === undefined) throw new Error('the fixture block must be unclosed')
+    const kind: WikiFrontmatterErrorKind = result.errorKind
+    expect(kind).toBe('unclosed')
+  })
+
+  it('gives the kind after an error check on a page', () => {
+    const parsed = parseWikiPage(PATH, `---\n${BROKEN_YAML}\n---\n`)
+    if (parsed.frontmatterError === undefined) throw new Error('the fixture block must be invalid')
+    const kind: WikiFrontmatterErrorKind = parsed.frontmatterErrorKind
+    expect(kind).toBe('invalid')
+  })
+
+  it('keeps destructuring the pair in either order', () => {
+    const {error, errorKind} = splitFrontmatter('---\ntype: topic\n')
+    if (error === undefined) {
+      expect(errorKind).toBeUndefined()
+    } else {
+      const kind: WikiFrontmatterErrorKind = errorKind
+      expect(kind).toBe('unclosed')
     }
   })
 })

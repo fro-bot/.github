@@ -18,7 +18,22 @@ export type WikiPageType = 'repo' | 'topic' | 'entity' | 'comparison'
  */
 export type WikiFrontmatterErrorKind = 'unclosed' | 'invalid'
 
-export interface WikiPage {
+/**
+ * A page without a frontmatter error. Both fields are `undefined`, so a caller can destructure the pair or check
+ * either one.
+ */
+export interface WikiPageFrontmatterOk {
+  readonly frontmatterError?: undefined
+  readonly frontmatterErrorKind?: undefined
+}
+
+/** A page whose frontmatter could not be read: the error text always comes with its kind. */
+export interface WikiPageFrontmatterFailed {
+  readonly frontmatterError: string
+  readonly frontmatterErrorKind: WikiFrontmatterErrorKind
+}
+
+export type WikiPage = {
   readonly path: string
   readonly slug: string
   readonly title: string
@@ -27,18 +42,25 @@ export interface WikiPage {
   readonly tags: readonly string[]
   readonly body: string
   readonly frontmatter: Record<string, unknown>
-  readonly frontmatterError?: string
-  /** Set exactly when `frontmatterError` is. */
-  readonly frontmatterErrorKind?: WikiFrontmatterErrorKind
-}
+} & (WikiPageFrontmatterOk | WikiPageFrontmatterFailed)
 
-export interface SplitFrontmatterResult {
+/** A split without an error. Both fields are `undefined`, so a caller can destructure the pair. */
+export interface SplitFrontmatterOk {
   readonly frontmatter: Record<string, unknown>
   readonly body: string
-  readonly error?: string
-  /** Set exactly when `error` is. */
-  readonly errorKind?: WikiFrontmatterErrorKind
+  readonly error?: undefined
+  readonly errorKind?: undefined
 }
+
+/** A split of a block that could not be read: the error text always comes with its kind. */
+export interface SplitFrontmatterFailed {
+  readonly frontmatter: Record<string, unknown>
+  readonly body: string
+  readonly error: string
+  readonly errorKind: WikiFrontmatterErrorKind
+}
+
+export type SplitFrontmatterResult = SplitFrontmatterOk | SplitFrontmatterFailed
 
 /**
  * Split raw wiki page content into frontmatter and body.
@@ -178,7 +200,8 @@ export function findWikilinkSpans(content: string): WikilinkSpan[] {
 
 /** Parse a single wiki page's content (relative path + raw content) into a page record. */
 export function parseWikiPage(path: string, content: string): WikiPage {
-  const {frontmatter, body, error, errorKind} = splitFrontmatter(content)
+  const split = splitFrontmatter(content)
+  const {frontmatter, body} = split
   const slug = basename(path, '.md')
 
   return {
@@ -192,8 +215,10 @@ export function parseWikiPage(path: string, content: string): WikiPage {
       : [],
     body,
     frontmatter,
-    frontmatterError: error,
-    frontmatterErrorKind: errorKind,
+    // The keys are present with `undefined` when there is no error, as they always were.
+    ...(split.error === undefined
+      ? {frontmatterError: undefined, frontmatterErrorKind: undefined}
+      : {frontmatterError: split.error, frontmatterErrorKind: split.errorKind}),
   }
 }
 
