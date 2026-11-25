@@ -1,7 +1,7 @@
 ---
 title: "feat: make the daily report's attention list live and actionable"
 type: feat
-status: active
+status: complete
 date: 2026-11-08
 origin: docs/brainstorms/2026-11-08-actionable-attention-list-requirements.md
 ---
@@ -161,7 +161,7 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 
 **Verification:** the settings tests pass. After merge, the Update Repo Settings run creates the label.
 
-- [ ] **Unit 3: Live readback**
+- [x] **Unit 3: Live readback**
 
 **Goal:** Check the success criteria against the first ten reports after release.
 
@@ -190,6 +190,13 @@ See origin: `docs/brainstorms/2026-11-08-actionable-attention-list-requirements.
 - **Re-check.** #4227 dropped the Gateway delivery key as resolved, and #4169 dropped the uncovered-learning-backlog key.
 - **Public only.** The attention sections of the six reports link only `fro-bot/.github`, `fro-bot/agent` and `marcusrbrown/infra`, which are all public.
 - **Still owed.** Four more reports, and a report-by-report check that no item's key had resolved at publish time and that every item has an owner and a next action.
+
+**Readback over ten reports (2026-11-25):** #4163, #4169, #4182, #4200, #4216, #4227, #4249, #4274, #4285 and #4292.
+
+- **Owner and next action.** Every sampled item carries an owner, one next action, `first seen` and a `key:` line.
+- **Three consecutive reports.** Every key live on three reports in a row was linked or excluded: the Scorecard key to #4164, the survey-conflict key to #4226, the sandbox git-trust key to #4284; the Gateway, VPN-deploy and isolate-agent keys pointed at existing issues. No run opened more than two `attention-tracking` issues.
+- **Re-check at publish.** Spot-checked, not item by item: #4227 dropped the resolved Gateway key and #4274 the resolved promotion-leak key. No sampled item had resolved before its report.
+- **Public only.** No report names a private repository.
 
 ## System-Wide Impact
 

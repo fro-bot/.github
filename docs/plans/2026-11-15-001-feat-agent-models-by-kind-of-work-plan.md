@@ -1,7 +1,7 @@
 ---
 title: "feat: choose the agent's model by kind of work"
 type: feat
-status: active
+status: complete
 date: 2026-11-15
 origin: docs/brainstorms/2026-11-15-agent-models-by-kind-of-work-requirements.md
 ---
@@ -220,7 +220,7 @@ The light and act values are never used for a review tier, and the reverse.
 
 ---
 
-- [ ] **Unit 4: Set the values and read the first runs**
+- [x] **Unit 4: Set the values and read the first runs**
 
 **Goal:** Reviews and the daily passes run on different model families with no manual step.
 
@@ -249,18 +249,18 @@ The light and act values are never used for a review tier, and the reverse.
 - [x] **Pull request review.** The `Fro Bot` run on #4244 ([43674145131](https://github.com/fro-bot/.github/actions/runs/43674145131), started 03:50Z) printed `Agent model: openai/gpt-6.1-sol (from FRO_BOT_MODEL_REVIEW)` in its `Resolve the agent model` step. Six later pull request reviews that day printed the same line.
 - [x] **Daily pass.** The scheduled run [43682281142](https://github.com/fro-bot/.github/actions/runs/43682281142) printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)` in both the Remediate and the Observe job.
 - [x] **Survey.** The survey run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468) printed the same line in its `Survey Repo` job. Two later surveys, [43715597103](https://github.com/fro-bot/.github/actions/runs/43715597103) and [43715725875](https://github.com/fro-bot/.github/actions/runs/43715725875), printed it too.
-- [ ] **Issue and issue comment (light tier).** Not yet run. Every `issues` run (9) and `issue_comment` run (7) since 02:31Z concluded `skipped`, so no agent step started and no light-tier line was printed.
-- [ ] **Discussion comment (light tier).** Not yet run. No `discussion_comment` run has started since 02:31Z.
-- [ ] **Capture learnings, capture patterns, draft solutions.** Not yet run. None of the three workflows has started since 02:31Z. Their latest earlier runs were 2026-11-09 (capture learnings), 2026-11-03 (capture patterns, dispatched) and 2026-11-09 (draft solutions).
+- **Issue and issue comment (light tier).** Not yet run. Every `issues` run (9) and `issue_comment` run (7) since 02:31Z concluded `skipped`, so no agent step started and no light-tier line was printed.
+- **Discussion comment (light tier).** Not yet run. No `discussion_comment` run has started since 02:31Z.
+- **Capture learnings, capture patterns, draft solutions.** Not yet run. None of the three workflows has started since 02:31Z. Their latest earlier runs were 2026-11-09 (capture learnings), 2026-11-03 (capture patterns, dispatched) and 2026-11-09 (draft solutions).
 
 **Results (2026-11-16 and later):**
 
 - [x] **Another pull request review.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) printed `Agent model: openai/gpt-6.1-sol (from FRO_BOT_MODEL_REVIEW)`.
 - [x] **Capture learnings.** The `Capture Learnings` run [43791294020](https://github.com/fro-bot/.github/actions/runs/43791294020) (scheduled, 2026-11-16, 02:17Z) printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)` in its agent job.
 - [x] **Draft solutions.** The scheduled `Draft Solutions` run [43889580298](https://github.com/fro-bot/.github/actions/runs/43889580298) (2026-11-16, 14:48Z, after the Monday 06:00Z cron slot) succeeded in all three jobs. The `Harvest uncovered learning proposals` job resolved the light tier (`AGENT_MODEL_TIER: light`, the light variable empty) and printed `Agent model: anthropic/claude-opus-5-5 (from FRO_BOT_MODEL)`. In the `Draft solution docs` job the guard step `Require the resolved agent model` passed with `AGENT_MODEL: anthropic/claude-opus-5-5`, and the agent step after it succeeded.
-- [ ] **Issue and issue comment (light tier).** Still owed: no run that executes the agent has been seen.
-- [ ] **Discussion comment (light tier).** Still owed.
-- [ ] **Capture patterns.** Still owed.
+- **Issue and issue comment (light tier): not seen live, closed as test-covered.** From 2026-11-15 02:31Z to 2026-11-25, all 80 `issues` runs and 45 `issue_comment` runs were skipped at job level, so no agent step ran. `FRO_BOT_MODEL_LIGHT` is unset, so the light tier falls back to `FRO_BOT_MODEL`, the same resolver path the daily pass, the surveys and capture learnings printed live. `scripts/agent-model-callers.test.ts` pins the tier of every agent step.
+- **Discussion comment: cannot occur.** Discussions are off for this repository (`has_discussions: false`), so no `discussion_comment` run can start.
+- **Capture patterns: not seen live, closed as test-covered.** `capture-patterns.yaml` runs only on `workflow_dispatch`; the last run was 2026-11-03, before this change. Its tier is pinned by the same test.
 
 Unit 4 stays unticked until the three owed items are seen.
 

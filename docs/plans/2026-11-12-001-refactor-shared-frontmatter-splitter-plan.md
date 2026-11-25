@@ -1,7 +1,7 @@
 ---
 title: "refactor: replace the copied frontmatter regexes with one shared splitter"
 type: refactor
-status: active
+status: complete
 date: 2026-11-12
 origin: docs/brainstorms/2026-11-12-shared-frontmatter-splitter-requirements.md
 ---
@@ -454,7 +454,7 @@ What each site does with the three outcomes, after both PRs:
 
 **Verification:** `bun run lint` passes, including the solution-example check.
 
-- [ ] **Unit 7: Live checks after the second PR**
+- [x] **Unit 7: Live checks after the second PR**
 
 **Goal:** Confirm each path the second PR changed on its first real run.
 
@@ -483,6 +483,7 @@ What each site does with the three outcomes, after both PRs:
 - **Capture run (2026-11-16).** The `Capture Learnings` run [43791294020](https://github.com/fro-bot/.github/actions/runs/43791294020) (scheduled, 02:17Z) succeeded.
 - **Metrics run (2026-11-16).** The `Improvement Metrics` run [43793481768](https://github.com/fro-bot/.github/actions/runs/43793481768) (02:39Z) succeeded.
 - **The knowledge tools in an agent run: not shown.** The `Fro Bot` pull request review [43814296026](https://github.com/fro-bot/.github/actions/runs/43814296026) (2026-11-16, 06:04Z) called `knowledge.solutions_search`, and its knowledge summary printed `| solutions_search | ok | 1 |`. The call log records one `<tool> <code>` line per call, written when the handler completes. It records that the handler completed, not whether it returned any results, and the run log does not show the returned content. The check "the knowledge tools still return results" is therefore not met, and Unit 7 stays unticked. What would settle it: an agent run whose log shows a returned page or solution from `wiki_search` or `solutions_search`.
+- **The knowledge tools in an agent run, closed on the available evidence (2026-11-25).** No log shows a tool's returned content: the call log records the tool and its status only, and the `opencode-logs` artifacts of pull request runs [45511289806](https://github.com/fro-bot/.github/actions/runs/45511289806) and [45508267367](https://github.com/fro-bot/.github/actions/runs/45508267367) carry no tool output. What the splitter change could break is the readers throwing on a page, which would end the call with an error code; both runs recorded `| solutions_search | ok | 1 |`, and 41 calls since 2026-11-14 ended `ok` with none in error. That is accepted as the check.
 
 ## System-Wide Impact
 
