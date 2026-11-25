@@ -2,8 +2,11 @@
 type: topic
 title: OpenCode Plugin Development
 created: 2026-04-23
-updated: 2026-11-12
+updated: 2026-11-24
 sources:
+  - url: https://github.com/marcusrbrown/opencode-copilot-delegate/blob/b5f118679c955951dda14f3d007908ccbbac9bfd/.github/workflows/ci.yaml
+    sha: b5f118679c955951dda14f3d007908ccbbac9bfd
+    accessed: 2026-11-24
   - url: https://github.com/fro-bot/agent
     sha: a302de1ea783ada5c7d3855637f6814676bffb50
     accessed: 2026-11-12
@@ -136,6 +139,19 @@ tags: [opencode, plugin, sdk, subprocess, async, delegation, workflow, skills, a
 # OpenCode Plugin Development
 
 Patterns and conventions for building plugins for the [OpenCode](https://opencode.ai) agent framework.
+
+## 2026-11-24: one package, two host entries, a host-contract matrix
+
+[[marcusrbrown--opencode-copilot-delegate]] at `b5f11867` (v0.14.1) now has the evidence fields that the 2026-11-10 entry below found missing. Each one is a separate piece of evidence:
+
+- **Peer declaration:** `@opencode-ai/plugin >=1.14.41` and `@opencode/plugin >=2.3.2` are both declared, and both are marked optional in `peerDependenciesMeta`. The TUI stack (`@opentui/*`, `solid-js`) also moved from `dependencies` to optional peers. The host provides it, and the package does not bundle a copy that could conflict.
+- **Export shape:** the default export is one object `{ id, server, setup }`. v1 calls `server(input)` and v2 calls `setup(context)`. CI requires exactly that key set under Node 26. The previous check only confirmed a function-valued default.
+- **Registration without a host:** a CI smoke step calls `server()` with a v1-shaped stub and `setup()` with a fake v2 context (`tool.transform`/`reload`/`list`, `session.synthetic`). It requires each to register the four tools, renders each tool's `~standard` JSON schema, and calls the returned v2 cleanup.
+- **Real-host execution:** a `host-contract` matrix (`v1-floor`, `v1-current`, `v2`, pinned in `scripts/opencode-host-pins.json`) installs the packed tarball next to each host. It then drives the tools end to end against a replay shim, with no model and no credentials. A path filter skips the matrix on PRs that cannot affect it. An always-run aggregator reports success when the matrix passes or is skipped, so the required check stays honest.
+
+The README's per-host notification account is v1 `client.session.prompt` with `noReply`, and v2 `session.synthetic` with `resume`/`delivery: queue|steer`. On v2 the TUI half auto-loads from the server plugin list. Neither claim was checked against source here. The pattern worth copying is the separation, not the specific matrix: a floor pin, a current pin and each new host line get their own leg, and package-only smoke tests stay in a different job from host-executed contracts. Compare [[marcusrbrown--systematic]]'s Host Contract job, which the 2026-09-21 survey found binding only through `Release`'s `needs:`.
+
+Sources: [package.json](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/b5f118679c955951dda14f3d007908ccbbac9bfd/package.json), [README](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/b5f118679c955951dda14f3d007908ccbbac9bfd/README.md), [ci.yaml](https://github.com/marcusrbrown/opencode-copilot-delegate/blob/b5f118679c955951dda14f3d007908ccbbac9bfd/.github/workflows/ci.yaml). These are source declarations; I did not observe any CI run results.
 
 ## 2026-11-10: an unbounded v1 peer is not a v2 contract
 

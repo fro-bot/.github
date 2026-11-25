@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/containers
 created: 2026-04-18
-updated: 2026-10-27
+updated: 2026-11-24
 sources:
   - url: https://github.com/marcusrbrown/containers
     sha: e582f856844ac1dd52fc8739f1a9aa8398248e6e
@@ -67,6 +67,8 @@ node_id: MDEwOlJlcG9zaXRvcnk3Njg3NTEzMg==
 # marcusrbrown/containers
 
 A container development ecosystem with curated Dockerfiles, Python automation scripts, AI-powered template intelligence, and comprehensive CI/CD for multi-architecture builds. The oldest repo in Marcus's public portfolio (created 2016-12-19), still actively maintained.
+
+Current state (2026-11-24, `main` at `faf07966`): `fro-bot.yaml` pins `fro-bot/agent` v0.147.1 with `isolate-agent: true` and checkout `persist-credentials: false`; `docker/login-action` is v4.8.0. The fro-bot PRs #723 (JSON-form `HEALTHCHECK`), #740 (yamllint now also ignores `.github/workflows/*.yaml`) and #744 (openai 3.x) have merged.
 
 ## Overview
 
@@ -135,7 +137,7 @@ Non-entrypoint scripts (internal use only):
 | `documentation_ai.py` | AI-enhanced documentation generation (613 LOC) |
 | `predictive_maintenance.py` | SQLite-backed usage analytics, template health monitoring, proactive issue detection (987 LOC) |
 
-Runtime dependencies: `openai` (>=2.54.0,<2.55.0, as of 2026-08-30), `anthropic` (>=0.30.0,<1.0.0), `jinja2`, `pyyaml`, `jsonschema`, `requests`, `urllib3 >=2.7.0` (security floor). Both AI SDK majors are pending in open PRs — `openai` 3.x (#744) and `anthropic` v1 (#758) — see the 2026-08-30 delta.
+Runtime dependencies: `openai` (>=3.0.0,<4.0.0, since #744 merged), `anthropic` (>=0.30.0,<1.0.0), `jinja2`, `pyyaml`, `jsonschema`, `requests`, `urllib3 >=2.8.0` (security floor). The `anthropic` v1 major was pending in open PR #758 as of the 2026-08-30 delta.
 
 #### AI Subsystem Architecture
 
@@ -165,7 +167,7 @@ This closes the gap where `ai_config.yaml` had to be created manually from triba
 
 ### Node.js Layer
 
-Minimal — only Prettier formatting via `@bfra.me/prettier-config/120-proof`. Managed by pnpm 10.34.1.
+Minimal — only Prettier formatting via `@bfra.me/prettier-config/120-proof`. Managed by pnpm 11.28.6 (pinned in `mise.toml`).
 
 ## Dockerfile Patterns
 
@@ -258,7 +260,7 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 
 - **PR Review:** Container-specific review prompt focusing on Dockerfile best practices, multi-arch correctness, Python quality, Actions security, and breaking changes. Structured verdict format (PASS/CONDITIONAL/REJECT). Black/isort/Prettier style nits explicitly excluded.
 - **Daily Schedule (14:30 UTC):** Autohealing routine — fixes errored PRs, addresses security alerts, updates major dependency versions, ensures linting consistency. Manages a single perpetual "Daily Autohealing Report" issue instead of creating new daily issues.
-- **Auth:** `FRO_BOT_PAT` secret, `OPENCODE_AUTH_JSON`, model from `FRO_BOT_MODEL` var, plus `OMO_PROVIDERS` and `OPENCODE_CONFIG` secrets _(`OMO_PROVIDERS`/`OPENCODE_CONFIG` added 2026-04-17)_.
+- **Auth:** `FRO_BOT_PAT` secret, `OPENCODE_AUTH_JSON`, model from `FRO_BOT_MODEL` var, plus the `OPENCODE_CONFIG` secret _(`OMO_PROVIDERS`/`OPENCODE_CONFIG` added 2026-04-17; the `omo-providers` input was removed in #833)_.
 - **Concurrency:** per-issue/PR/discussion, no cancellation of in-progress runs.
 - **Filters:** Skips bot-authored PRs/issues, requires `@fro-bot` mention for comments (OWNER/MEMBER/COLLABORATOR only).
 - **AGENTS.md present** at repo root, `.github/workflows/AGENTS.md`, and `scripts/AGENTS.md` — comprehensive agent guidance for Dockerfile style, Python patterns, YAML style, GitHub Actions pinning, and anti-patterns.
@@ -268,13 +270,13 @@ All GitHub Actions are SHA-pinned with version comments. Key actions (as of 2026
 - **Poetry:** Build system (`poetry-core>=2.0.0,<3.0.0`), dev deps include `pytest ^9.0`, `pytest-cov ^7.0`, `pytest-mock ^3.0`, `black >=26.3.1`, `isort ^8.0`, `pylint ^4.0`, `yamllint ^1.0`.
 - **Black:** line-length 88, target Python 3.13, excludes `templates/`.
 - **isort:** Black-compatible profile.
-- **Prettier:** `@bfra.me/prettier-config/120-proof` via pnpm 10.34.1.
+- **Prettier:** `@bfra.me/prettier-config/120-proof` via pnpm 11.28.6.
 - **Pre-commit:** Run via CI, includes all Python and Dockerfile linting.
 - **Hadolint:** Dockerfile linting with SARIF output.
 - **Renovate:** Extends `marcusrbrown/renovate-config#5.2.0` _(corrected 2026-08-30 — this line previously read `#4.5.0`, stale since the v4 → v5 crossing on 2026-05-20; the delta sections have carried `#5.2.0` since. Note the repo is now a **`#5.2.x` holdout** — the fleet median has moved to `#5.2.12`.)_ Ignores `templates/`, constrains Python to `>=3.13,<3.14`, disables lockfile maintenance and patch updates (except TypeScript and Python), pins `aquasecurity/trivy-action` to `github-releases` versioning. Per-manager `postUpgradeTasks` (#690): poetry → `poetry lock`; npm → `pnpm install` + `pnpm format`. Rebase when behind base branch.
 - **Probot Settings:** Extends `fro-bot/.github:common-settings.yaml`.
 - **DevContainer:** Docker-in-Docker setup with mise tool management.
-- **mise:** Polyglot tool version manager. Pinned: Node.js **24.20.0**, pnpm **11.24.0** _(up from 24.18.0 / 11.17.0, 2026-08-30)_, Poetry latest, pre-commit latest, Python 3.13. Venv auto-created at `.venv`. _(pnpm crossed the v10 → v11 major boundary via security PRs #670/#671, 2026-06-27.)_
+- **mise:** Polyglot tool version manager. Pinned: Node.js **24.22.1**, pnpm **11.28.6**, Poetry latest, pre-commit latest, Python 3.13. Venv auto-created at `.venv`. _(pnpm crossed the v10 → v11 major boundary via security PRs #670/#671, 2026-06-27.)_
 - **Tests:** `tests/test_dockerfile_policy.py` — Dockerfile policy validation. Known issue: policy tests intentionally fail against current state (tracking issue). Foundational pytest coverage for AI, template engine, CLI, and predictive-maintenance modules landed via PR #583 (merged 2026-06-14); `pyproject.toml` now enforces a `--cov-fail-under=35` gate with branch coverage scoped to `scripts.ai_core`, `scripts.template_engine`, `scripts.containers_cli`, and `scripts.predictive_maintenance`.
 
 ## Notable Patterns
