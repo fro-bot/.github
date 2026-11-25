@@ -198,6 +198,8 @@ export type WikiIngestErrorCode =
   | 'MISSING_TOKEN'
   | 'OCTOKIT_LOAD_FAILED'
   | 'CONFLICT_EXHAUSTED'
+  | 'SERVER_ERROR_EXHAUSTED'
+  | 'SERVER_ERROR_UNCONFIRMED'
   | 'HANDOFF_BASE_INVALID'
   | 'HANDOFF_PAGE_CHANGED'
   | 'ARCHIVE_NOTICE_MISSING'
@@ -407,7 +409,10 @@ function collectWikiFrontmatter(files: Record<string, string>): Map<string, Wiki
  * in that attempt from the tree the files were derived from (`baseCommitSha`, or the first head read
  * when it is omitted), another writer changed it, so the write fails with `CONFLICT_EXHAUSTED` and
  * nothing is written. A ref race (`updateRef` 409, or 422 not-a-fast-forward) re-reads the head and
- * replays the same files on it, up to `maxRetries` attempts, under the same guard.
+ * replays the same files on it, up to `maxRetries` attempts, under the same guard. A GitHub server error
+ * (HTTP 500, 502, 503 or 504) from a call before the ref update is retried the same way, after a
+ * backoff, and exhausts into `SERVER_ERROR_EXHAUSTED`; the response body is never kept. A server error from
+ * the ref update itself may hide a write that landed, so it stops at once with `SERVER_ERROR_UNCONFIRMED`.
  *
  * With `handoff`, the handed-off paths are checked first on every attempt against the agent's data
  * commit (`HANDOFF_PAGE_CHANGED`), so a page conflict is never reported as a ref race.
@@ -449,21 +454,28 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
 
   // The tree the write set was derived from, once resolved (see `CommitWikiChangesParams.baseCommitSha`).
   let baseTreeSha: string | undefined
+  // Without `baseCommitSha`, the first head read is the base. It is pinned the moment that read succeeds, ahead
+  // of every call that can fail, so a retry never adopts a head another writer advanced to during the backoff.
+  let pinnedBaseCommitSha = params.baseCommitSha
 
   for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     // Only an `updateRef` 422 is a ref race ("not a fast forward": the branch moved after this attempt
     // read its tip). A 422 from createBlob, createTree or createCommit is a bad request and stays terminal.
     let updatingRef = false
+    // The commit the ref update points at, kept for the unconfirmed-write diagnostic.
+    let attemptedCommitSha = ''
     try {
       await assertWritableWikiBranch(octokit, owner, repo, branch)
 
       const head = await octokit.rest.git.getRef({owner, repo, ref: `heads/${branch}`})
+      pinnedBaseCommitSha ??= head.data.object.sha
       const commit = await octokit.rest.git.getCommit({owner, repo, commit_sha: head.data.object.sha})
-      // Resolved on the first attempt and reused: the base must not move while the write retries.
+      // Resolved once and reused: the base must not move while the write retries. The head is its own base
+      // only on the attempt that pinned it; a later attempt reads the pinned commit's tree.
       baseTreeSha ??=
-        params.baseCommitSha === undefined
+        params.baseCommitSha === undefined && pinnedBaseCommitSha === head.data.object.sha
           ? commit.data.tree.sha
-          : await readCommitTreeSha(octokit, owner, repo, params.baseCommitSha)
+          : await readCommitTreeSha(octokit, owner, repo, pinnedBaseCommitSha)
       // Ahead of every conflict guard: a target archived on this head is not written, whatever else moved.
       if (
         params.targetNodeId !== undefined &&
@@ -538,6 +550,7 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
         parents: [commit.data.sha],
       })
 
+      attemptedCommitSha = createdCommit.data.sha
       updatingRef = true
       await octokit.rest.git.updateRef({
         owner,
@@ -552,6 +565,30 @@ export async function commitWikiChanges(params: CommitWikiChangesParams): Promis
       if (shouldBootstrapDataBranch && isApiErrorStatus(error, 404) && attempt < maxRetries) {
         await bootstrapDataBranch()
         continue
+      }
+
+      const serverErrorStatus = serverErrorStatusOf(error)
+      if (serverErrorStatus !== undefined) {
+        // The status only: the error's message is GitHub's HTML error page and must never reach a log.
+        if (updatingRef) {
+          // The ref update was sent, so the commit may have landed: neither retry nor guess.
+          throw new WikiIngestError({
+            code: 'SERVER_ERROR_UNCONFIRMED',
+            message: `wiki ingest could not confirm whether its commit ${attemptedCommitSha} reached ${owner}/${repo}@${branch}: GitHub answered the ref update with a server error (HTTP ${serverErrorStatus})`,
+            remediation: `The commit may have landed. Check whether ${attemptedCommitSha} is reachable from the data branch head before re-running; a re-run would see it as a conflict.`,
+          })
+        }
+
+        if (attempt < maxRetries) {
+          await delayConflictRetry(attempt)
+          continue
+        }
+
+        throw new WikiIngestError({
+          code: 'SERVER_ERROR_EXHAUSTED',
+          message: `wiki ingest exhausted ${maxRetries} attempt(s) writing ${owner}/${repo}@${branch}: GitHub answered with a server error (HTTP ${serverErrorStatus})`,
+          remediation: 'GitHub was failing on every attempt. Re-run the workflow once GitHub has recovered.',
+        })
       }
 
       const refRace = isConflictError(error) || (updatingRef && isApiErrorStatus(error, 422))
@@ -1604,6 +1641,14 @@ function isWikiPageType(value: unknown): value is WikiPageType {
 
 function isConflictError(error: unknown): boolean {
   return isRecord(error) && error.status === 409
+}
+
+const SERVER_ERROR_STATUSES: readonly number[] = [500, 502, 503, 504]
+
+/** The status of a GitHub server error worth retrying (500, 502, 503, 504), else `undefined`. */
+function serverErrorStatusOf(error: unknown): number | undefined {
+  if (!isRecord(error) || typeof error.status !== 'number') return undefined
+  return SERVER_ERROR_STATUSES.includes(error.status) ? error.status : undefined
 }
 
 function isApiErrorStatus(error: unknown, status: number): boolean {
