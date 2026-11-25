@@ -239,7 +239,12 @@ env:
     <!-- fro-bot:cross-repo-result:end -->
 
     Receipt rules the worker follows:
-    - `status` is exactly one of `success`, `noop`, or `failed` — nothing else.
+    - `status` is exactly one of `success`, `noop`, `failed`, `declined` or
+      `countered` — nothing else.
+    - `declined` means the worker will not do the ask; the reason goes in
+      `summary`. `countered` means it proposes a different change; the
+      proposal goes in `summary`. A worker posts either before doing any
+      work, and neither completes the item.
     - A receipt is MANDATORY even when the outcome is a no-op; a missing
       receipt reads as a failure to report, not as success.
     - Before finishing, the worker echoes the coordination issue it resolved

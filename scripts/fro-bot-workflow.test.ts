@@ -13,6 +13,7 @@ import {mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:fs'
 import {tmpdir} from 'node:os'
 import {join, resolve} from 'node:path'
 import process from 'node:process'
+import {buildDispatchPrompt} from '@fro-bot/dispatch/dispatch-plan'
 import {evaluateExpression, evaluateExpressionValue} from '@fro-bot/test-kit/workflow-expression'
 import {describe, expect, it} from 'vitest'
 import {parse} from 'yaml'
@@ -2470,5 +2471,39 @@ describe('fro-bot.yaml archived repositories in the daily pass', () => {
       expect(remediateIntro).toContain('Never commit to knowledge/wiki/**')
       expect(remediateIntro).toContain('metadata/*.yaml')
     })
+  })
+})
+
+describe('fro-bot.yaml goal decomposition prompt: the worker receipt contract names every status', () => {
+  const prompt = flat((froBotParsed.env as Record<string, string>).GOAL_DECOMPOSITION_PROMPT ?? '')
+  const dispatchPrompt = flat(
+    buildDispatchPrompt({
+      itemPrompt: 'x',
+      correlationId: 'c',
+      rawNonce: 'n',
+      coordinationIssue: {owner: 'fro-bot', repo: '.github', number: 1},
+    }),
+  )
+
+  it('lists exactly the five statuses the receipt parser accepts', () => {
+    expect(prompt).toContain(
+      '`status` is exactly one of `success`, `noop`, `failed`, `declined` or `countered` — nothing else.',
+    )
+    expect(prompt).not.toContain('exactly one of `success`, `noop`, or `failed`')
+  })
+
+  it('says what declined and countered mean, where the reason goes, and that either comes before any work', () => {
+    expect(prompt).toContain(
+      '`declined` means the worker will not do the ask; the reason goes in `summary`. `countered` means it proposes a different change; the proposal goes in `summary`.',
+    )
+    expect(prompt).toContain('A worker posts either before doing any work, and neither completes the item.')
+  })
+
+  it('agrees with the prompt the dispatcher sends the worker on the same two statuses', () => {
+    for (const status of ['declined', 'countered']) {
+      expect(prompt, status).toContain(`\`${status}\``)
+      expect(dispatchPrompt, status).toContain(`status \`${status}\``)
+    }
+    expect(dispatchPrompt).toContain('before doing any work')
   })
 })
