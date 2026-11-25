@@ -608,7 +608,9 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
   })
 
   it('closes only fro-bot-authored attention-tracking issues, on affirmative evidence per key type', () => {
-    expect(output).toContain('review each open issue labeled `attention-tracking` and authored by `fro-bot`')
+    expect(output).toContain(
+      'review each open issue in `fro-bot/.github` labeled `attention-tracking` and authored by `fro-bot`',
+    )
     expect(output).toContain('only on affirmative evidence that its problem is resolved')
     expect(output).toContain('for an issue or PR key, it is closed or merged')
     expect(output).toContain('for a Project item key, its Status is Done (a removed item is not resolution')
@@ -630,9 +632,56 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
 
     it('reviews only open attention-tracking issues authored by fro-bot, before the report is created', () => {
       expect(closeDuty).toContain(
-        "On every run, before you create today's report, review each open issue labeled `attention-tracking` and authored by `fro-bot`; touch no other issue",
+        "On every run, before you create today's report, review each open issue in `fro-bot/.github` labeled `attention-tracking` and authored by `fro-bot`",
       )
+      expect(closeDuty).toContain('touch no other issue')
       expect(closeDuty).toContain('because the report states the result')
+    })
+
+    it('scopes the review to fro-bot/.github, because a bare issue number resolves against the current repository', () => {
+      expect(closeDuty).toContain(
+        '`gh issue list --repo fro-bot/.github --label attention-tracking --author fro-bot --state open --json url,number,title`',
+      )
+      expect(closeDuty).toContain('no issue in another repository')
+    })
+
+    it('binds every comment, edit and close to the verified issue URL, never a bare number', () => {
+      expect(closeDuty).toContain(
+        'Bind every write to the issue that passed the checks: take its URL from the list and pass that URL, never a bare number, to every `gh issue comment`, `gh issue edit` and `gh issue close`',
+      )
+      expect(closeDuty).not.toContain('<number>')
+    })
+
+    it('re-reads the URL immediately before writing and writes nothing if any check fails', () => {
+      expect(closeDuty).toContain(
+        'Immediately before the first write, re-read that URL with `gh issue view <url> --json url,state,author,labels`',
+      )
+      expect(closeDuty).toContain(
+        'confirm it is still an open issue in `fro-bot/.github` (the URL path has `/issues/`, not `/pull/`), authored by `fro-bot` and labeled `attention-tracking`',
+      )
+      expect(closeDuty).toContain('if any check fails, write nothing and keep the item')
+    })
+
+    it('requires branch-specific evidence for a path that has not yet run, and keeps the issue open when runs cannot tell branches apart', () => {
+      expect(closeDuty).toContain('a run that exercised that path and succeeded, on a revision that contains the path')
+      expect(closeDuty).toContain(
+        'When several branches lead to the same job or workflow, a successful run of that job or workflow is not enough',
+      )
+      expect(closeDuty).toContain(
+        "require a signal specific to the branch in the run's logs or outputs, such as the exact error code or log line the issue names",
+      )
+      expect(closeDuty).toContain(
+        "read it from the step's output, not from the echoed script (`gh run view <run-id> --log-failed`)",
+      )
+      expect(closeDuty).toContain(
+        'If the run data cannot tell the branches apart, leave the issue open and keep its item',
+      )
+    })
+
+    it('searches past runs for the branch signal rather than forcing a failure', () => {
+      expect(closeDuty).toContain(
+        "list the jobs of past runs (`gh run view <run-id> --json jobs`) and search the failed steps' output for that signal",
+      )
     })
 
     it('closes on repository state it reads itself, across the evidence kinds the operator closes on by hand', () => {
@@ -658,16 +707,25 @@ describe('fro-bot.yaml observe prompt: live, actionable Needs Human Attention li
       expect(closeDuty).toContain('If the evidence is not conclusive, leave the issue open and keep its item')
     })
 
-    it('closes with a short comment that links the evidence, falling back to the body, and drops the item', () => {
-      expect(closeDuty).toContain('Close it with `gh issue close <number> --comment "<text>"`')
+    it('comments first, then closes, with a short comment that links the evidence, and drops the item', () => {
+      expect(closeDuty).toContain('Post the comment first with `gh issue comment <url> --body "<text>"`')
+      expect(closeDuty).toContain('Then close it with `gh issue close <url>`')
       expect(closeDuty).toContain(
         'one or two sentences that say what resolved and link the evidence (the merged PR, the commit, the run or the issue), with no instructions and no text addressed to an agent',
       )
       expect(closeDuty).toContain(
-        'If the comment cannot be posted, edit the issue body with the same sentences, then close it',
+        'If the comment cannot be posted, edit the issue body with `gh issue edit <url>` using the same sentences, then close it',
       )
       expect(closeDuty).toContain("Drop the closed issue's item from the report")
       expect(output).not.toContain('editing the issue body, not in a comment')
+    })
+
+    it('does not repost or move the evidence when the comment posted and the close failed', () => {
+      expect(closeDuty).toContain(
+        'If the comment posted and the close fails, do not post the evidence again and do not move it to the body',
+      )
+      expect(closeDuty).toContain('re-read the issue URL and count it closed only if it is closed')
+      expect(closeDuty).toContain('otherwise count it kept open and say "close failed" in its item')
     })
 
     it('links only evidence from confirmed-public repositories in the comment', () => {
