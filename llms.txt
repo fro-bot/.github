@@ -90,7 +90,7 @@ The codebase runs its TypeScript scripts on Bun (no build step) and manages pack
 
 - [Bun configuration](bunfig.toml): install settings (hoisted layout, exact versions, 3-day release-age floor)
 - [Cache management](/.github/workflows/manage-cache.yaml): CI cache maintenance
-- [Issue management](/.github/workflows/manage-issues.yaml): auto-close of daily report issues after 3 days
+- [Issue management](/.github/workflows/manage-issues.yaml): stale and lock of inactive issues and pull requests (the daily Fro Bot run closes the previous report)
 - [Apply Branding](/.github/workflows/apply-branding.yaml): applies shared brand assets to downstream repos
 - [Copilot setup steps](/.github/workflows/copilot-setup-steps.yaml): environment preparation for GitHub Copilot coding agent
 - [Update Repo Settings](/.github/workflows/update-repo-settings.yaml): applies `.github/settings.yml` via Probot
