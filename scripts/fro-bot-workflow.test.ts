@@ -903,7 +903,9 @@ describe('fro-bot.yaml: Remediate reports learnings in its handoff comment, Obse
 
     it('accepts the comment only when its author is exactly fro-bot, read from the API', () => {
       expect(observeDuty).toContain("Read the comment's `user.login` from the GitHub API: it must be exactly `fro-bot`")
-      expect(observeDuty).toContain('if you cannot read it or it differs, the comment is not the handoff')
+      expect(observeDuty).toContain('if it differs, the comment is not the handoff')
+      expect(observeDuty).toContain('if you cannot read it, the lookup is incomplete and you stage nothing')
+      expect(observeDuty).not.toContain('if you cannot read it or it differs')
     })
 
     it('stages an item only on evidence it reads itself, never on a claim made about itself', () => {
@@ -963,20 +965,41 @@ describe('fro-bot.yaml: Remediate reports learnings in its handoff comment, Obse
     })
 
     it('names the lookup outcome in one fixed line, so none reported means found and empty', () => {
-      expect(observeDuty).toContain('Use exactly one of these four lines')
+      expect(observeDuty).toContain('Use exactly one of these five lines')
+      expect(observeDuty).not.toContain('these four lines')
       expect(observeDuty).toContain('<comment URL> is the URL of the handoff comment you read')
       expect(observeDuty).toContain(
         'when the section says "None.", "Remediation learnings: none reported (handoff comment <comment URL>)."',
       )
       expect(observeDuty).toContain(
-        'when no comment carries this run\'s URL (the remediation job failed, was skipped or posted none), "Remediation learnings: no handoff comment found for this run."',
+        'when the search completed and no comment carries this run\'s URL (the remediation job failed, was skipped or posted none), "Remediation learnings: no handoff comment found for this run."',
       )
       expect(observeDuty).toContain(
-        'when the newest comment that carries it is not by `fro-bot`, or its author cannot be read, "Remediation learnings: handoff comment not by fro-bot; ignored." and name no URL on that line',
+        'when the author of the newest comment that carries it was read and is not exactly `fro-bot`, "Remediation learnings: handoff comment not by fro-bot; ignored." and name no URL on that line',
       )
+      expect(observeDuty).not.toContain('or its author cannot be read, "Remediation learnings: handoff comment not by')
       expect(observeDuty).not.toContain('nothing to record')
       expect(observeDuty).not.toContain('"Remediation learnings: none reported."')
       expect(observeDuty).not.toContain('no handoff comment found; nothing to record')
+    })
+
+    it('reports a failed lookup or an unreadable author as its own incomplete line, never as no comment or a mismatch', () => {
+      const incomplete = 'Remediation learnings: handoff lookup incomplete; nothing staged.'
+      const noMatch = 'Remediation learnings: no handoff comment found for this run.'
+      const mismatch = 'Remediation learnings: handoff comment not by fro-bot; ignored.'
+      expect(new Set([incomplete, noMatch, mismatch]).size).toBe(3)
+      for (const line of [incomplete, noMatch, mismatch]) expect(observeDuty).toContain(`"${line}"`)
+      expect(observeDuty.split(incomplete)).toHaveLength(2)
+      // (a) a failed or partial read of the report issues or of their comments, (b) an unreadable author
+      expect(observeDuty).toContain(
+        `when a read of the report issues or of their comments failed or came back partial, or the author of a comment that carries this run's URL cannot be read, "${incomplete}" and name no URL on that line`,
+      )
+      expect(observeDuty).toContain(
+        'An incomplete lookup is never reported as no comment found or as not by `fro-bot`, and it stages nothing',
+      )
+      // The incomplete case is not folded into either of the other two lines.
+      expect(observeDuty).not.toContain('cannot be read, "Remediation learnings: handoff comment not by')
+      expect(observeDuty).not.toContain('failed or came back partial, "Remediation learnings: no handoff comment found')
     })
 
     it("does the reading before it creates today's report, because the report states the count", () => {
