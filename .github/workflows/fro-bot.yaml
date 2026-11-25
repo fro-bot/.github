@@ -98,8 +98,7 @@ on:
         required: false
       FRO_BOT_TRACE_TOKEN:
         description: >-
-          Bare trc_ token for the run-tracing collector (optional; when it is not passed the Action sends spans with an
-          empty bearer credential and the collector refuses them)
+          Bare trc_ token for the run-tracing collector (optional; when it is not passed, tracing is off for the run)
         required: false
 
 permissions:
