@@ -5,7 +5,7 @@
  * The texts are pinned here byte for byte: they are what wiki lint prints and what the dashboard shows. The kind is
  * present exactly when the error is.
  */
-import {describe, expect, it} from 'vitest'
+import {describe, expect, expectTypeOf, it} from 'vitest'
 import {parse} from 'yaml'
 
 import {
@@ -72,6 +72,8 @@ describe('splitFrontmatter: the kind of a frontmatter error', () => {
   ])('has no error and no kind for %s', (_name, content) => {
     const result = splitFrontmatter(content)
     expect(Object.keys(result)).toStrictEqual(['frontmatter', 'body'])
+    expect(Object.hasOwn(result, 'error')).toBe(false)
+    expect(Object.hasOwn(result, 'errorKind')).toBe(false)
     expect(result.errorKind).toBeUndefined()
   })
 })
@@ -97,6 +99,9 @@ describe('parseWikiPage and collectWikiPages: the kind of a frontmatter error', 
     const page = parseWikiPage(PATH, content)
     expect(page.frontmatterError).toBeUndefined()
     expect(page.frontmatterErrorKind).toBeUndefined()
+    // Both keys are own properties holding `undefined`, as before the union.
+    expect(Object.hasOwn(page, 'frontmatterError')).toBe(true)
+    expect(Object.hasOwn(page, 'frontmatterErrorKind')).toBe(true)
   })
 
   it('carries each page its own kind through collectWikiPages', () => {
@@ -133,11 +138,18 @@ describe('parseWikiPage and collectWikiPages: the kind of a frontmatter error', 
 
 /**
  * The error text and its kind are one fact, so the types forbid one without the other. These are compile-time
- * proofs: each `@ts-expect-error` fails the type check when the line below it starts to compile, and the narrowing
- * helpers fail it when `errorKind` stops being a `WikiFrontmatterErrorKind` after an error check.
+ * proofs checked by `bun run check-types`: each `.not.toExtend` names the exact shape that must stay unassignable,
+ * so an unrelated error on the line cannot satisfy it the way a `@ts-expect-error` directive would. The narrowing
+ * helpers fail the type check when `errorKind` stops being a `WikiFrontmatterErrorKind` after an error check.
  */
 describe('the error text and its kind cannot be set apart', () => {
-  const page: Omit<WikiPage, 'frontmatterError' | 'frontmatterErrorKind'> = {
+  interface SplitBase {
+    frontmatter: Record<string, unknown>
+    body: string
+  }
+  type PageBase = Omit<WikiPage, 'frontmatterError' | 'frontmatterErrorKind'>
+
+  const page: PageBase = {
     path: PATH,
     slug: 'a',
     title: 'A',
@@ -148,24 +160,32 @@ describe('the error text and its kind cannot be set apart', () => {
     frontmatter: {},
   }
 
-  it('rejects a split result with an error and no kind, or a kind and no error', () => {
+  it('accepts a split result with both fields or neither', () => {
+    expectTypeOf<SplitBase>().toExtend<SplitFrontmatterResult>()
+    expectTypeOf<SplitBase & {error: string; errorKind: WikiFrontmatterErrorKind}>().toExtend<SplitFrontmatterResult>()
     const clean: SplitFrontmatterResult = {frontmatter: {}, body: ''}
     const broken: SplitFrontmatterResult = {frontmatter: {}, body: '', error: 'x', errorKind: 'unclosed'}
-    // @ts-expect-error an error text needs its kind
-    const noKind: SplitFrontmatterResult = {frontmatter: {}, body: '', error: 'x'}
-    // @ts-expect-error a kind needs its error text
-    const noError: SplitFrontmatterResult = {frontmatter: {}, body: '', errorKind: 'unclosed'}
-    expect([clean, broken, noKind, noError]).toHaveLength(4)
+    expect([clean, broken]).toHaveLength(2)
+  })
+
+  it('rejects a split result with an error and no kind, or a kind and no error', () => {
+    expectTypeOf<SplitBase & {error: string}>().not.toExtend<SplitFrontmatterResult>()
+    expectTypeOf<SplitBase & {errorKind: WikiFrontmatterErrorKind}>().not.toExtend<SplitFrontmatterResult>()
+  })
+
+  it('accepts a page with both fields or neither', () => {
+    expectTypeOf<PageBase>().toExtend<WikiPage>()
+    expectTypeOf<
+      PageBase & {frontmatterError: string; frontmatterErrorKind: WikiFrontmatterErrorKind}
+    >().toExtend<WikiPage>()
+    const clean: WikiPage = {...page}
+    const broken: WikiPage = {...page, frontmatterError: 'x', frontmatterErrorKind: 'invalid'}
+    expect([clean, broken]).toHaveLength(2)
   })
 
   it('rejects a page with an error and no kind, or a kind and no error', () => {
-    const clean: WikiPage = {...page}
-    const broken: WikiPage = {...page, frontmatterError: 'x', frontmatterErrorKind: 'invalid'}
-    // @ts-expect-error an error text needs its kind
-    const noKind: WikiPage = {...page, frontmatterError: 'x'}
-    // @ts-expect-error a kind needs its error text
-    const noError: WikiPage = {...page, frontmatterErrorKind: 'invalid'}
-    expect([clean, broken, noKind, noError]).toHaveLength(4)
+    expectTypeOf<PageBase & {frontmatterError: string}>().not.toExtend<WikiPage>()
+    expectTypeOf<PageBase & {frontmatterErrorKind: WikiFrontmatterErrorKind}>().not.toExtend<WikiPage>()
   })
 
   it('gives the kind after an error check on a split result', () => {
