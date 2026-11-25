@@ -227,14 +227,6 @@ const EXPECTED_ROWS: readonly Row[] = [
     kind: 'repo',
     permissions: {actions: 'write'},
   },
-  // close-automated-reports: `gh issue list` / `gh issue close --comment`.
-  {
-    file: 'manage-issues.yaml',
-    job: 'close-automated-reports',
-    id: 'get-workflow-app-token',
-    kind: 'repo',
-    permissions: {issues: 'write'},
-  },
   // actions/stale without delete-branch: no contents write.
   {
     file: 'manage-issues.yaml',
@@ -386,7 +378,7 @@ const OWNER_WIDE_WRITE_ALLOWED: readonly {readonly key: string; readonly owner: 
 ]
 
 /** Row count and file count the scan must cover; a refactor that stops matching mints fails loudly. */
-const EXPECTED_ROW_COUNT = 35
+const EXPECTED_ROW_COUNT = 34
 const EXPECTED_MINT_FILE_COUNT = 18
 /** Mint census floor: the tree must never scan fewer. Lower it only when a mint is deliberately deleted. */
 const MINT_CENSUS_FLOOR = 31
