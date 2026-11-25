@@ -59,7 +59,9 @@ Earlier ideation (`docs/ideation/2026-09-04-open-ideation.md`) recorded the reje
 
 ### 7. Search recorded decisions
 
-**Description:** Add a knowledge tool over the dispositions recorded in plans, brainstorms and ideation documents, so an agent can ask whether an idea was rejected and why. **Warrant:** `reasoned:` This ideation needed a separate learnings lane to avoid re-proposing rejected ideas, and `packages/wiki-ops/src/knowledge-mcp.ts` searches only solutions. **Rationale:** Recorded decisions would build on each other instead of being rediscovered. **Downsides:** Demand is unknown. Wait until the call-log summaries show that agents use the existing tools. **Confidence:** 45% **Complexity:** Low **Status:** Unexplored
+**Description:** Add a knowledge tool over the dispositions recorded in plans, brainstorms and ideation documents, so an agent can ask whether an idea was rejected and why. **Warrant:** `reasoned:` This ideation needed a separate learnings lane to avoid re-proposing rejected ideas, and `packages/wiki-ops/src/knowledge-mcp.ts` searches only solutions. **Rationale:** Recorded decisions would build on each other instead of being rediscovered. **Downsides:** Demand is unknown. Wait until the call-log summaries show that agents use the existing tools. **Confidence:** 45% **Complexity:** Low **Status:** Explored
+
+**Outcome:** Not built for now. In the 11 days of Fro Bot reviews from 2026-11-14, no review re-proposed a rejected item. The 8 citations of plan, brainstorm or ideation documents were all on pull requests about those plans, and `docs/solutions/` was cited about three times as often. Brainstorms carry no status field and plans carry no `last_updated`, so a search would return superseded documents as live decisions. Revisit after the knowledge-tool count due 2026-11-28 (`docs/plans/2026-11-14-001-feat-wiki-index-for-daily-passes-plan.md`, Unit 5).
 
 ## Rejection Summary
 
