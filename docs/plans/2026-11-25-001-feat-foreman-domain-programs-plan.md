@@ -125,27 +125,29 @@ All four repositories pin agent v0.148.0 and run `isolate-agent` and `persist-cr
 ## Key Technical Decisions
 
 - **Domain file:** `program-domains.json` at the repository root, parsed by a new `packages/status-truth/src/program-domains.ts` beside `program-trackers.ts`, with the same fixed-message errors. `program-trackers.json` gains an optional `domain` key that must name a domain in it. Rationale: same shape, same package, same review path as program configs (see origin: Key Decisions).
-- **Brief pinning:** a part's checklist line names the domain file at a commit (`program-domains.json@<sha>#<domain>`). Dispatch fingerprints the prompt text, so approval covers that brief revision, and a changed commit is a new item that needs fresh approval (R12). No dispatch code change.
+- **Brief pinning and validation:** the tracker's preflight reads `program-domains.json` at the main commit it runs on, checks the program's domain exists with a non-empty brief, and emits that commit. A goal's checklist line names the brief as `program-domains.json@<sha>#<domain>`. Dispatch fingerprints the prompt text, so an approval covers exactly that brief; a later brief change applies to the next goal, which needs its own approval (R12). A missing domain or empty brief makes preflight emit a fixed error, and the tracker reports it instead of opening a goal.
 - **Answer surface:** the part issue the tracker's bootstrap already files carries a fixed body: the goal, the pinned brief, and the answer protocol. The repository agent answers with one of `part-accepted`, `part-declined`, `part-countered` (created if missing) plus a prose reason comment. No comment syntax.
-- **Decline and counter end the dispatch attempt:** the receipt vocabulary gains `declined` and `countered`, posted with the same nonce as any receipt, so the answer is bound to the agent and attempt. `runTrack` maps both to terminal `blocked` with the status as reason, so neither completes the item nor ages into `needs-attention/no-receipt` (R15). An accept posts no receipt; the completion receipt stays the only success.
-- **Dispatch and tracker link:** the program start writes the goal issue and its checklist comment itself as `fro-bot`, so the planner (which skips `fro-bot` authors) does not decompose it again, and adds the goal issue to the program's Project. The tracker then reads the goal's state and labels with no new code, and reads the dispatch marker for each item's epoch (Unit 3).
-- **Clocks:** the answer clock starts at the item's dispatch epoch from the goal marker; the outcome clock at the `part-accepted` label's time. Held (no epoch yet, or Part 0 unmerged) is not stalled. Windows: 3 days to answer, 14 days to an outcome after accept, constants in the snapshot module.
-- **Wake inputs without moving #3512:** answer labels and stall, hold and unknown lists enter the snapshot only when a program has a `domain`, so #3512's golden hash is unchanged. Ages are derived lists in the preflight output, like `bootstrap_repos`, never hash inputs.
-- **Per-part unknown:** a failed read of one part issue marks that part unknown and continues, for domain programs only; #3512 keeps its fail-the-run behaviour.
+- **Decline and counter end the dispatch attempt:** the receipt vocabulary gains `declined` and `countered`, posted with the same nonce as any receipt, so the answer is bound to the agent and attempt. `runTrack` maps them to terminal `blocked`, and the marker item gains an optional, backward-compatible `blockedReason` (`declined | countered`) that the guard accepts when absent. Neither completes the item nor ages into `needs-attention/no-receipt` (R15). An accept posts no receipt; the completion receipt stays the only success.
+- **Dispatch and tracker link, one goal per batch:** the start run stops at its PR, as today, so the tracker's post-merge duty opens the goals. Once every part issue exists, it opens one `cross-repo-goal` issue as `fro-bot` with one checklist comment for the repositories that need no Part 0, and later one goal per repository whose Part 0 merged. A goal is found again by its batch key in the body (`program:<key> batch:<name>`), so a re-run reuses it. The planner skips `fro-bot`-authored goals by its job condition, and dispatch seeds a goal from a `fro-bot` checklist on the operator's label, so each batch is a fresh marker with its own approval; no item is ever added to an existing marker. Each goal is added to the program's Project, and the tracker reads its dispatch marker for item epochs.
+- **Clocks:** the answer clock starts at the item's dispatch epoch from the goal marker; the outcome clock at the time of the `labeled` event that added `part-accepted`, read from the part issue's events. Held (no epoch yet, or Part 0 unmerged) is not stalled. Windows: 3 days to answer, 14 days to an outcome after accept, constants in the snapshot module.
+- **Wake inputs without moving #3512:** answer labels enter the gating evidence only when a program has a `domain`, so #3512's golden hash is unchanged. Stalled, held and unknown parts are derived lists in the preflight output, like `bootstrap_repos`, and `decideComment` gains one domain-only wake condition: a non-empty stalled or unknown list whose contents differ from the last marker's. The marker records that list's digest, so a part stays stalled without waking every day.
+- **Per-part unknown:** a failed read of one part issue or its events marks that part unknown and continues, for domain programs only; #3512 keeps its fail-the-run behaviour and its decision logic.
+- **Marker parser import:** `packages/status-truth` imports the exported marker parser from `@fro-bot/dispatch`, adding the workspace dependency and lock entry; `dispatch` does not import `status-truth`, so no cycle. The root README dependency graph and the package descriptions in `.github/copilot-instructions.md` change with it.
 - **Proposals:** Observe's category 6 records domain-wide gaps as attention items keyed `domain:<name> — <gap>`; the existing three-report escalation files a `program-proposal` issue instead of an `attention-tracking` one, at most one open. An operator-closed proposal is declined; a new one needs a material change named in it. The operator approves with `program-approved`; the next daily pass (Observe holds `FRO_BOT_PAT`) starts the program through the skill and comments the tracker link.
-- **Part 0:** the bootstrap files Part 0 as its own part issue in systematic and space-bus, marked as a prerequisite, and the operator asks the repository agent on it. The parity checklist for a repository is posted only after the tracker shows its Part 0 merged.
+- **Part 0 on the same part issue:** each repository has one part issue. For a repository listed with Part 0, the issue's first ask is Part 0, which the operator raises with the repository's agent on that issue; its pull request is linked there. When the tracker sees that pull request merged, it posts the parity ask on the same issue (the agent answers again, replacing its label) and opens that repository's parity goal. One issue per repository keeps bootstrap's existing per-repository discovery.
 
 ## Open Questions
 
 ### Resolved During Planning
 
-- Can a fro-bot-authored goal be dispatched? The workflow gate checks the label's sender, not the issue author, and seeding reads checklist comments by `fro-bot`; Unit 5 pins this with a flow test before relying on it.
+- Can a fro-bot-authored goal be dispatched? The workflow gate checks the label's sender, not the issue author, and seeding reads checklist comments by `fro-bot`; the planner is skipped by its own job condition. Unit 5 pins both with separate tests.
+- How do later items reach dispatch? They don't join an existing marker, which seeds only once; each batch is its own goal with its own approval.
+- Who opens goals after the start PR merges? The tracker's post-merge duty, since the start run stops at its PR.
 - Where does "answer before work" live? In the part issue body the bootstrap writes, not in dispatch's fixed prompt, which serves every goal.
 - Why not reuse status-truth proposals? Their fingerprints are claim-shaped; Observe already produces keyed, dated items.
 
 ### Deferred to Implementation
 
-- Whether `packages/status-truth` may import `@fro-bot/dispatch`'s marker parser, or the epoch read moves behind a seam; `scripts/package-layout.test.ts` decides.
 - Whether systematic's and space-bus's issue paths can open a pull request that changes workflows; observed on Part 0 itself (R19 fallback: the operator authors it).
 - The exact part issue title and body wording; pinned by the bootstrap prompt tests.
 
@@ -165,7 +167,7 @@ sequenceDiagram
     FB->>Op: start PR (config entry with domain)
     Op->>T: merge start PR
     T->>R: part issues (goal, pinned brief, answer protocol; Part 0 where needed)
-    FB->>D: goal issue + checklist (brief@sha)
+    T->>D: one goal per batch + checklist (brief@sha); Part 0 repos later, after their Part 0 merges
     Op->>D: dispatch-approved
     D->>R: prompt + receipt contract
     R->>R: check AGENTS.md and repo state
@@ -213,7 +215,7 @@ sequenceDiagram
 
 - [ ] **Unit 2: Part issues carry the brief and the answer protocol**
 
-**Goal:** The tracker's bootstrap files each domain program's part issue with a fixed body the repository agent can act on, and Part 0 as its own prerequisite part where needed.
+**Goal:** The tracker's bootstrap files each domain program's part issue with a fixed body the repository agent can act on; for a Part 0 repository the first ask is Part 0.
 
 **Requirements:** R6, R12, R13, R14, R19
 
@@ -225,13 +227,15 @@ sequenceDiagram
 
 **Approach:**
 - For a program with a `domain`, the bootstrap body states the goal, links `program-domains.json` at the commit on main the preflight read, and gives the protocol: check the ask against your `AGENTS.md` and repository state; answer with `part-accepted`, `part-declined` or `part-countered` (create the label if missing) and one comment with the reason; start work only after accepting; never override your own rules.
-- A repository listed as needing Part 0 gets a separate part issue titled as a prerequisite.
+- For a repository listed with Part 0, the body's first ask is Part 0 (adopt dispatch-to-pull-request routing), with the parity ask to follow on the same issue.
+- Preflight emits the brief commit, or a fixed brief error that stops goal creation (Key Technical Decisions).
 - A program without a `domain` keeps today's bootstrap text exactly.
 
 **Test scenarios:**
 - Happy path: the domain program's bootstrap prompt contains the pinned brief link format, the three labels, "only after accepting" and the never-override rule.
 - Edge case: #3512's config (no domain) yields byte-identical bootstrap text and golden stdout.
-- Integration: Part 0 repositories get a separate prerequisite part in the preflight output.
+- Integration: a Part 0 repository's part issue body leads with the Part 0 ask; a re-run reuses the same issue.
+- Error path: a program whose domain is missing from `program-domains.json`, or whose brief is empty, yields the fixed brief error in preflight and no goal.
 
 **Verification:** Prompt pins pass; #3512's golden hash test is unchanged.
 
@@ -241,19 +245,21 @@ sequenceDiagram
 
 **Requirements:** R13, R16, R17
 
-**Dependencies:** Units 1, 2, 5 (epochs come from the goal marker)
+**Dependencies:** Units 1, 2, 5 (epochs come from the goal marker); build after Unit 5
 
 **Files:**
-- Modify: `packages/status-truth/src/rollout-tracker-snapshot.ts`, `.github/workflows/gateway-rollout-tracker.yaml` (preflight outputs and prompt duty), `fro-bot.yaml` OBSERVE category 8 (daily report lists stalled parts)
-- Test: `packages/status-truth/src/rollout-tracker-snapshot.test.ts`, `scripts/gateway-rollout-tracker-workflow.test.ts`, `scripts/fro-bot-workflow-progressive-improvement.test.ts`
+- Modify: `packages/status-truth/src/rollout-tracker-snapshot.ts`, `packages/status-truth/package.json` (`@fro-bot/dispatch` dependency), `bun.lock`, `.github/workflows/gateway-rollout-tracker.yaml` (preflight outputs and prompt duty), `.github/workflows/fro-bot.yaml` OBSERVE category 8 (daily report lists stalled parts), `README.md` (package graph), `.github/copilot-instructions.md` (status-truth imports)
+- Test: `packages/status-truth/src/rollout-tracker-snapshot.test.ts`, `scripts/gateway-rollout-tracker-workflow.test.ts`, `scripts/fro-bot-workflow-progressive-improvement.test.ts`, `scripts/package-layout.test.ts`
 
 **Approach:**
-- Copy the answer label into gating evidence only for domain programs; derive `stalled_parts`, `held_parts` and `unknown_parts` in preflight from the goal marker's epochs and the label's time against the two windows.
-- A part issue read failure marks that part unknown and continues, for domain programs only.
+- Copy the answer label into gating evidence only for domain programs; read the `part-accepted` time from the issue's `labeled` events; derive `stalled_parts`, `held_parts` and `unknown_parts` in preflight from the goal markers' epochs and that time against the two windows.
+- Add the domain-only wake: a non-empty stalled or unknown list whose digest differs from the last marker's. The marker records the digest.
+- A part issue or events read failure marks that part unknown and continues, for domain programs only.
 
 **Test scenarios:**
 - Happy path: a new `part-declined` label changes the hash and wakes the tracker; the prompt shows the reason comment's link.
 - Edge case: a part with no epoch is held, not stalled; an epoch three days old with no answer is stalled; an accept 14 days old with no completion is stalled.
+- Edge case: the same stalled list on the next run does not wake the tracker again; a new stalled part does.
 - Error path: one part issue 500s; the run continues and the part is unknown. For #3512 the same failure still fails the run.
 - Edge case: #3512's golden hash and stdout are unchanged.
 
@@ -268,16 +274,17 @@ sequenceDiagram
 **Dependencies:** None
 
 **Files:**
-- Modify: `packages/dispatch/src/dispatch-model.ts` (`ResultStatus`), `packages/dispatch/src/dispatch-receipts.ts`, `packages/dispatch/src/dispatch-run.ts` (`runTrack` mapping), `packages/dispatch/src/dispatch-plan.ts` (`buildDispatchPrompt` names the two statuses)
+- Modify: `packages/dispatch/src/dispatch-model.ts` (`ResultStatus`, optional `blockedReason` on the item and its guard), `packages/dispatch/src/dispatch-marker.ts` (serialize and reload the field), `packages/dispatch/src/dispatch-receipts.ts`, `packages/dispatch/src/dispatch-run.ts` (`runTrack` mapping), `packages/dispatch/src/dispatch-plan.ts` (`buildDispatchPrompt` names the two statuses)
 - Test: `packages/dispatch/src/dispatch-receipts.test.ts`, `packages/dispatch/src/dispatch-run.test.ts`, `scripts/dispatch-flows.test.ts`
 
 **Approach:**
-- Add `declined` and `countered`; both pass the same author, correlation and nonce gates; `runTrack` maps them to `blocked` with the status as the reason. The earliest authentic receipt stays final, so a later completion receipt for a declined attempt is ignored.
+- Add `declined` and `countered`; both pass the same author, correlation and nonce gates; `runTrack` maps them to `blocked` and sets `blockedReason`. Today every non-`failed` receipt maps to `completed`, so the mapping becomes explicit per status. The earliest authentic receipt stays final, so a later completion receipt for a declined attempt is ignored.
 
 **Execution note:** Characterization first: pin today's three statuses and the SLA before adding the two.
 
 **Test scenarios:**
-- Happy path: a `declined` receipt with a valid nonce sets the item `blocked/declined`; the goal closes when all items are terminal.
+- Happy path: a `declined` receipt with a valid nonce sets the item `blocked` with `blockedReason: declined`; the marker reloads with the reason; the goal closes when all items are terminal.
+- Edge case: a marker written before this change (no `blockedReason`) still loads.
 - Edge case: `countered` before the 24-hour SLA stops aging; no `needs-attention` appears after 48 hours.
 - Error path: a `declined` receipt with a wrong nonce or from an unlisted author is ignored and the item ages as today.
 - Edge case: a `success` receipt after a `declined` one is ignored.
@@ -287,25 +294,29 @@ sequenceDiagram
 
 - [ ] **Unit 5: Program start links dispatch to the tracker**
 
-**Goal:** Starting a domain program opens the goal issue and checklist itself, adds the goal to the program's Project, and holds parity items until Part 0 merges.
+**Goal:** After a domain program's start PR merges, the tracker opens one goal per batch with its checklist, adds each goal to the program's Project, and opens a repository's parity goal only after its Part 0 merges.
 
 **Requirements:** R5, R6, R7, R12, R19
 
 **Dependencies:** Units 1, 4
 
 **Files:**
-- Modify: `.agents/skills/cross-repo-program/SKILL.md`, `.github/workflows/fro-bot.yaml` (`PROGRAM_REQUEST_NOTE`), `.github/workflows/gateway-rollout-tracker.yaml` (post the parity checklist when a Part 0 merges)
-- Test: `scripts/agent-skills.test.ts`, `scripts/fro-bot-workflow.test.ts`, `scripts/dispatch-flows.test.ts` (a fro-bot-authored goal with a fro-bot checklist is seeded after the operator's label)
+- Modify: `.agents/skills/cross-repo-program/SKILL.md` (start step accepts or declines; goals are the tracker's), `.github/workflows/fro-bot.yaml` (`PROGRAM_REQUEST_NOTE`), `.github/workflows/gateway-rollout-tracker.yaml` (goal duty), `packages/status-truth/src/rollout-tracker-snapshot.ts` (preflight lists batches to open: `goal_batches`)
+- Test: `scripts/agent-skills.test.ts`, `scripts/fro-bot-workflow.test.ts` (the planner's job condition skips a `fro-bot`-authored goal), `scripts/dispatch-flows.test.ts` (a `fro-bot` checklist on a `fro-bot` goal seeds on the operator's label), `scripts/gateway-rollout-tracker-workflow.test.ts`, `packages/status-truth/src/rollout-tracker-snapshot.test.ts`
 
 **Approach:**
-- The skill's start step accepts or declines the offer with a reason, writes the config entry with `domain`, and after the start PR merges opens the `cross-repo-goal` issue as `fro-bot` with one checklist comment: one line per repository without Part 0, each `owner/repo: <goal>. Brief: program-domains.json@<sha>#<domain>. Part issue: <tracker link>`, under 4,000 characters, or the start stops and says why.
-- When the tracker sees a Part 0 merged, it posts the parity line for that repository as a new checklist item, which needs a fresh `dispatch-approved`.
+- The skill's start step accepts or declines the offer with a reason and writes the config entry with `domain`; it stops at the PR as today.
+- Preflight lists `goal_batches` to open: the first batch once every part issue exists (repositories without Part 0), then one batch per repository whose Part 0 pull request merged. A batch with an open or closed goal carrying its batch key is not listed again.
+- The tracker's goal duty opens each listed goal as `fro-bot` with the batch key in its body and one checklist comment, each line `owner/repo: <goal>. Brief: program-domains.json@<sha>#<domain>. Part issue: <url>` under 4,000 characters, adds the goal to the Project and links it on the tracker. A line over the limit stops that batch with a reason on the tracker.
+- The operator approves each goal with `dispatch-approved`.
 
 **Test scenarios:**
 - Happy path: the skill text names the goal issue, the checklist format with a pinned commit, and adding the goal to the Project.
-- Integration: a fro-bot-authored goal with a fro-bot checklist is not decomposed by the planner and is seeded when the operator applies `dispatch-approved`.
-- Error path: a line over 4,000 characters stops the start with a reason on the tracker.
-- Edge case: a repository with Part 0 unmerged has no checklist line.
+- Integration (dispatch flow): a `fro-bot` checklist on a `fro-bot`-authored goal seeds a marker when the operator applies `dispatch-approved`.
+- Integration (workflow condition): the content job's planner condition is false for a `fro-bot`-authored `cross-repo-goal`.
+- Happy path: preflight lists the first batch once all part issues exist; after a Part 0 merges it lists that repository's batch; a re-run with the goal already open lists nothing.
+- Error path: a line over 4,000 characters stops that batch with a reason on the tracker.
+- Edge case: a repository with Part 0 unmerged is in no batch.
 
 **Verification:** Skill and workflow pins pass; the flow test proves seeding of a fro-bot-authored goal.
 
@@ -367,7 +378,7 @@ sequenceDiagram
 | A target agent ignores the part issue protocol | The tracker shows no answer as stalled after 3 days; Unit 7 records it |
 | Systematic's issue path can't open a workflow-changing PR | R19 fallback: the operator authors Part 0 there |
 | Hash change wakes #3512 | Domain-only evidence; golden hash test |
-| Status-truth importing dispatch breaks the package graph | Resolve in Unit 3 with the layout test |
+| Status-truth importing dispatch breaks the package graph | Declared dependency and lock entry, no reverse import; layout test in Unit 3 |
 
 ## Sources & References
 

@@ -107,7 +107,7 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - AE9. **Covers R3.** Given a domain file that lists a private or untracked repository, its pull request fails the check.
 - AE10. **Covers R19.** Given Part 0 not yet merged in `fro-bot/space-bus`, its parity parts show as held and are not dispatched; once the tracker shows Part 0 merged, the operator approves the parity dispatch separately.
 - AE11. **Covers R15, R17.** Given `marcusrbrown/systematic` counters and the operator has not answered for two days, the part shows the counter, no missing-receipt alert fires, and nothing is marked complete.
-- AE12. **Covers R12.** Given an approved dispatch whose brief changes on main before the part is sent, the changed part is not sent until the operator approves it again.
+- AE12. **Covers R12.** Given an approved goal pinned to brief commit A, when the brief changes on main to commit B, the goal still sends A; brief B reaches repositories only through a new goal the operator approves.
 
 ---
 
