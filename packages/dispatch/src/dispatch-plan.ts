@@ -155,7 +155,7 @@ export interface CoordinationIssueRef {
  * Build the receipt-carrying dispatch prompt: the item's prompt text plus a
  * machine-contract block with the correlation id, the raw nonce, the
  * coordination issue as structured fields + canonical URL, literal `success`
- * and `noop` receipt examples, the mandatory-receipt rule, and a self-validate
+ * and `noop` receipt examples, the `declined` and `countered` answers, the mandatory-receipt rule, and a self-validate
  * step. The raw nonce is delivered ONLY here, never in the public marker;
  * callers must never log the return value verbatim.
  *
@@ -211,6 +211,11 @@ export function buildDispatchPrompt(input: {
     '',
     'Example receipt for a no-op (nothing needed changing):',
     noopExample,
+    '',
+    'Post a receipt with status `declined` when you will not do this ask, with the reason in the summary.',
+    'Post a receipt with status `countered` when you propose a different change, with the proposal in the summary.',
+    'Post either before doing any work; neither completes the item.',
+    'After posting either, stop: do not do the original ask or the proposed alternative. A revised ask needs a fresh approved dispatch.',
     '',
     'Self-validate before finishing: echo the resolved destination',
     `(owner=${coordinationIssue.owner}, repo=${coordinationIssue.repo}, number=${coordinationIssue.number}),`,
