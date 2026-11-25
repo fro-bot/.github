@@ -238,6 +238,8 @@ jobs:
             - Output only the bodies file. No summary issue. No comments.
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           # The action requires a github-token input. The workflow's auto-provisioned
           # GITHUB_TOKEN is scoped to `contents: read`/`issues: read` by this job's
           # permissions block — it carries no `issues: write`. Issue creation stays

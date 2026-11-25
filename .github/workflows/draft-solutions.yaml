@@ -252,6 +252,8 @@ jobs:
             - Write rows.json to exactly .drafted-solutions/rows.json. Output nothing else.
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           # The action requires a github-token input. This is the workflow's auto-provisioned
           # GITHUB_TOKEN, scoped to read access by this job's permissions — it cannot write.
           # Every write happens in the publish job, after validation and the privacy gate.

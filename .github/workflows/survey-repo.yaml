@@ -308,6 +308,8 @@ jobs:
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
@@ -367,6 +369,8 @@ jobs:
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
@@ -426,6 +430,8 @@ jobs:
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           github-token: ${{ secrets.FRO_BOT_POLL_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
