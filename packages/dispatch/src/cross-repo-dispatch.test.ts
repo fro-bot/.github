@@ -4522,7 +4522,7 @@ describe('runTrack — receipt status mapping and the receipt SLA (characterizat
 // ─── A worker may decline or counter the ask (R15) ───
 
 /** Length of `buildDispatchPrompt` with an empty item prompt, a 20-char correlation id, a 43-char nonce and fro-bot/.github#50. */
-const PROMPT_OVERHEAD = 1821
+const PROMPT_OVERHEAD = 1952
 
 describe('a declined or countered receipt ends the dispatch attempt', () => {
   const declined = (overrides: Partial<CrossRepoResult> = {}) =>
@@ -4733,6 +4733,13 @@ describe('a declined or countered receipt ends the dispatch attempt', () => {
       expect(prompt).toMatch(/declined[^\n]*will not do/u)
       expect(prompt).toMatch(/countered[^\n]*different change/u)
       expect(prompt).toMatch(/before (?:doing )?any work/u)
+    })
+
+    it('says to stop after posting either: neither the ask nor the alternative is done, and a revised ask needs a fresh approved dispatch', () => {
+      const prompt = buildDispatchPrompt(base)
+      expect(prompt).toContain(
+        'After posting either, stop: do not do the original ask or the proposed alternative. A revised ask needs a fresh approved dispatch.',
+      )
     })
 
     it('keeps the item-prompt limit as it was and the fixed overhead pinned', () => {

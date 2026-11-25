@@ -2499,11 +2499,22 @@ describe('fro-bot.yaml goal decomposition prompt: the worker receipt contract na
     expect(prompt).toContain('A worker posts either before doing any work, and neither completes the item.')
   })
 
+  it('tells the worker to stop after posting either, and that a revised ask needs a fresh approved dispatch', () => {
+    expect(prompt).toContain(
+      'After posting either, the worker stops: it does not do the original ask or the proposed alternative, and a revised ask needs a fresh approved dispatch.',
+    )
+  })
+
   it('agrees with the prompt the dispatcher sends the worker on the same two statuses', () => {
     for (const status of ['declined', 'countered']) {
       expect(prompt, status).toContain(`\`${status}\``)
       expect(dispatchPrompt, status).toContain(`status \`${status}\``)
     }
     expect(dispatchPrompt).toContain('before doing any work')
+    // Both prompts carry the stop rule and the fresh-approval rule, in their own voice.
+    for (const phrase of ['stop', 'original ask', 'proposed alternative', 'fresh approved dispatch']) {
+      expect(prompt, phrase).toContain(phrase)
+      expect(dispatchPrompt, phrase).toContain(phrase)
+    }
   })
 })

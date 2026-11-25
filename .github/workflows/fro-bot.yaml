@@ -244,7 +244,9 @@ env:
     - `declined` means the worker will not do the ask; the reason goes in
       `summary`. `countered` means it proposes a different change; the
       proposal goes in `summary`. A worker posts either before doing any
-      work, and neither completes the item.
+      work, and neither completes the item. After posting either, the worker
+      stops: it does not do the original ask or the proposed alternative, and
+      a revised ask needs a fresh approved dispatch.
     - A receipt is MANDATORY even when the outcome is a no-op; a missing
       receipt reads as a failure to report, not as success.
     - Before finishing, the worker echoes the coordination issue it resolved
