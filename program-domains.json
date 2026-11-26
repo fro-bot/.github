@@ -5,7 +5,11 @@
       "repos": [
         {"nameWithOwner": "marcusrbrown/systematic", "nodeId": "R_kgDORAJegA"},
         {"nameWithOwner": "fro-bot/space-bus", "nodeId": "R_kgDOTMGFnQ"},
-        {"nameWithOwner": "fro-bot/dashboard", "nodeId": "R_kgDOS6ys-g"}
+        {"nameWithOwner": "fro-bot/dashboard", "nodeId": "R_kgDOS6ys-g"},
+        {"nameWithOwner": "marcusrbrown/metacogs", "nodeId": "R_kgDOVUNN9g"},
+        {"nameWithOwner": "marcusrbrown/opencode-copilot-delegate", "nodeId": "R_kgDOSKIp0Q"},
+        {"nameWithOwner": "marcusrbrown/dev-like", "nodeId": "R_kgDOTVrJ0w"},
+        {"nameWithOwner": "marcusrbrown/mothership", "nodeId": "R_kgDOTOX0_A"}
       ],
       "brief": {
         "security": [
