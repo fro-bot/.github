@@ -11388,3 +11388,15 @@ Repeat survey of bfra-me/.github: checked, no changes. `main` still resolves to 
 I left [[bfra-me--github]] untouched, frontmatter and `updated` date included. No topic, entity or comparison page needed an update. The corrections context was empty.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-11-26 15:27] ingest | repo:fro-bot/agent
+
+Surveyed fro-bot/agent and updated the control-plane wiki.
+
+Repeat survey of fro-bot/agent. `main` is at `4747184b`, 73 commits past the last recorded source `f49a72e9`, and the latest release is v0.149.2. I read the repo metadata, the root listing, the root `package.json`, the workflow list, `connect.yaml`, and the compare patches for the README, `action.yaml` and the changed workflows. The repo is still public, MIT, TypeScript, default branch `main`, not archived. Fro Bot (`fro-bot.yaml`, unchanged) and Renovate are both present, so no missing-workflow note is needed.
+
+Nothing material changed. The new `connect.yaml` (#2317) runs Systematic's daily `ce:connect` sweep as a cross-owner reusable call. The README now withholds the token and restricts MCP on every trigger except `schedule`/`workflow_dispatch`, documents `opencode/big-pickle` as the default `model`, and adds `trace-endpoint`/`trace-headers`. The release and prepare-release App tokens are now scoped to explicit permissions. Bun went 1.4.4 → 1.4.5, and there are action pin bumps.
+
+Changes to [[fro-bot--agent]]: one current-state statement under the title, and the `model` and `skip-cache` rows of the Key Inputs table corrected where they stand. Dated sections are untouched. I bumped `updated` and added no repository `sources` entry. The " and gateway" correction span is preserved. [[github-actions-ci]] gets a dated 2026-11-26 section on cross-owner reusable workflows needing named secrets, plus one commit-pinned source.
+
+Sources: https://github.com/fro-bot/agent
