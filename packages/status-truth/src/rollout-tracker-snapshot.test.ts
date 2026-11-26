@@ -2744,6 +2744,30 @@ describe('the program config in a snapshot run', () => {
     })
   })
 
+  it("prints #3512's whole preflight line byte for byte, with no field a domain program adds", () => {
+    const result = runCliRaw(goldenEnv())
+    const tail =
+      ',"bootstrap_repos":[],"bootstrap_blocked":[],"public_items":[{"item_id":"PVTI_4","repo":"fro-bot/.github","number":3512},{"item_id":"PVTI_1","repo":"fro-bot/agent","number":907},{"item_id":"PVTI_2","repo":"fro-bot/dashboard","number":24},{"item_id":"PVTI_3","repo":"marcusrbrown/infra","number":1712}],"operator_comment_ids":[101,103,104],"program":{"key":"gateway","issue":"fro-bot/.github#3512","repo":"fro-bot/.github","project_url":"https://github.com/users/fro-bot/projects/1","operator_login":"marcusrbrown","evidence":"gateway"}}\n'
+
+    expect(result.status).toBe(0)
+    expect(result.stdout).toBe(`${goldenStdout.slice(0, -2)}${tail}`)
+    expect(Object.keys(JSON.parse(result.stdout) as object)).toEqual([
+      'should_comment',
+      'reason',
+      'hash',
+      'snapshot',
+      'pending_mention_ids',
+      'last_mention_id',
+      'marker',
+      'marker_comment_id',
+      'bootstrap_repos',
+      'bootstrap_blocked',
+      'public_items',
+      'operator_comment_ids',
+      'program',
+    ])
+  })
+
   it('selects the gateway program when ROLLOUT_TRACKER_PROGRAM is empty or unset', () => {
     expect(withoutProgram(runCliRaw(goldenEnv({ROLLOUT_TRACKER_PROGRAM: ''})).stdout)).toBe(goldenStdout)
   })

@@ -527,6 +527,13 @@ describe('checkDomainReposInRegistry', () => {
     )
   })
 
+  it('fails when the node ID differs only in case', () => {
+    // A GraphQL node ID is case-sensitive, so a registry row whose ID differs by case is another object.
+    expect(() => checkDomainReposInRegistry(config, withRepo('fro-bot/space-bus', {nodeId: 'R_SPACE_BUS'}))).toThrow(
+      new Error('domains[0].repos[1] has a node ID that differs from metadata/repos.yaml'),
+    )
+  })
+
   it('reports a private repository before an archived one', () => {
     const both = withRepo('marcusrbrown/systematic', {private: true, archived: true})
 

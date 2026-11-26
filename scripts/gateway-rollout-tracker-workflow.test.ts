@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto'
 import {readFileSync} from 'node:fs'
 import {resolve} from 'node:path'
 import {evaluateExpression, evaluateExpressionValue} from '@fro-bot/test-kit/workflow-expression'
@@ -326,5 +327,47 @@ describe('gateway-rollout-tracker.yaml: the prompt is templated from the preflig
 
   it('limits the external evidence to programs whose evidence kind is gateway', () => {
     expect(flat).toContain('when the evidence kind is gateway')
+  })
+})
+
+describe('gateway-rollout-tracker.yaml: the prompt of a program with no domain', () => {
+  // Every expression of the prompt, answered the way a #3512 run would answer it. An expression the
+  // prompt gains that this table lacks fails the render, so a new one cannot slip in unseen.
+  const answers: Record<string, string> = {
+    'needs.preflight.outputs.program': 'gateway',
+    'needs.preflight.outputs.tracker_issue': 'fro-bot/.github#3512',
+    'needs.preflight.outputs.tracker_repo': 'fro-bot/.github',
+    'needs.preflight.outputs.project_url': 'https://github.com/users/fro-bot/projects/1',
+    'needs.preflight.outputs.operator_login': 'marcusrbrown',
+    'needs.preflight.outputs.evidence': 'gateway',
+    'needs.preflight.outputs.pending_mention_ids': '[101,104]',
+    'needs.preflight.outputs.reason': 'operator mention pending (2)',
+    'needs.preflight.outputs.operator_comment_ids': '[101,103,104]',
+    'needs.preflight.outputs.public_items': '[]',
+    'needs.preflight.outputs.bootstrap_repos': '[]',
+    'needs.preflight.outputs.bootstrap_blocked': '[]',
+    'needs.preflight.outputs.marker_comment_id': '100',
+    'needs.preflight.outputs.marker': '<!-- gateway-rollout-tracker:{"hash":"abc","last_mention_id":104} -->',
+    'inputs.comment_id': '104',
+    ...(workflowText.includes('needs.preflight.outputs.domain_bootstrap')
+      ? {'needs.preflight.outputs.domain_bootstrap': ''}
+      : {}),
+  }
+
+  function render(prompt: string): string {
+    return prompt.replaceAll(/\$\{\{ ([^ }]+) \}\}/g, (_whole, expression: string) => {
+      const answer = answers[expression]
+      if (answer === undefined)
+        throw new Error(`the prompt has an expression the render does not answer: ${expression}`)
+      return answer
+    })
+  }
+
+  it('renders byte for byte as it did before the domain duty existed', () => {
+    const rendered = render(String(update?.with?.prompt ?? ''))
+
+    expect(createHash('sha256').update(rendered).digest('hex')).toBe(
+      '6e94a8b65ed058e2760a590c3496aee90100a3aebd2a34ea4b467114224693d2',
+    )
   })
 })
