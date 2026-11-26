@@ -201,7 +201,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro-bot/dispatch`](packages/dispatch/README.md) | In the repository | The dispatchers: `cross-repo-dispatch` (split into seven modules by responsibility) and `dispatch-renovate`. `scripts/` keeps one entrypoint per CLI. |
 | [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
-| [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. It depends on `@fro-bot/core`, `@fro-bot/privacy` and `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the plan frontmatter block. |
+| [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. It depends on `@fro-bot/core`, `@fro-bot/dispatch` (the target gate a part issue must pass), `@fro-bot/privacy` and `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the plan frontmatter block and whose schema validates the registry. |
 | [`@fro-bot/wiki-ops`](packages/wiki-ops/README.md) | In the repository | The wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild, the corrections lifecycle and context, `knowledge-mcp`, the `knowledge` MCP server that serves wiki and solutions lookups to agent runs, and `route-stderr`, the warning router that lifts routed stderr lines into the job summary. `scripts/` keeps one entrypoint per CLI. `wiki-context-safety`, `wiki-change-detect-core`, `knowledge-mcp` and `route-stderr` are held at 100% mutation kills. |
 | [`@fro-bot/knowledge`](packages/knowledge/README.md) | In the repository | The learning capture (`capture-learnings-harvest` and `-open`), the pattern synthesis (`capture-patterns-cluster`, `-open` and `-synthesis`) and the drafted solution docs (`drafted-solutions-harvest`, `-validate-rows`, `-handoff-build`, `-publish`, `-pr-body`, `-shared`). `scripts/` keeps one entrypoint per CLI. It imports `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the solution-doc block, and never `@fro-bot/status-truth`. |
 | [`@fro-bot/reports`](packages/reports/README.md) | In the repository | The improvement-metrics loop (`improvement-metrics-detect`, `-report` and `-core`), `daily-digest-counts` and `gateway-announce`. `scripts/` keeps one entrypoint per CLI. The four CLI modules and `gateway-announce` are held at 100% mutation kills. It depends only on `@fro-bot/core`, `@fro-bot/privacy` and `@fro.bot/wiki-write-core`. |
@@ -240,7 +240,7 @@ flowchart BT
   registry --> core & wwc
   dispatch --> core & wwc
   wikiops --> core & wwc & privacy
-  statustruth --> core & privacy & wwc
+  statustruth --> core & dispatch & privacy & wwc
   knowledge --> core & privacy & wikiops & wwc
   reports --> core & privacy & wwc
   cichecks --> core & wwc
@@ -289,6 +289,7 @@ C4Container
   Rel(dispatch, wwc, "imports")
   Rel(scripts, statustruth, "fronts")
   Rel(statustruth, core, "imports")
+  Rel(statustruth, dispatch, "imports")
   Rel(statustruth, privacy, "imports")
   Rel(statustruth, wwc, "imports")
   Rel(scripts, wikiops, "fronts")
@@ -325,6 +326,7 @@ C4Container
   UpdateRelStyle(dispatch, wwc, $offsetX="50", $offsetY="50")
   UpdateRelStyle(scripts, statustruth, $offsetX="-40", $offsetY="-70")
   UpdateRelStyle(statustruth, core, $offsetX="60", $offsetY="20")
+  UpdateRelStyle(statustruth, dispatch, $offsetX="-20", $offsetY="-30")
   UpdateRelStyle(statustruth, privacy, $offsetX="-60", $offsetY="40")
   UpdateRelStyle(statustruth, wwc, $offsetX="20", $offsetY="-50")
   UpdateRelStyle(scripts, knowledge, $offsetX="60", $offsetY="-40")

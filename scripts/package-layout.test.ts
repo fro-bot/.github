@@ -941,6 +941,24 @@ describe('package layout (real tree)', () => {
     },
   )
 
+  it('has status-truth depend on dispatch, in the manifest and in the lock, and dispatch never import status-truth', () => {
+    const statusTruth = input.packages.find(candidate => candidate.dir === 'status-truth')
+    const manifest = isRecord(statusTruth?.manifest) ? statusTruth.manifest : {}
+    expect(stringMap(manifest.dependencies)['@fro-bot/dispatch']).toBe('workspace:*')
+    expect(stringMap(manifest.devDependencies)).not.toHaveProperty(['@fro-bot/dispatch'])
+    const workspaces = isRecord(input.lockWorkspaces) ? input.lockWorkspaces : {}
+    const entry = isRecord(workspaces['packages/status-truth']) ? workspaces['packages/status-truth'] : {}
+    expect(stringMap(isRecord(entry) ? entry.dependencies : undefined)['@fro-bot/dispatch']).toBe('workspace:*')
+
+    const dispatch = input.packages.find(candidate => candidate.dir === 'dispatch')
+    const dispatchManifest = isRecord(dispatch?.manifest) ? dispatch.manifest : {}
+    expect(Object.keys(stringMap(dispatchManifest.dependencies))).not.toContain('@fro-bot/status-truth')
+    expect(dispatch?.files.length).toBeGreaterThan(0)
+    for (const file of dispatch?.files ?? []) {
+      expect(file.specifiers.map(packageNameOf), file.path).not.toContain('@fro-bot/status-truth')
+    }
+  })
+
   it('reads the lock workspaces for every private package', () => {
     const workspaces = isRecord(input.lockWorkspaces) ? input.lockWorkspaces : {}
     for (const facts of privatePackages) {

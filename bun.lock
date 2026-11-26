@@ -122,6 +122,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@fro-bot/core": "workspace:*",
+        "@fro-bot/dispatch": "workspace:*",
         "@fro-bot/privacy": "workspace:*",
         "@fro.bot/wiki-write-core": "workspace:*",
         "yaml": "^2.6.0",
