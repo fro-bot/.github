@@ -123,6 +123,7 @@ jobs:
       evidence: ${{ steps.snapshot.outputs.evidence }}
       domain_bootstrap: ${{ steps.snapshot.outputs.domain_bootstrap }}
       domain_goals: ${{ steps.snapshot.outputs.domain_goals }}
+      domain_answers: ${{ steps.snapshot.outputs.domain_answers }}
     steps:
       # The comment ID is templated into the agent prompt, so it is checked before anything else runs.
       - name: Validate comment ID
@@ -188,6 +189,7 @@ jobs:
           EVIDENCE="$(echo "$RESULT" | jq -r '.program.evidence')"
           DOMAIN_BOOTSTRAP="$(echo "$RESULT" | jq -r '.domain.bootstrap_instructions // ""')"
           DOMAIN_GOALS="$(echo "$RESULT" | jq -r '.domain.goal_instructions // ""')"
+          DOMAIN_ANSWERS="$(echo "$RESULT" | jq -r '.domain.answer_instructions // ""')"
           {
             echo "should_comment=${SHOULD_COMMENT}"
             echo "reason=${REASON}"
@@ -209,6 +211,9 @@ jobs:
             echo "domain_goals<<DOMAIN_GOALS_TEXT"
             echo "${DOMAIN_GOALS}"
             echo "DOMAIN_GOALS_TEXT"
+            echo "domain_answers<<DOMAIN_ANSWERS_TEXT"
+            echo "${DOMAIN_ANSWERS}"
+            echo "DOMAIN_ANSWERS_TEXT"
             echo "marker<<MARKER_TEXT"
             echo "${MARKER}"
             echo "MARKER_TEXT"
@@ -323,7 +328,7 @@ jobs:
         links back to the tracker issue and add it to the Project. Skip a
         listed repo that already has a Project item. If an issue cannot be
         filed in a repo that is still public, say so in your tracker comment.
-        Report a filing failure only for a repo that is still public.${{ needs.preflight.outputs.domain_bootstrap }}${{ needs.preflight.outputs.domain_goals }}
+        Report a filing failure only for a repo that is still public.${{ needs.preflight.outputs.domain_bootstrap }}${{ needs.preflight.outputs.domain_goals }}${{ needs.preflight.outputs.domain_answers }}
 
         Blocked repos. Confirmed repos that have issues disabled (JSON array,
         empty when none):

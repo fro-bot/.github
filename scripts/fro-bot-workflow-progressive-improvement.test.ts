@@ -90,6 +90,27 @@ describe('fro-bot.yaml progressive improvement prompt', () => {
     expect(normalized).toContain('Proposals it does not cover keep the 14-day and two-or-more rule')
   })
 
+  it("lists the stalled parts of a domain program in category 8, from the tracker's own Parts section", () => {
+    // #then category 8 reads the tracker's section instead of recomputing a clock, counts held and unknown
+    // parts, writes nothing, and keeps the public-only rule
+    const normalized = prompt.replaceAll(/\s+/g, ' ')
+    const category = normalized.slice(
+      normalized.indexOf('8. PROGRAM TRACKERS'),
+      normalized.indexOf('OUTPUT — ONE PERPETUAL'),
+    )
+
+    expect(category).toContain('For a program that has a `domain`')
+    expect(category).toContain('read the "Parts" section of its tracker issue body')
+    expect(category).toContain('every part that section marks `stalled`')
+    expect(category).toContain(
+      'its repository, its part issue link, the kind of stall (answer or outcome) and the days since its clock started',
+    )
+    expect(category).toContain('List held parts and unknown parts only as counts')
+    expect(category).toContain('Do not recompute a clock')
+    expect(category).toContain('open no issue and post no comment for a stalled part')
+    expect(category).toContain('name only a repository the public-only rule allows')
+  })
+
   it('distinguishes verified-clean from could-not-check', () => {
     expect(prompt).toContain('✅ = verified-clean')
     expect(prompt).toContain('❔ =')
