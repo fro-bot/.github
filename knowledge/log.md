@@ -11378,3 +11378,13 @@ Sources: https://github.com/fro-bot/.github/commit/21a24047c705cad2c7546fabfd962
 Persisted durable knowledge from the schedule interaction on fro-bot/.github.
 
 Sources: https://github.com/fro-bot/.github@88ce99defed6531a6bba2e65496fc8fa18883a1b
+
+## [2026-11-26 15:24] ingest | repo:bfra-me/.github
+
+Verified the target; no wiki page changed.
+
+Repeat survey of bfra-me/.github: checked, no changes. `main` still resolves to `7b018e2acb89fa2f0ff81d2f6160f7cd26b22ae5`, the SHA surveyed on 2026-11-25. The compare shows 0 commits ahead. I read the repo metadata, the workflow directory listing and `fro-bot.yaml` at that SHA. The repo is still public, an MIT template, TypeScript, default branch `main`, not archived. There are still 16 workflows. Fro Bot is pinned to v0.144.2 with `isolate-agent: true`, checkout sets `persist-credentials: false`, the `30 15 * * *` daily pass is unchanged, and the workflow still ends at `Run Fro Bot`. Fro Bot and Renovate are both present, so no missing-workflow note is needed.
+
+I left [[bfra-me--github]] untouched, frontmatter and `updated` date included. No topic, entity or comparison page needed an update. The corrections context was empty.
+
+Sources: https://github.com/bfra-me/.github
