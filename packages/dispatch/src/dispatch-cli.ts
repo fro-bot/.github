@@ -9,12 +9,14 @@ import {
   findRunByCorrelationId,
   findRunConclusion,
   loadBriefFile,
+  loadLiveNodeId,
   loadOpenGoalIssues,
   loadOtherOpenGoalMarkers,
   parseTargetTokens,
   REQUEST_TIMEOUT_MS,
   type TargetClientResolver,
 } from './dispatch-github.ts'
+import {HELD_MESSAGE} from './dispatch-model.ts'
 import {mintNonce} from './dispatch-receipts.ts'
 import {runDispatch, runTrack, type LabeledEventPayload, type RepoRepository} from './dispatch-run.ts'
 
@@ -88,13 +90,14 @@ export async function runDispatchCli(
     createTargetClientResolverFn ?? (async () => targetClientResolverFromEnv(env))
   )()
 
-  await runDispatch({
+  const {counts} = await runDispatch({
     octokit,
     event,
     repo,
     approveLabel,
     loadRegistry: loadRegistryFromDisk,
     loadBriefFile: async (briefRepo, commit) => loadBriefFile(octokit, briefRepo, commit),
+    loadLiveNodeId: async target => loadLiveNodeId(targetClientFor(target.owner), target),
     loadOtherOpenGoalMarkers: async () => loadOtherOpenGoalMarkers(octokit, repo, event.issue.number),
     findRunByCorrelationId: async (target, correlationId) =>
       findRunByCorrelationId(targetClientFor(target.owner))(target, correlationId),
@@ -105,6 +108,11 @@ export async function runDispatchCli(
     resultPath,
     hasTargetToken,
   })
+  // Nothing re-dispatches a held item by itself, so the job goes red and says what the operator does.
+  if (counts.held > 0) {
+    process.stderr.write(`${HELD_MESSAGE}\n`)
+    return 1
+  }
   return 0
 }
 
@@ -120,7 +128,7 @@ export async function runTrackCli(
     createTargetClientResolverFn ?? (async () => targetClientResolverFromEnv(env))
   )()
 
-  await runTrack({
+  const {counts} = await runTrack({
     octokit,
     repo,
     loadOpenGoalIssues: async () => loadOpenGoalIssues(octokit, repo),
@@ -130,6 +138,7 @@ export async function runTrackCli(
     resultPath,
     hasTargetToken,
   })
+  if (counts.itemsHeld > 0) process.stderr.write(`${HELD_MESSAGE}\n`)
 }
 
 /** The `cross-repo-dispatch.yaml` steps run `dispatch` and `track`; any other mode is rejected by the action. */

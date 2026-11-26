@@ -7,12 +7,12 @@ import type {
 } from './dispatch-model.ts'
 import {Buffer} from 'node:buffer'
 import {describe, expect, it, vi} from 'vitest'
-import {loadBriefFile} from './dispatch-github.ts'
+import {loadBriefFile, loadLiveNodeId} from './dispatch-github.ts'
 import {buildMarkerComment, extractMarker} from './dispatch-marker.ts'
-import {isGoalStateBody, REQUIRED_APPROVER} from './dispatch-model.ts'
+import {HELD_MESSAGE, isGoalStateBody, REQUIRED_APPROVER} from './dispatch-model.ts'
 import {checkBriefIdentity, parseBriefDomain, parseBriefReference} from './dispatch-plan.ts'
 import {parseDecomposition} from './dispatch-receipts.ts'
-import {runDispatch} from './dispatch-run.ts'
+import {runDispatch, runTrack} from './dispatch-run.ts'
 
 const REPO = {owner: 'fro-bot', repo: '.github'}
 const COMMIT = 'a'.repeat(40)
@@ -103,6 +103,9 @@ async function dispatch(input: {
       dispatched.push({owner: params.owner, repo: params.repo, prompt: params.inputs.prompt})
     },
     nonceSource: () => 'nonce-1',
+    // A live repository that agrees with its registry row, unless a test says otherwise.
+    loadLiveNodeId: async target =>
+      input.registry.find(entry => entry.owner === target.owner && entry.name === target.name)?.node_id ?? '',
     ...input.extra,
   })
   return {counts: result.counts, dispatched, comments: input.comments}
@@ -452,25 +455,22 @@ describe('runDispatch: a goal whose item carries a domain brief reference', () =
       ['the run has no way to read a brief', undefined],
     ] as const
 
-    it.each(failing)(
-      'leaves the item pending, dispatches nothing and counts it deferred when %s',
-      async (_name, load) => {
-        const result = await dispatch({
-          comments: goal().comments,
-          registry: [row(DASHBOARD, 'R_dash')],
-          extra: load === undefined ? {} : {loadBriefFile: load},
-        })
+    it.each(failing)('leaves the item pending, dispatches nothing and counts it held when %s', async (_name, load) => {
+      const result = await dispatch({
+        comments: goal().comments,
+        registry: [row(DASHBOARD, 'R_dash')],
+        extra: load === undefined ? {} : {loadBriefFile: load},
+      })
 
-        expect(result.dispatched).toStrictEqual([])
-        expect(result.counts).toMatchObject({dispatched: 0, deferred: 1, blocked: 0})
-        const [item] = items(result.comments)
-        expect(item?.status).toBe('pending')
-        expect(item).not.toHaveProperty('gateReason')
-        expect(JSON.stringify(items(result.comments))).not.toContain('secret')
-      },
-    )
+      expect(result.dispatched).toStrictEqual([])
+      expect(result.counts).toMatchObject({dispatched: 0, held: 1, deferred: 0, blocked: 0})
+      const [item] = items(result.comments)
+      expect(item).toMatchObject({status: 'pending', hold: 'brief-read-failed'})
+      expect(item).not.toHaveProperty('gateReason')
+      expect(JSON.stringify(items(result.comments))).not.toContain('secret')
+    })
 
-    it('leaves the goal open, and the next run with a readable brief dispatches it', async () => {
+    it('leaves the goal open, and a re-approval with a readable brief dispatches it and clears the hold', async () => {
       const shared = goal().comments
       const first = await dispatch({
         comments: shared,
@@ -483,10 +483,11 @@ describe('runDispatch: a goal whose item carries a domain brief reference', () =
         extra: {loadBriefFile: async () => briefFile(nodeIds)},
       })
 
-      expect(first.counts).toMatchObject({dispatched: 0, deferred: 1})
-      expect(second.counts).toMatchObject({dispatched: 1, deferred: 0, blocked: 0})
+      expect(first.counts).toMatchObject({dispatched: 0, held: 1})
+      expect(second.counts).toMatchObject({dispatched: 1, held: 0, blocked: 0})
       expect(second.dispatched).toHaveLength(1)
-      expect(items(shared)[0]?.status).toBe('dispatched')
+      expect(items(shared)[0]).toMatchObject({status: 'dispatched'})
+      expect(items(shared)[0]).not.toHaveProperty('hold')
     })
 
     it('holds only the items that need the brief: the others of the goal dispatch', async () => {
@@ -510,7 +511,7 @@ describe('runDispatch: a goal whose item carries a domain brief reference', () =
       })
 
       expect(result.dispatched.map(call => call.repo)).toStrictEqual(['agent'])
-      expect(result.counts).toMatchObject({dispatched: 1, deferred: 1, blocked: 0})
+      expect(result.counts).toMatchObject({dispatched: 1, held: 1, blocked: 0})
     })
 
     it('still blocks for good on an identity mismatch found in a later run', async () => {
@@ -573,6 +574,231 @@ describe('runDispatch: a goal whose item carries a domain brief reference', () =
 function clientWith(getContent: (params: unknown) => Promise<unknown>): CrossRepoDispatchOctokitClient {
   return {rest: {...mockOctokit([]).rest, repos: {getContent: getContent as never}}}
 }
+
+describe("runDispatch: the target's live node ID, read before any intent is written", () => {
+  const nodeIds = [{nameWithOwner: 'fro-bot/dashboard', nodeId: 'R_dash'}]
+  const goal = () => pendingGoal(DASHBOARD, BRIEF_LINE())
+  const load = async () => briefFile(nodeIds)
+
+  it('reads it once for the target, after the identity check passes, and dispatches when it equals the brief', async () => {
+    const loadLiveNodeId = vi.fn(async (_target: DispatchTarget) => 'R_dash')
+
+    const result = await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: load, loadLiveNodeId},
+    })
+
+    expect(result.counts).toMatchObject({dispatched: 1, held: 0, blocked: 0})
+    expect(loadLiveNodeId).toHaveBeenCalledTimes(1)
+    expect(loadLiveNodeId).toHaveBeenCalledWith(DASHBOARD)
+  })
+
+  it('blocks for good and dispatches nothing when the repository behind the name differs from the brief, however fresh the registry row looks', async () => {
+    const result = await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: load, loadLiveNodeId: async () => 'R_reused_name'},
+    })
+
+    expect(result.dispatched).toStrictEqual([])
+    expect(result.counts).toMatchObject({dispatched: 0, blocked: 1, held: 0})
+    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-identity-mismatch'})
+    expect(items(result.comments).map(item => item.status)).not.toContain('intent')
+  })
+
+  it.each([
+    ['the lookup fails', async () => Promise.reject(new Error('502 secret detail'))],
+    ['the lookup answers nothing', async () => ''],
+  ])('holds the item, with no intent written, when %s', async (_name, loadLiveNodeId) => {
+    const result = await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: load, loadLiveNodeId},
+    })
+
+    expect(result.dispatched).toStrictEqual([])
+    expect(result.counts).toMatchObject({dispatched: 0, held: 1, blocked: 0})
+    expect(items(result.comments)[0]).toMatchObject({status: 'pending', hold: 'brief-read-failed'})
+    expect(JSON.stringify(items(result.comments))).not.toContain('secret')
+  })
+
+  it('holds the item when the run has no way to look the repository up', async () => {
+    const result = await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: load, loadLiveNodeId: undefined},
+    })
+
+    expect(result.dispatched).toStrictEqual([])
+    expect(result.counts).toMatchObject({held: 1})
+  })
+
+  it('looks nothing up for an item the identity check already blocks, or one with no brief', async () => {
+    const loadLiveNodeId = vi.fn(async () => 'R_dash')
+    const plain = pendingGoal(DASHBOARD, 'Update the docs')
+
+    await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_other')],
+      extra: {loadBriefFile: load, loadLiveNodeId},
+    })
+    await dispatch({comments: plain.comments, registry: [row(DASHBOARD, 'R_other')], extra: {loadLiveNodeId}})
+
+    expect(loadLiveNodeId).not.toHaveBeenCalled()
+  })
+
+  it('holds an item whose lookup fails but dispatches another of the same goal', async () => {
+    const agent = {owner: 'fro-bot', name: 'agent'}
+    const checklist = [
+      '<!-- fro-bot:cross-repo-items:start -->',
+      `- [ ] fro-bot/dashboard: ${BRIEF_LINE()}`,
+      `- [ ] fro-bot/agent: ${BRIEF_LINE()}`,
+      '<!-- fro-bot:cross-repo-items:end -->',
+    ].join('\n')
+    const parsed = parseDecomposition(checklist)
+    const comments = [
+      {id: 1, body: checklist, login: 'fro-bot'},
+      {id: 2, body: buildMarkerComment({goal: 'goal-1', items: parsed.items, markerHash: ''}), login: 'fro-bot'},
+    ]
+
+    const result = await dispatch({
+      comments,
+      registry: [row(DASHBOARD, 'R_dash'), row(agent, 'R_agent')],
+      extra: {
+        loadBriefFile: async () => briefFile([...nodeIds, {nameWithOwner: 'fro-bot/agent', nodeId: 'R_agent'}]),
+        loadLiveNodeId: async (target: DispatchTarget) => {
+          if (target.name === 'dashboard') throw new Error('502')
+          return 'R_agent'
+        },
+      },
+    })
+
+    expect(result.dispatched.map(call => call.repo)).toStrictEqual(['agent'])
+    expect(result.counts).toMatchObject({dispatched: 1, held: 1})
+  })
+})
+
+describe('parseBriefDomain: a domain key must name exactly one domain', () => {
+  const repos = [{nameWithOwner: 'a/b', nodeId: 'R_1'}]
+
+  it('fails with the fixed message when two domains carry the key, even with the same repos', () => {
+    const text = JSON.stringify({
+      domains: [
+        {key: 'harness-tools', repos},
+        {key: 'harness-tools', repos},
+      ],
+    })
+
+    expect(() => parseBriefDomain(text, 'harness-tools')).toThrow(new Error('the domain brief cannot be read'))
+  })
+
+  it('still reads one domain among others with other keys', () => {
+    const text = JSON.stringify({
+      domains: [
+        {key: 'other', repos},
+        {key: 'harness-tools', repos},
+      ],
+    })
+
+    expect([...parseBriefDomain(text, 'harness-tools').keys()]).toStrictEqual(['a/b'])
+  })
+})
+
+describe('the held mark on an item', () => {
+  const body = (item: Record<string, unknown>): unknown => ({
+    goal: 'g',
+    items: [{id: 'item-1', target: {owner: 'a', name: 'b'}, promptHash: 'h', status: 'pending', ...item}],
+  })
+
+  it('accepts the one fixed value', () => {
+    expect(isGoalStateBody(body({hold: 'brief-read-failed'}))).toBe(true)
+  })
+
+  it.each(['', 'retry', 'brief-unreadable', 3, null])('rejects %j', hold => {
+    expect(isGoalStateBody(body({hold}))).toBe(false)
+  })
+
+  it('exports the fixed instruction an operator reads', () => {
+    expect(HELD_MESSAGE).toBe('brief read failed; remove and reapply dispatch-approved to retry')
+  })
+})
+
+async function track(items: DispatchItem[]) {
+  const state: GoalState = {goal: 'goal-1', items, markerHash: ''}
+  const comments: MockComment[] = [{id: 2, body: buildMarkerComment(state), login: 'fro-bot'}]
+  const marker = extractMarker(comments[0]?.body ?? '')
+  if (marker === null) throw new TypeError('the fixture marker did not parse')
+  return runTrack({
+    octokit: mockOctokit(comments),
+    repo: REPO,
+    loadOpenGoalIssues: async () => [{issueNumber: 42, marker: {...marker, hash: marker.hash}}],
+    loadRegistry: async () => [row(DASHBOARD, 'R_dash')],
+    findRunConclusion: async () => undefined,
+  })
+}
+
+describe('runTrack: an item held for a brief read', () => {
+  const base = (changes: Partial<DispatchItem>): DispatchItem => ({
+    id: 'item-1',
+    target: DASHBOARD,
+    promptHash: 'h',
+    status: 'pending',
+    ...changes,
+  })
+
+  it('counts it as held, and keeps the goal open', async () => {
+    const result = await track([base({hold: 'brief-read-failed'})])
+
+    expect(result.counts).toMatchObject({itemsHeld: 1, goalsClosed: 0})
+  })
+
+  it('counts nothing for a pending item that is not held', async () => {
+    const result = await track([base({})])
+
+    expect(result.counts.itemsHeld).toBe(0)
+  })
+})
+
+describe('loadLiveNodeId', () => {
+  const clientWith = (get: (params: unknown) => Promise<unknown>): CrossRepoDispatchOctokitClient => ({
+    rest: {...mockOctokit([]).rest, repos: {getContent: async () => ({data: {}}), get: get as never}},
+  })
+
+  it('reads the repository through the target client and returns its node ID', async () => {
+    const get = vi.fn(async () => ({data: {node_id: 'R_dash'}}))
+
+    expect(await loadLiveNodeId(clientWith(get), DASHBOARD)).toBe('R_dash')
+    expect(get).toHaveBeenCalledWith({owner: 'fro-bot', repo: 'dashboard'})
+  })
+
+  it.each([
+    ['no node ID', {data: {}}],
+    ['an empty node ID', {data: {node_id: ''}}],
+    ['a node ID that is not a string', {data: {node_id: 3}}],
+    ['no data', {}],
+  ])('fails with the fixed message for %s', async (_name, answer) => {
+    await expect(
+      loadLiveNodeId(
+        clientWith(async () => answer),
+        DASHBOARD,
+      ),
+    ).rejects.toThrow(new Error('the repository cannot be read'))
+  })
+
+  it('fails with the fixed message when the read fails, naming nothing of the failure', async () => {
+    await expect(
+      loadLiveNodeId(
+        clientWith(async () => Promise.reject(new Error('secret token detail'))),
+        DASHBOARD,
+      ),
+    ).rejects.toThrow(new Error('the repository cannot be read'))
+  })
+
+  it('fails when the client has no repository API', async () => {
+    await expect(loadLiveNodeId(mockOctokit([]), DASHBOARD)).rejects.toThrow(new Error('the repository cannot be read'))
+  })
+})
 
 describe('loadBriefFile', () => {
   const file = (text: string, changes: Record<string, unknown> = {}) => ({

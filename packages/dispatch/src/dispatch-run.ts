@@ -173,6 +173,11 @@ export interface RunDispatchInput {
    * it, or when it throws, such an item is blocked as `brief-unreadable`; an item that names no brief never calls it.
    */
   loadBriefFile?: (repo: RepoRepository, commit: string) => Promise<string>
+  /**
+   * The node ID of the repository that `target` names right now, read once for a domain item after its brief identity
+   * check passes and before any intent is written. Without it, or when it throws or answers nothing, the item is held.
+   */
+  loadLiveNodeId?: (target: DispatchTarget) => Promise<string>
   loadOtherOpenGoalMarkers: () => Promise<GoalState[]>
   findRunByCorrelationId: (target: DispatchTarget, correlationId: string) => Promise<boolean>
   createWorkflowDispatch: (params: {
@@ -205,6 +210,8 @@ export interface RunDispatchCounts {
   casDeferred: number
   seedRejected: number
   dispatchError: number
+  /** Items left pending because a read they need before dispatch failed; each needs the operator to reapply the label. */
+  held: number
 }
 
 export interface RunDispatchResult {
@@ -222,6 +229,7 @@ function emptyDispatchCounts(): RunDispatchCounts {
     casDeferred: 0,
     seedRejected: 0,
     dispatchError: 0,
+    held: 0,
   }
 }
 
@@ -342,24 +350,25 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
     const registryEntry = registryByKey.get(`${item.target.owner}/${item.target.name}`)
     classifyReceiptCapability(registryEntry)
     const gate = gateTarget(registryEntry)
-    if (gate !== 'ok') return {...item, status: 'blocked'}
+    if (gate !== 'ok') return {...withoutHold(item), status: 'blocked'}
     // An eligible target owner missing a minted dispatch token is an ops
     // misconfiguration (App-installation mint didn't cover this owner) —
     // fail this item closed rather than dispatch with the wrong token.
     if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
-      return {...item, status: 'blocked'}
+      return {...withoutHold(item), status: 'blocked'}
     }
     // A domain item names a brief, and dispatch checks for itself that the target is the repository that brief
-    // names. It does not take the checklist author's word for it, or the preflight's. A brief that cannot be read
-    // this run holds the item pending, so the next run retries it; every other failure is a fact about the prompt
-    // or the commit, and blocks for good.
-    const reason = await briefGateReason(item, prompts.get(item.promptHash), registry, briefFile)
+    // names. It does not take the checklist author's word for it, or the preflight's, or the registry's: after the
+    // brief says the name is right, the repository behind the name is read live. A read that fails holds the item
+    // pending and marks it, so the operator is told; nothing retries it by itself, and the operator reapplies the
+    // label. Every other failure is a fact about the prompt, the commit or the repository, and blocks for good.
+    const reason = await briefGateReason(item, prompts.get(item.promptHash), registry, briefFile, input.loadLiveNodeId)
     if (reason === 'retry') {
       held.add(item.id)
-      return item
+      return {...item, hold: 'brief-read-failed'}
     }
-    if (reason !== null) return {...item, status: 'blocked', gateReason: reason}
-    return item
+    if (reason !== null) return {...withoutHold(item), status: 'blocked', gateReason: reason}
+    return withoutHold(item)
   }
   const gatedItems: DispatchItem[] = []
   for (const item of state.items) {
@@ -370,18 +379,17 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   // 3. Compute current approval fingerprint; store as approval record via CAS.
   const fingerprint = computeApprovalFingerprint(state.items)
   const priorHash = marker.hash
-  // A brief block found on a later run (the first run held the item because the brief could not be read) is written
-  // too, as the same terminal block, and only that: any other gate block is left to the registry, as before.
-  const briefBlocks = state.items.filter(
-    item =>
-      item.gateReason !== undefined &&
-      marker.state.items.find(stored => stored.id === item.id)?.gateReason === undefined,
-  )
-  if (state.approvalFingerprint !== fingerprint || briefBlocks.length > 0) {
+  // What a run learned about a domain item (a terminal block, or a hold) is written to the marker, and only that: any
+  // other gate block is left to the registry, as before.
+  const learned = state.items.filter(item => {
+    const stored = marker.state.items.find(candidate => candidate.id === item.id)
+    return item.gateReason !== stored?.gateReason || item.hold !== stored?.hold
+  })
+  if (state.approvalFingerprint !== fingerprint || learned.length > 0) {
     const approved = state.approvalFingerprint !== fingerprint
     const persisted = approved
       ? state.items
-      : marker.state.items.map(stored => briefBlocks.find(item => item.id === stored.id) ?? stored)
+      : marker.state.items.map(stored => learned.find(item => item.id === stored.id) ?? stored)
     const withApproval: GoalState = {...state, items: persisted, approvalFingerprint: fingerprint}
     const serialized = serializeMarker(withApproval)
     const approvalState: GoalState = {...withApproval, markerHash: serialized.hash}
@@ -434,9 +442,11 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
 
   const otherOpenGoalMarkers = await input.loadOtherOpenGoalMarkers()
   const plan = planDispatch({state, fingerprint, otherOpenGoalMarkers})
-  // An item held for a brief that could not be read is deferred, not blocked: nothing about it is final.
+  // An item held for a read that failed is neither deferred nor blocked: nothing about it is final, and it is counted
+  // on its own so the job can say so.
   const dispatchable = plan.toDispatch.filter(item => !held.has(item.id))
-  counts.deferred = plan.deferredCount + plan.toDispatch.length - dispatchable.length
+  counts.held = plan.toDispatch.length - dispatchable.length
+  counts.deferred = plan.deferredCount
   counts.blocked = plan.blockedCount
 
   // 5/6. Sequential per-item dispatch with re-read+re-compare before each item.
@@ -555,16 +565,25 @@ async function loadBrief(input: RunDispatchInput, commit: string): Promise<strin
   return input.loadBriefFile(input.repo, commit)
 }
 
+/** An item without its hold mark: a run that dispatches or blocks it has nothing left to say about a failed read. */
+function withoutHold(item: DispatchItem): DispatchItem {
+  const rest = {...item}
+  delete rest.hold
+  return rest
+}
+
 /**
  * What the gate does with an item whose prompt names a domain brief: `null` when the prompt names none or the target
- * is the repository the brief names; a reason that blocks the item for good; or `'retry'` when the brief could not
- * be read this run, which holds the item pending for the next run. A read that fails carries no detail.
+ * is the repository the brief names; a reason that blocks the item for good; or `'retry'` when a read it needs failed
+ * this run (the brief at its commit, or the repository behind the name), which holds the item pending. A read that
+ * fails carries no detail.
  */
 async function briefGateReason(
   item: DispatchItem,
   prompt: string | undefined,
   registry: readonly GateEntry[],
   readBrief: (commit: string) => Promise<string>,
+  readLiveNodeId: ((target: DispatchTarget) => Promise<string>) | undefined,
 ): Promise<GateReason | 'retry' | null> {
   if (prompt === undefined) return null
   const reference = parseBriefReference(prompt)
@@ -582,7 +601,19 @@ async function briefGateReason(
   } catch {
     return 'brief-content-invalid'
   }
-  return checkBriefIdentity({registry, target: item.target, programIds})
+  const identity = checkBriefIdentity({registry, target: item.target, programIds})
+  if (identity !== null) return identity
+  // The registry says the name is right; the repository behind it now must say so too.
+  const programId = programIds.get(`${item.target.owner}/${item.target.name}`.toLowerCase())
+  let live: string
+  try {
+    if (readLiveNodeId === undefined) return 'retry'
+    live = await readLiveNodeId(item.target)
+  } catch {
+    return 'retry'
+  }
+  if (live === '') return 'retry'
+  return live === programId ? null : 'brief-identity-mismatch'
 }
 
 function flipItemStatus(
@@ -663,6 +694,8 @@ export interface RunTrackCounts {
   goalsClosed: number
   idempotentNoop: number
   casDeferred: number
+  /** Pending items marked as held for a failed read; each needs the operator to reapply the label. */
+  itemsHeld: number
 }
 
 export interface RunTrackResult {
@@ -680,6 +713,7 @@ function emptyTrackCounts(): RunTrackCounts {
     goalsClosed: 0,
     idempotentNoop: 0,
     casDeferred: 0,
+    itemsHeld: 0,
   }
 }
 
@@ -821,6 +855,9 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
       else if (item.status === 'blocked') counts.itemsBlocked += 1
       else if (item.status === 'needs-attention') counts.itemsNeedsAttention += 1
     }
+    counts.itemsHeld += snapshot.state.items.filter(
+      item => item.status === 'pending' && item.hold === 'brief-read-failed',
+    ).length
     counts.itemsStillOpen += snapshot.state.items.filter(
       item => item.status === 'dispatched' || item.status === 'needs-attention',
     ).length

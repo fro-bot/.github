@@ -12,6 +12,26 @@ import {
 import {readLatestMarker, type OpenGoalIssue, type RepoRepository} from './dispatch-run.ts'
 
 /**
+ * The node ID of the repository that `target` names right now, through the target owner's client. A name can be
+ * reused by another repository before the registry refreshes, so a domain item is dispatched only to the repository
+ * its brief names. A client with no repository API, a failed read or an answer with no node ID fails with one fixed
+ * message that names nothing of the failure.
+ */
+export async function loadLiveNodeId(octokit: CrossRepoDispatchOctokitClient, target: DispatchTarget): Promise<string> {
+  const failure = new Error('the repository cannot be read')
+  if (octokit.rest.repos?.get === undefined) throw failure
+  let data: unknown
+  try {
+    data = (await octokit.rest.repos.get({owner: target.owner, repo: target.name})).data
+  } catch {
+    throw failure
+  }
+  const nodeId = data !== null && typeof data === 'object' ? (data as Record<string, unknown>).node_id : undefined
+  if (typeof nodeId !== 'string' || nodeId === '') throw failure
+  return nodeId
+}
+
+/**
  * The text of `program-domains.json` of `repo` at `commit`, through the contents API. The commit is a full SHA a
  * checklist line carries, so what is read is what the operator's approval covers. A client with no contents API, a
  * failed read, a directory, a symlink or content that is not base64 fails with one fixed message that names nothing

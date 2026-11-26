@@ -135,6 +135,11 @@ jobs:
               echo "| Reconciled | $(jq '.counts.reconciled // 0' "$result") |"
               echo "| Skipped unsafe prompt | $(jq '.counts.skippedUnsafePrompt // 0' "$result") |"
               echo "| CAS deferred | $(jq '.counts.casDeferred // 0' "$result") |"
+              echo "| Held (brief read failed) | $(jq '.counts.held // 0' "$result") |"
+              if [[ "$(jq '.counts.held // 0' "$result")" -gt 0 ]]; then
+                echo ""
+                echo "brief read failed; remove and reapply dispatch-approved to retry"
+              fi
             else
               echo "| Status | (dispatch result unavailable) |"
             fi
@@ -269,6 +274,11 @@ jobs:
               echo "| Goals closed | $(jq '.counts.goalsClosed // 0' "$result") |"
               echo "| Idempotent no-op | $(jq '.counts.idempotentNoop // 0' "$result") |"
               echo "| CAS deferred | $(jq '.counts.casDeferred // 0' "$result") |"
+              echo "| Items held (brief read failed) | $(jq '.counts.itemsHeld // 0' "$result") |"
+              if [[ "$(jq '.counts.itemsHeld // 0' "$result")" -gt 0 ]]; then
+                echo ""
+                echo "brief read failed; remove and reapply dispatch-approved to retry"
+              fi
             else
               echo "| Status | (track result unavailable) |"
             fi

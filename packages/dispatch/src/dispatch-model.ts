@@ -73,6 +73,13 @@ export interface DispatchItem {
    * marker written before the field existed still loads. It never means a worker answered.
    */
   gateReason?: GateReason
+  /**
+   * Set while a domain item is held pending because a read it needs before dispatch failed (the brief at its pinned
+   * commit, or the live repository behind its name). Not terminal: the item is neither dispatched nor blocked, and
+   * nothing re-dispatches it by itself, so the operator removes and reapplies `dispatch-approved`
+   * (see `HELD_MESSAGE`). Cleared when a run dispatches or blocks the item.
+   */
+  hold?: 'brief-read-failed'
 }
 
 export interface GoalState {
@@ -109,6 +116,9 @@ export type ResultStatus = 'success' | 'noop' | 'failed' | 'declined' | 'counter
 
 /** Why an item is `blocked` by a worker's answer rather than by the registry gate. */
 export type BlockedReason = 'declined' | 'countered'
+
+/** What a run says, on stderr and in the job summary, about an item held for a failed read. A fixed text. */
+export const HELD_MESSAGE = 'brief read failed; remove and reapply dispatch-approved to retry'
 
 /**
  * Why the gate blocked, for good, an item whose prompt names a domain brief. A closed vocabulary, never free text,
@@ -303,6 +313,7 @@ function isDispatchItem(value: unknown): value is DispatchItem {
     return false
   }
   if (record.gateReason !== undefined && !GATE_REASONS.has(record.gateReason as GateReason)) return false
+  if (record.hold !== undefined && record.hold !== 'brief-read-failed') return false
   return true
 }
 
@@ -359,6 +370,8 @@ export interface CrossRepoDispatchOctokitClient {
     }
     /** The contents read behind a domain brief. Absent on a client that cannot make it, which blocks such an item. */
     readonly repos?: {
+      /** The repository itself, for the node ID behind a name. */
+      readonly get?: (params: {owner: string; repo: string}) => Promise<{data: unknown}>
       readonly getContent: (params: {
         owner: string
         repo: string

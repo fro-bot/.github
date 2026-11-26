@@ -91,7 +91,10 @@ export function parseBriefDomain(text: string, domain: string): ReadonlyMap<stri
   }
   const domains: unknown = isObject(parsed) ? parsed.domains : undefined
   if (!Array.isArray(domains)) throw new Error(BRIEF_UNREADABLE)
-  const entry: unknown = domains.find(candidate => isObject(candidate) && candidate.key === domain)
+  // The key must name exactly one domain: the first of two would be a choice the file never made.
+  const matching: unknown[] = domains.filter(candidate => isObject(candidate) && candidate.key === domain)
+  if (matching.length !== 1) throw new Error(BRIEF_UNREADABLE)
+  const entry: unknown = matching[0]
   const repos: unknown = isObject(entry) ? entry.repos : undefined
   if (!Array.isArray(repos) || repos.length === 0) throw new Error(BRIEF_UNREADABLE)
   const ids = new Map<string, string>()
