@@ -47,24 +47,32 @@ export interface BriefReference {
 const BRIEF_UNREADABLE = 'the domain brief cannot be read'
 
 /**
- * The domain brief an item's prompt names, if it names one. A prompt with no `program-domains.json@` is no domain
- * item (`null`) and is dispatched as ever. A prompt that has one must name exactly one well-formed reference
- * (`Brief: program-domains.json@<40 hex>#<domain>`, the same reference written any number of times); anything else
- * is `'malformed'`, so a half-written or doubled reference blocks the item and never passes as a non-domain one.
+ * The domain brief an item's prompt names, if it names one. Any occurrence of `program-domains.json` makes a prompt a
+ * domain item: a prompt that never names the file is `null` and is dispatched as ever. A domain item must name the
+ * file exactly once, as `program-domains.json@<40 lowercase hex>#<domain key>`: the file name starts the prompt or
+ * follows whitespace, the key is `[a-z0-9][a-z0-9-]*` (the domain file's key rule) and ends the prompt, or is
+ * followed by whitespace or by a full stop and then whitespace or the end. A second mention of any form, a half-written
+ * reference, or a key followed by anything else (`#safe/../../other`) is `'malformed'`, so no prompt can carry a
+ * reference that this check reads and another reader reads differently. The scan is index arithmetic and anchored
+ * patterns of fixed length: no quantifier is nested, so it is linear.
  */
 export function parseBriefReference(prompt: string): BriefReference | 'malformed' | null {
-  if (!prompt.includes('program-domains.json@')) return null
-  const references = new Map<string, BriefReference>()
-  for (const match of prompt.matchAll(/Brief: program-domains\.json@([\da-f]{40})#([a-z\d][a-z\d-]*)(?![\w-])/g)) {
-    const [, commit, domain] = match
-    if (commit !== undefined && domain !== undefined) references.set(`${commit}#${domain}`, {commit, domain})
-  }
-  const [only, ...others] = references.values()
-  if (only === undefined || others.length > 0) return 'malformed'
-  // A well-formed reference next to a half-written one (`Brief: program-domains.json@abc#x`) is as bad as none.
-  const mentions = prompt.split('program-domains.json@').length - 1
-  const wellFormed = [...prompt.matchAll(/program-domains\.json@[\da-f]{40}#[a-z\d][a-z\d-]*(?![\w-])/g)].length
-  return mentions === wellFormed ? only : 'malformed'
+  const file = 'program-domains.json'
+  const mentions = prompt.split(file).length - 1
+  if (mentions === 0) return null
+  if (mentions > 1) return 'malformed'
+  const at = prompt.indexOf(file)
+  if (at > 0 && !/\s/.test(prompt.charAt(at - 1))) return 'malformed'
+  const rest = prompt.slice(at + file.length)
+  const commit = rest.slice(1, 41)
+  if (!rest.startsWith('@') || !/^[\da-f]{40}$/.test(commit) || rest.charAt(41) !== '#') return 'malformed'
+  const tail = rest.slice(42)
+  let end = 0
+  while (end < tail.length && (end === 0 ? /[a-z\d]/ : /[a-z\d-]/).test(tail.charAt(end))) end += 1
+  if (end === 0) return 'malformed'
+  const after = tail.slice(end)
+  const ends = after === '' || /^\s/.test(after) || /^\.(?:\s|$)/.test(after)
+  return ends ? {commit, domain: tail.slice(0, end)} : 'malformed'
 }
 
 /**

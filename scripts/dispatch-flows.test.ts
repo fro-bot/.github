@@ -897,13 +897,14 @@ describe('cross-repo-dispatch domain goal (bun: a fro-bot checklist on a fro-bot
     expect(unhandledMutations()).toStrictEqual([])
   })
 
-  it('blocks the item when the brief cannot be read', async () => {
+  it('holds the item, counted deferred and not blocked, when the brief cannot be read, so the next run retries it', async () => {
     const {result, cwd} = await approvedRun(null)
 
     expect(result.exitCode).toBe(0)
     expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
       dispatched: 0,
-      blocked: 1,
+      deferred: 1,
+      blocked: 0,
     })
     expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
   })

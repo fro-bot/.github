@@ -123,14 +123,6 @@ describe('runDispatch: a goal whose items carry no domain brief reference', () =
     expect(result.dispatched).toHaveLength(1)
     expect(loadBriefFile).not.toHaveBeenCalled()
   })
-
-  it('dispatches an item whose prompt only mentions program-domains.json without the brief form', async () => {
-    const goal = pendingGoal(DASHBOARD, 'Read program-domains.json and report')
-
-    const result = await dispatch({comments: goal.comments, registry: [row(DASHBOARD, undefined)]})
-
-    expect(result.counts).toMatchObject({dispatched: 1, blocked: 0})
-  })
 })
 
 /** The part of `program-domains.json` dispatch reads: one domain, its repositories and their node IDs. */
@@ -144,7 +136,7 @@ const BRIEF_LINE = (commit = COMMIT, domain = 'harness-tools'): string =>
   `Bring this repository to the brief. Brief: program-domains.json@${commit}#${domain}. Part issue: https://github.com/fro-bot/dashboard/issues/3`
 
 describe('parseBriefReference', () => {
-  it('is null for a prompt with no reference', () => {
+  it('is null for a prompt that never names the domain file', () => {
     expect(parseBriefReference('Update the docs')).toBeNull()
   })
 
@@ -152,34 +144,61 @@ describe('parseBriefReference', () => {
     expect(parseBriefReference(BRIEF_LINE())).toStrictEqual({commit: COMMIT, domain: 'harness-tools'})
   })
 
-  it('reads the reference at the end of a prompt', () => {
-    expect(parseBriefReference(`Do it. Brief: program-domains.json@${COMMIT}#harness-tools`)).toStrictEqual({
-      commit: COMMIT,
-      domain: 'harness-tools',
-    })
+  it.each([
+    ['the end of the prompt', `Do it. Brief: program-domains.json@${COMMIT}#harness-tools`],
+    ['a full stop and a space', `Brief: program-domains.json@${COMMIT}#harness-tools. Part issue: x`],
+    ['a space', `Brief: program-domains.json@${COMMIT}#harness-tools Part issue: x`],
+    ['a newline', `Brief: program-domains.json@${COMMIT}#harness-tools\nPart issue: x`],
+    ['the start of the prompt', `program-domains.json@${COMMIT}#harness-tools`],
+  ])('reads a reference that ends at %s', (_name, prompt) => {
+    expect(parseBriefReference(prompt)).toStrictEqual({commit: COMMIT, domain: 'harness-tools'})
+  })
+
+  it('reads a domain key of one character and one with digits and dashes', () => {
+    expect(parseBriefReference(`Brief: program-domains.json@${COMMIT}#a`)).toMatchObject({domain: 'a'})
+    expect(parseBriefReference(`Brief: program-domains.json@${COMMIT}#0-a-9`)).toMatchObject({domain: '0-a-9'})
   })
 
   it.each([
     ['a short commit', 'Brief: program-domains.json@abc123#harness-tools. Part issue: x'],
     ['an upper-case commit', `Brief: program-domains.json@${'A'.repeat(40)}#harness-tools.`],
     ['a missing domain', `Brief: program-domains.json@${COMMIT}. Part issue: x`],
+    ['an empty domain', `Brief: program-domains.json@${COMMIT}#. Part issue: x`],
     ['a domain that starts with a dash', `Brief: program-domains.json@${COMMIT}#-x.`],
+    ['an upper-case domain', `Brief: program-domains.json@${COMMIT}#Harness.`],
     ['a 41-character commit', `Brief: program-domains.json@${'a'.repeat(41)}#harness-tools.`],
+    ['a missing @', `Brief: program-domains.json#harness-tools. Part issue: x`],
+    ['a missing #', `Brief: program-domains.json@${COMMIT}harness-tools. Part issue: x`],
+    ['a mention of the file with no reference', 'Read program-domains.json and report'],
+    ['a path after the domain', `Brief: program-domains.json@${COMMIT}#safe/../../other. Part issue: x`],
+    ['a path separator right after the domain', `Brief: program-domains.json@${COMMIT}#safe/other`],
+    ['a dot that is not a full stop', `Brief: program-domains.json@${COMMIT}#safe.other`],
+    ['a query after the domain', `Brief: program-domains.json@${COMMIT}#safe?x=1`],
+    ['a path in front of the file name', `Brief: ../program-domains.json@${COMMIT}#harness-tools.`],
+    ['a word glued to the file name', `Brief: my-program-domains.json@${COMMIT}#harness-tools.`],
   ])('is malformed for %s, so a half-written reference never passes as no reference', (_name, prompt) => {
     expect(parseBriefReference(prompt)).toBe('malformed')
   })
 
-  it('is malformed for two different references', () => {
-    const prompt = `${BRIEF_LINE()} Also Brief: program-domains.json@${'b'.repeat(40)}#harness-tools.`
-
+  it.each([
+    [
+      'a different reference after it',
+      `${BRIEF_LINE()} Also Brief: program-domains.json@${'b'.repeat(40)}#harness-tools.`,
+    ],
+    ['the same reference twice', `${BRIEF_LINE()} ${BRIEF_LINE()}`],
+    ['an unprefixed second reference', `${BRIEF_LINE()} program-domains.json@${'b'.repeat(40)}#other.`],
+    ['a second mention with no reference', `${BRIEF_LINE()} See program-domains.json too.`],
+    ['a half-written second mention', `${BRIEF_LINE()} program-domains.json@abc`],
+  ])('is malformed for a prompt that carries %s: one reference only', (_name, prompt) => {
     expect(parseBriefReference(prompt)).toBe('malformed')
   })
 
-  it('reads one reference written twice the same way', () => {
-    expect(parseBriefReference(`${BRIEF_LINE()} ${BRIEF_LINE()}`)).toStrictEqual({
-      commit: COMMIT,
-      domain: 'harness-tools',
-    })
+  it('scales linearly on a prompt that repeats a near-miss, with no nested quantifier to backtrack', () => {
+    const near = `program-domains.json@${'a'.repeat(39)} `.repeat(20_000)
+    const started = performance.now()
+
+    expect(parseBriefReference(near)).toBe('malformed')
+    expect(performance.now() - started).toBeLessThan(1000)
   })
 })
 
@@ -292,15 +311,18 @@ describe('an item may carry a gate reason', () => {
     items: [{id: 'item-1', target: {owner: 'a', name: 'b'}, promptHash: 'h', status: 'blocked', ...item}],
   })
 
-  it.each(['brief-unreadable', 'brief-identity-mismatch', 'brief-identity-ambiguous'])('accepts %s', reason => {
-    expect(isGoalStateBody(body({gateReason: reason}))).toBe(true)
-  })
+  it.each(['brief-reference-invalid', 'brief-content-invalid', 'brief-identity-mismatch', 'brief-identity-ambiguous'])(
+    'accepts %s',
+    reason => {
+      expect(isGoalStateBody(body({gateReason: reason}))).toBe(true)
+    },
+  )
 
   it('accepts a marker item written before the field existed', () => {
     expect(isGoalStateBody(body({}))).toBe(true)
   })
 
-  it.each(['declined', 'other', '', 3])('rejects %j', reason => {
+  it.each(['declined', 'other', '', 3, 'brief-unreadable'])('rejects %j', reason => {
     expect(isGoalStateBody(body({gateReason: reason}))).toBe(false)
   })
 })
@@ -391,10 +413,9 @@ describe('runDispatch: a goal whose item carries a domain brief reference', () =
   })
 
   it.each([
-    ['the read fails', async () => Promise.reject(new Error('503 secret detail'))],
     ['the file is not a brief', async () => 'not json'],
     ['the domain is missing', async () => briefFile(nodeIds, 'other-domain')],
-  ])('blocks the item as unreadable when %s', async (_name, loadBriefFile) => {
+  ])('blocks the item for good when %s at the pinned commit, which no retry changes', async (_name, loadBriefFile) => {
     const result = await dispatch({
       comments: goal().comments,
       registry: [row(DASHBOARD, 'R_dash')],
@@ -402,30 +423,112 @@ describe('runDispatch: a goal whose item carries a domain brief reference', () =
     })
 
     expect(result.dispatched).toStrictEqual([])
-    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-unreadable'})
-    expect(JSON.stringify(items(result.comments))).not.toContain('secret')
+    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-content-invalid'})
   })
 
-  it('blocks the item as unreadable when the run has no way to read a brief', async () => {
-    const result = await dispatch({comments: goal().comments, registry: [row(DASHBOARD, 'R_dash')]})
-
-    expect(result.dispatched).toStrictEqual([])
-    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-unreadable'})
-  })
-
-  it('blocks an item whose reference is half written', async () => {
-    const half = pendingGoal(DASHBOARD, 'Do it. Brief: program-domains.json@abc#harness-tools.')
+  it.each([
+    ['half written', 'Do it. Brief: program-domains.json@abc#harness-tools.'],
+    ['followed by a path', `Do it. Brief: program-domains.json@${COMMIT}#safe/../../other. Part issue: x`],
+    ['written twice', `${BRIEF_LINE()} ${BRIEF_LINE()}`],
+    ['a bare mention of the file', 'Read program-domains.json and report'],
+  ])('blocks for good an item whose reference is %s, reading no brief', async (_name, prompt) => {
+    const invalid = pendingGoal(DASHBOARD, prompt)
     const loadBriefFile = vi.fn(async () => briefFile(nodeIds))
 
     const result = await dispatch({
-      comments: half.comments,
+      comments: invalid.comments,
       registry: [row(DASHBOARD, 'R_dash')],
       extra: {loadBriefFile},
     })
 
     expect(result.dispatched).toStrictEqual([])
-    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-unreadable'})
+    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-reference-invalid'})
     expect(loadBriefFile).not.toHaveBeenCalled()
+  })
+
+  describe('a brief that cannot be read this run', () => {
+    const failing = [
+      ['the read fails', async () => Promise.reject(new Error('503 secret detail'))],
+      ['the run has no way to read a brief', undefined],
+    ] as const
+
+    it.each(failing)(
+      'leaves the item pending, dispatches nothing and counts it deferred when %s',
+      async (_name, load) => {
+        const result = await dispatch({
+          comments: goal().comments,
+          registry: [row(DASHBOARD, 'R_dash')],
+          extra: load === undefined ? {} : {loadBriefFile: load},
+        })
+
+        expect(result.dispatched).toStrictEqual([])
+        expect(result.counts).toMatchObject({dispatched: 0, deferred: 1, blocked: 0})
+        const [item] = items(result.comments)
+        expect(item?.status).toBe('pending')
+        expect(item).not.toHaveProperty('gateReason')
+        expect(JSON.stringify(items(result.comments))).not.toContain('secret')
+      },
+    )
+
+    it('leaves the goal open, and the next run with a readable brief dispatches it', async () => {
+      const shared = goal().comments
+      const first = await dispatch({
+        comments: shared,
+        registry: [row(DASHBOARD, 'R_dash')],
+        extra: {loadBriefFile: async () => Promise.reject(new Error('503'))},
+      })
+      const second = await dispatch({
+        comments: shared,
+        registry: [row(DASHBOARD, 'R_dash')],
+        extra: {loadBriefFile: async () => briefFile(nodeIds)},
+      })
+
+      expect(first.counts).toMatchObject({dispatched: 0, deferred: 1})
+      expect(second.counts).toMatchObject({dispatched: 1, deferred: 0, blocked: 0})
+      expect(second.dispatched).toHaveLength(1)
+      expect(items(shared)[0]?.status).toBe('dispatched')
+    })
+
+    it('holds only the items that need the brief: the others of the goal dispatch', async () => {
+      const agent = {owner: 'fro-bot', name: 'agent'}
+      const checklist = [
+        '<!-- fro-bot:cross-repo-items:start -->',
+        `- [ ] fro-bot/dashboard: ${BRIEF_LINE()}`,
+        '- [ ] fro-bot/agent: Update the agent docs',
+        '<!-- fro-bot:cross-repo-items:end -->',
+      ].join('\n')
+      const parsed = parseDecomposition(checklist)
+      const comments = [
+        {id: 1, body: checklist, login: 'fro-bot'},
+        {id: 2, body: buildMarkerComment({goal: 'goal-1', items: parsed.items, markerHash: ''}), login: 'fro-bot'},
+      ]
+
+      const result = await dispatch({
+        comments,
+        registry: [row(DASHBOARD, 'R_dash'), row(agent, 'R_agent')],
+        extra: {loadBriefFile: async () => Promise.reject(new Error('503'))},
+      })
+
+      expect(result.dispatched.map(call => call.repo)).toStrictEqual(['agent'])
+      expect(result.counts).toMatchObject({dispatched: 1, deferred: 1, blocked: 0})
+    })
+
+    it('still blocks for good on an identity mismatch found in a later run', async () => {
+      const shared = goal().comments
+      await dispatch({
+        comments: shared,
+        registry: [row(DASHBOARD, 'R_other')],
+        extra: {loadBriefFile: async () => Promise.reject(new Error('503'))},
+      })
+      const second = await dispatch({
+        comments: shared,
+        registry: [row(DASHBOARD, 'R_other')],
+        extra: {loadBriefFile: async () => briefFile(nodeIds)},
+      })
+
+      expect(second.dispatched).toStrictEqual([])
+      expect(items(shared)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-identity-mismatch'})
+    })
   })
 
   it('reads no brief for a target the registry gate already refuses', async () => {

@@ -330,6 +330,7 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   // an unrecognized `cross_repo_receipts` value must fail closed at this point,
   // not later at confirmed-dispatch time after `createWorkflowDispatch` already ran.
   let state: GoalState = {...marker.state, markerHash: marker.hash}
+  const held = new Set<string>()
   const briefFiles = new Map<string, Promise<string>>()
   const briefFile = async (commit: string): Promise<string> => {
     const loaded = briefFiles.get(commit) ?? loadBrief(input, commit)
@@ -349,8 +350,14 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       return {...item, status: 'blocked'}
     }
     // A domain item names a brief, and dispatch checks for itself that the target is the repository that brief
-    // names. It does not take the checklist author's word for it, or the preflight's.
+    // names. It does not take the checklist author's word for it, or the preflight's. A brief that cannot be read
+    // this run holds the item pending, so the next run retries it; every other failure is a fact about the prompt
+    // or the commit, and blocks for good.
     const reason = await briefGateReason(item, prompts.get(item.promptHash), registry, briefFile)
+    if (reason === 'retry') {
+      held.add(item.id)
+      return item
+    }
     if (reason !== null) return {...item, status: 'blocked', gateReason: reason}
     return item
   }
@@ -363,8 +370,19 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   // 3. Compute current approval fingerprint; store as approval record via CAS.
   const fingerprint = computeApprovalFingerprint(state.items)
   const priorHash = marker.hash
-  if (state.approvalFingerprint !== fingerprint) {
-    const withApproval: GoalState = {...state, approvalFingerprint: fingerprint}
+  // A brief block found on a later run (the first run held the item because the brief could not be read) is written
+  // too, as the same terminal block, and only that: any other gate block is left to the registry, as before.
+  const briefBlocks = state.items.filter(
+    item =>
+      item.gateReason !== undefined &&
+      marker.state.items.find(stored => stored.id === item.id)?.gateReason === undefined,
+  )
+  if (state.approvalFingerprint !== fingerprint || briefBlocks.length > 0) {
+    const approved = state.approvalFingerprint !== fingerprint
+    const persisted = approved
+      ? state.items
+      : marker.state.items.map(stored => briefBlocks.find(item => item.id === stored.id) ?? stored)
+    const withApproval: GoalState = {...state, items: persisted, approvalFingerprint: fingerprint}
     const serialized = serializeMarker(withApproval)
     const approvalState: GoalState = {...withApproval, markerHash: serialized.hash}
     const cas = await casWriteMarker({
@@ -380,7 +398,7 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
       await writeResult(input.resultPath, {counts})
       return {counts}
     }
-    state = approvalState
+    state = {...approvalState, items: state.items}
   }
 
   // Resume reconciliation pass: any pre-existing 'intent' item (from a prior
@@ -416,11 +434,13 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
 
   const otherOpenGoalMarkers = await input.loadOtherOpenGoalMarkers()
   const plan = planDispatch({state, fingerprint, otherOpenGoalMarkers})
-  counts.deferred = plan.deferredCount
+  // An item held for a brief that could not be read is deferred, not blocked: nothing about it is final.
+  const dispatchable = plan.toDispatch.filter(item => !held.has(item.id))
+  counts.deferred = plan.deferredCount + plan.toDispatch.length - dispatchable.length
   counts.blocked = plan.blockedCount
 
   // 5/6. Sequential per-item dispatch with re-read+re-compare before each item.
-  for (const item of plan.toDispatch) {
+  for (const item of dispatchable) {
     // Re-read + re-compare fingerprint before each item — halt on mismatch.
     const latestMarker = await readLatestMarker(input.octokit, input.repo, issueNumber)
     if (latestMarker === null || latestMarker.state.approvalFingerprint !== fingerprint) {
@@ -536,25 +556,31 @@ async function loadBrief(input: RunDispatchInput, commit: string): Promise<strin
 }
 
 /**
- * The reason the gate blocks an item whose prompt names a domain brief, or `null` when the prompt names none or the
- * target is the repository the brief names. Every failure to read or understand the brief is `brief-unreadable`,
- * which carries no detail of the failure.
+ * What the gate does with an item whose prompt names a domain brief: `null` when the prompt names none or the target
+ * is the repository the brief names; a reason that blocks the item for good; or `'retry'` when the brief could not
+ * be read this run, which holds the item pending for the next run. A read that fails carries no detail.
  */
 async function briefGateReason(
   item: DispatchItem,
   prompt: string | undefined,
   registry: readonly GateEntry[],
   readBrief: (commit: string) => Promise<string>,
-): Promise<GateReason | null> {
+): Promise<GateReason | 'retry' | null> {
   if (prompt === undefined) return null
   const reference = parseBriefReference(prompt)
   if (reference === null) return null
-  if (reference === 'malformed') return 'brief-unreadable'
+  if (reference === 'malformed') return 'brief-reference-invalid'
+  let text: string
+  try {
+    text = await readBrief(reference.commit)
+  } catch {
+    return 'retry'
+  }
   let programIds: ReadonlyMap<string, string>
   try {
-    programIds = parseBriefDomain(await readBrief(reference.commit), reference.domain)
+    programIds = parseBriefDomain(text, reference.domain)
   } catch {
-    return 'brief-unreadable'
+    return 'brief-content-invalid'
   }
   return checkBriefIdentity({registry, target: item.target, programIds})
 }

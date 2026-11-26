@@ -67,8 +67,9 @@ export interface DispatchItem {
    */
   blockedReason?: BlockedReason
   /**
-   * Set only when the dispatch gate itself blocked this item because its domain brief could not vouch for the target:
-   * the brief was unreadable, or the target's registry row is not the repository the program names. Optional so a
+   * Set only when the dispatch gate itself blocked this item for good because its domain brief could not vouch for
+   * the target: the reference or the brief is unusable, or the target's registry row is not the repository the
+   * program names. Optional so a
    * marker written before the field existed still loads. It never means a worker answered.
    */
   gateReason?: GateReason
@@ -110,12 +111,15 @@ export type ResultStatus = 'success' | 'noop' | 'failed' | 'declined' | 'counter
 export type BlockedReason = 'declined' | 'countered'
 
 /**
- * Why the gate blocked an item whose prompt names a domain brief. A closed vocabulary, never free text: the brief
- * could not be read or parsed (`brief-unreadable`), the target is not the repository the program names, by name or
- * by node ID (`brief-identity-mismatch`), or its name or node ID resolves to more than one registry row
- * (`brief-identity-ambiguous`).
+ * Why the gate blocked, for good, an item whose prompt names a domain brief. A closed vocabulary, never free text,
+ * and every value is a fact that a retry cannot change: the prompt's reference is malformed or not the only one
+ * (`brief-reference-invalid`), the file at the pinned commit is no usable brief for the domain
+ * (`brief-content-invalid`), the target is not the repository the program names, by name or by node ID
+ * (`brief-identity-mismatch`), or its name or node ID resolves to more than one registry row
+ * (`brief-identity-ambiguous`). A brief that cannot be read this run is none of these: it leaves the item pending.
  */
-export type GateReason = 'brief-unreadable' | 'brief-identity-mismatch' | 'brief-identity-ambiguous'
+export type GateReason =
+  'brief-reference-invalid' | 'brief-content-invalid' | 'brief-identity-mismatch' | 'brief-identity-ambiguous'
 
 /**
  * Completion receipt posted by a worker to the coordination issue. `nonce`
@@ -245,7 +249,8 @@ export const TERMINAL_STATUSES: ReadonlySet<ItemStatus> = new Set(['completed', 
 export const IN_FLIGHT_STATUSES: ReadonlySet<ItemStatus> = new Set(['intent', 'dispatched'])
 
 const GATE_REASONS: ReadonlySet<GateReason> = new Set([
-  'brief-unreadable',
+  'brief-reference-invalid',
+  'brief-content-invalid',
   'brief-identity-mismatch',
   'brief-identity-ambiguous',
 ])
