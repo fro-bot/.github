@@ -26,7 +26,8 @@
   "dependencies": {
     "@fro-bot/core": "workspace:*",
     "@fro-bot/privacy": "workspace:*",
-    "@fro.bot/wiki-write-core": "workspace:*"
+    "@fro.bot/wiki-write-core": "workspace:*",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "@fro-bot/test-kit": "workspace:*"

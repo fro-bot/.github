@@ -159,30 +159,60 @@ export function selectDomain(config: ProgramDomains, key: string): DomainEntry {
   return entry
 }
 
+/** A listed repository the registry does not admit: its position in the file and why, without its name. */
+export interface IneligibleDomainRepo {
+  readonly domainIndex: number
+  readonly repoIndex: number
+  /** The position and the problem, e.g. `domains[0].repos[1] is private`. It names no repository or node ID. */
+  readonly reason: string
+}
+
+/** The first thing wrong with one listed repository in the registry, as the words that follow its position. */
+function registryProblem(repo: ConfirmedRepo, registry: readonly RegistryRepo[]): string | undefined {
+  const [tracked, ...otherNames] = registry.filter(
+    other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase(),
+  )
+  const [identified, ...otherIds] = registry.filter(other => other.nodeId === repo.nodeId)
+  if (tracked === undefined) return 'is not in metadata/repos.yaml'
+  if (otherNames.length > 0) return 'matches more than one row of metadata/repos.yaml by name'
+  if (identified === undefined) return 'has a node ID that differs from metadata/repos.yaml'
+  if (otherIds.length > 0) return 'matches more than one row of metadata/repos.yaml by node ID'
+  if (tracked !== identified) return 'has a name and a node ID that name different registry rows'
+  if (tracked.private) return 'is private'
+  if (tracked.archived) return 'is archived'
+  return undefined
+}
+
 /**
- * Check every listed repository against the registry at the point of use: the name and the node ID must resolve
- * to exactly one registry row (names compare ignoring case), and that row must be public and not archived. A
- * name or node ID that matches several rows, or a name and node ID that point at different rows, is ambiguous
- * and fails whatever order the rows come in. The first problem in file order is the error, and the message
- * names the position, never the repository.
+ * Every listed repository the registry does not admit, in file order, each with its first problem: the name and
+ * the node ID must resolve to exactly one `metadata/repos.yaml` row (names compare ignoring case), and that row
+ * must be public and not archived. A name or node ID that matches several rows, or a name and node ID that point
+ * at different rows, is ambiguous and fails whatever order the rows come in. A reason names the position, never
+ * the repository.
  */
-export function checkDomainReposInRegistry(config: ProgramDomains, registry: readonly RegistryRepo[]): void {
+export function findIneligibleDomainRepos(
+  config: ProgramDomains,
+  registry: readonly RegistryRepo[],
+): IneligibleDomainRepo[] {
+  const ineligible: IneligibleDomainRepo[] = []
   for (const [domainIndex, domain] of config.domains.entries()) {
     for (const [repoIndex, repo] of domain.repos.entries()) {
-      const at = `domains[${domainIndex}].repos[${repoIndex}]`
-      const [tracked, ...otherNames] = registry.filter(
-        other => other.nameWithOwner.toLowerCase() === repo.nameWithOwner.toLowerCase(),
-      )
-      const [identified, ...otherIds] = registry.filter(other => other.nodeId === repo.nodeId)
-      if (tracked === undefined) throw new Error(`${at} is not in metadata/repos.yaml`)
-      if (otherNames.length > 0) throw new Error(`${at} matches more than one row of metadata/repos.yaml by name`)
-      if (identified === undefined) throw new Error(`${at} has a node ID that differs from metadata/repos.yaml`)
-      if (otherIds.length > 0) throw new Error(`${at} matches more than one row of metadata/repos.yaml by node ID`)
-      if (tracked !== identified) throw new Error(`${at} has a name and a node ID that name different registry rows`)
-      if (tracked.private) throw new Error(`${at} is private`)
-      if (tracked.archived) throw new Error(`${at} is archived`)
+      const problem = registryProblem(repo, registry)
+      if (problem !== undefined) {
+        ineligible.push({domainIndex, repoIndex, reason: `domains[${domainIndex}].repos[${repoIndex}] ${problem}`})
+      }
     }
   }
+  return ineligible
+}
+
+/**
+ * Check every listed repository against the registry at the point of use (see `findIneligibleDomainRepos`). The
+ * first problem in file order is the error, and the message names the position, never the repository.
+ */
+export function checkDomainReposInRegistry(config: ProgramDomains, registry: readonly RegistryRepo[]): void {
+  const [first] = findIneligibleDomainRepos(config, registry)
+  if (first !== undefined) throw new Error(first.reason)
 }
 
 /** Check that every program that names a domain names one that `program-domains.json` lists. */

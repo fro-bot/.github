@@ -349,9 +349,8 @@ describe('gateway-rollout-tracker.yaml: the prompt of a program with no domain',
     'needs.preflight.outputs.marker_comment_id': '100',
     'needs.preflight.outputs.marker': '<!-- gateway-rollout-tracker:{"hash":"abc","last_mention_id":104} -->',
     'inputs.comment_id': '104',
-    ...(workflowText.includes('needs.preflight.outputs.domain_bootstrap')
-      ? {'needs.preflight.outputs.domain_bootstrap': ''}
-      : {}),
+    // A program with no domain has no domain duty: the preflight prints no domain and the output is empty.
+    'needs.preflight.outputs.domain_bootstrap': '',
   }
 
   function render(prompt: string): string {
@@ -369,5 +368,89 @@ describe('gateway-rollout-tracker.yaml: the prompt of a program with no domain',
     expect(createHash('sha256').update(rendered).digest('hex')).toBe(
       '6e94a8b65ed058e2760a590c3496aee90100a3aebd2a34ea4b467114224693d2',
     )
+  })
+})
+
+describe('gateway-rollout-tracker.yaml: the domain bootstrap duty', () => {
+  const snapshot = (preflight?.steps ?? []).find(step => step.id === 'snapshot')
+  const script = String(snapshot?.run ?? '')
+  const prompt = String(update?.with?.prompt ?? '')
+
+  const result = (extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      should_comment: true,
+      reason: 'cold start',
+      pending_mention_ids: [],
+      marker: '<!-- gateway-rollout-tracker:{} -->',
+      marker_comment_id: null,
+      operator_comment_ids: [],
+      bootstrap_repos: [],
+      bootstrap_blocked: [],
+      public_items: [],
+      program: {
+        key: 'harness',
+        issue: 'fro-bot/.github#5000',
+        repo: 'fro-bot/.github',
+        project_url: 'https://github.com/users/fro-bot/projects/9',
+        operator_login: 'marcusrbrown',
+        evidence: 'none',
+      },
+      ...extra,
+    })
+
+  function runSnapshot(json: string): ReturnType<typeof runStepWithStubs> {
+    return runStepWithStubs(`bun() { printf '%s' "$FAKE_RESULT"; }\n${script}`, {env: {FAKE_RESULT: json}})
+  }
+
+  it('exposes the domain instructions as a job output', () => {
+    expect(preflight?.outputs?.domain_bootstrap).toBe(expr('steps.snapshot.outputs.domain_bootstrap'))
+    expect(script).toContain('.domain.bootstrap_instructions')
+  })
+
+  it('writes the instructions to the step output whole, leading blank lines and all', () => {
+    const text = '\n\nDomain program. Line one.\nLine two "quoted" and $dollar.'
+
+    const run = runSnapshot(result({domain: {bootstrap_instructions: text}}))
+
+    expect(run.status).toBe(0)
+    expect(run.outputs.domain_bootstrap).toBe(text)
+    expect(run.outputs.program).toBe('harness')
+  })
+
+  it('writes an empty output for a program with no domain', () => {
+    const run = runSnapshot(result())
+
+    expect(run.status).toBe(0)
+    expect(run.outputs.domain_bootstrap).toBe('')
+    expect(run.outputs.bootstrap_repos).toBe('[]')
+  })
+
+  it('places the instructions right after the bootstrap duty, before the blocked repos', () => {
+    const flat = prompt.replaceAll(/\s+/g, ' ')
+    const placeholder = expr('needs.preflight.outputs.domain_bootstrap')
+
+    expect(flat).toContain(`Report a filing failure only for a repo that is still public.${placeholder} Blocked repos.`)
+    expect(prompt.split(placeholder)).toHaveLength(2)
+  })
+
+  describe('the brief commit', () => {
+    const commit = String(snapshot?.env?.ROLLOUT_TRACKER_BRIEF_COMMIT ?? '')
+    const inner = /\$\{\{([\s\S]*)\}\}/.exec(commit)?.[1] ?? ''
+    const sha = 'f'.repeat(40)
+
+    it('is the commit of a run on main', () => {
+      expect(evaluateExpressionValue(inner, {github: {ref: 'refs/heads/main', sha}})).toBe(sha)
+    })
+
+    it.each(['refs/heads/feature', 'refs/tags/v1', ''])(
+      'is empty for a run on %j, so no brief is pinned to it',
+      ref => {
+        expect(evaluateExpressionValue(inner, {github: {ref, sha}})).toBe('')
+      },
+    )
+
+    it('names the repository the brief lives in', () => {
+      expect(snapshot?.env?.ROLLOUT_TRACKER_BRIEF_REPO).toBe(expr('github.repository'))
+    })
   })
 })

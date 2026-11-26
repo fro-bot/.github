@@ -30,6 +30,11 @@ export interface ProgramEntry {
   readonly repos?: readonly ConfirmedRepo[]
   /** The key of the domain in `program-domains.json` this program runs in; the file's checks live there. */
   readonly domain?: string
+  /**
+   * The confirmed repos, as `owner/repo`, whose part issue leads with Part 0 (adopting dispatch-to-pull-request
+   * routing) before the program's own ask. Only a program with a domain has Part 0; names compare ignoring case.
+   */
+  readonly part0?: readonly string[]
 }
 
 export interface ProgramTrackers {
@@ -79,11 +84,28 @@ export function parseRepos(value: unknown, at: string): ConfirmedRepo[] {
   return repos
 }
 
+/** Parse the repos a program raises Part 0 with: confirmed repos of the program, each once, and only with a domain. */
+function parsePart0(value: unknown, at: string, hasDomain: boolean, repos: readonly ConfirmedRepo[]): string[] {
+  if (!Array.isArray(value)) throw new Error(`${at} is invalid`)
+  if (!hasDomain) throw new Error(`${at} needs a domain`)
+  const names: string[] = []
+  for (const [index, raw] of value.entries()) {
+    if (typeof raw !== 'string') throw new Error(`${at}[${index}] is invalid`)
+    if (!repos.some(repo => repo.nameWithOwner.toLowerCase() === raw.toLowerCase())) {
+      throw new Error(`${at}[${index}] is not in repos`)
+    }
+    if (names.some(earlier => earlier.toLowerCase() === raw.toLowerCase()))
+      throw new Error(`${at} has a duplicate repo`)
+    names.push(raw)
+  }
+  return names
+}
+
 function parseEntry(raw: unknown, index: number): ProgramEntry {
   const at = `programs[${index}]`
   if (!isRecord(raw)) throw new Error(`${at} must be an object`)
 
-  const {key, issue, project, operator, evidence, repos, domain} = raw
+  const {key, issue, project, operator, evidence, repos, domain, part0} = raw
   if (!matches(/^[a-z0-9][a-z0-9-]*$/, key)) throw new Error(`${at}.key is invalid`)
   if (!matches(/^[\w.-]+\/[\w.-]+#[1-9]\d*$/, issue)) throw new Error(`${at}.issue is invalid`)
 
@@ -108,8 +130,12 @@ function parseEntry(raw: unknown, index: number): ProgramEntry {
     operator: {id: operator.id, login: operator.login},
     evidence,
   }
-  const withRepos = repos === undefined ? base : {...base, repos: parseRepos(repos, `${at}.repos`)}
-  return domain === undefined ? withRepos : {...withRepos, domain}
+  const confirmed = repos === undefined ? undefined : parseRepos(repos, `${at}.repos`)
+  const withRepos = confirmed === undefined ? base : {...base, repos: confirmed}
+  const withDomain = domain === undefined ? withRepos : {...withRepos, domain}
+  return part0 === undefined
+    ? withDomain
+    : {...withDomain, part0: parsePart0(part0, `${at}.part0`, domain !== undefined, confirmed ?? [])}
 }
 
 /**
