@@ -1417,7 +1417,6 @@ function planDomain(
     {
       program: entry.key,
       domain: domainKey,
-      operator: entry.operator.login,
       tracker,
       brief: {commit: brief.commit, url: briefUrl},
       eligible: programRepos.filter(repo => isEligible(repo) && publicRepos.has(repo.nameWithOwner.toLowerCase())),
@@ -1425,7 +1424,7 @@ function planDomain(
       partIssues,
       projectItems: input.projectItems,
     },
-    goalReaders(tracker.repo, entry.operator.login, env),
+    goalReaders(tracker.repo, env),
   )
   return {
     domain: {...base, bootstrap_instructions: bootstrapInstructions(base, entry.key), ...goals},

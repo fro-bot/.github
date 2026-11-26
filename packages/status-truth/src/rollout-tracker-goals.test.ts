@@ -9,6 +9,7 @@ import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
   goalMarker,
   goalReaders,
+  goalReposMarker,
   planGoals,
   type GoalBatch,
   type GoalComment,
@@ -25,7 +26,6 @@ const dashboard = {nameWithOwner: 'fro-bot/dashboard', nodeId: 'R_dashboard'}
 const input = (changes: Partial<GoalPlanInput> = {}): GoalPlanInput => ({
   program: 'harness',
   domain: 'harness-tools',
-  operator: 'marcusrbrown',
   tracker: {repo: 'fro-bot/.github', number: 5000},
   brief: {commit: COMMIT, url: `https://github.com/fro-bot/.github/blob/${COMMIT}/program-domains.json`},
   eligible: [systematic, spaceBus, dashboard],
@@ -78,6 +78,18 @@ const goal = (batch: string, number: number, changes: Partial<GoalIssue> = {}): 
   body: `A goal.\n\n${goalMarker('harness', batch)}\n`,
   ...changes,
 })
+
+/** A goal as the preflight's own body writes it: the marker and the repos it was created for. */
+const goalFor = (
+  batch: string,
+  number: number,
+  repos: readonly {nameWithOwner: string}[],
+  changes: Partial<GoalIssue> = {},
+) =>
+  goal(batch, number, {
+    body: `A goal.\n\n${goalReposMarker(repos.map(repo => repo.nameWithOwner))}\n${goalMarker('harness', batch)}\n`,
+    ...changes,
+  })
 
 const parityName = (repo: {nodeId: string}): string => `parity-${repo.nodeId}`
 const checklistComment = (id: number, lines: readonly string[], author = 'fro-bot'): GoalComment => ({
@@ -234,6 +246,168 @@ describe('the seam with dispatch: the checklist comment as dispatch reads it', (
     )[1]
 
     expect(parseDecomposition(batch?.checklist ?? '').items.map(item => item.target.name)).toStrictEqual(['systematic'])
+  })
+})
+
+describe('goalReposMarker', () => {
+  it('names the repos a goal was created for, in one comment line', () => {
+    expect(goalReposMarker(['fro-bot/a', 'fro-bot/b'])).toBe('<!-- fro-bot-program-goal-repos fro-bot/a,fro-bot/b -->')
+  })
+
+  it('is part of every goal body the preflight writes, ahead of the key', () => {
+    const [batch] = batchesOf(planGoals(input({part0Names: new Set()}), readers()))
+
+    expect(batch?.body).toContain(
+      `${goalReposMarker([systematic.nameWithOwner, spaceBus.nameWithOwner, dashboard.nameWithOwner])}\n${goalMarker('harness', 'initial')}`,
+    )
+  })
+})
+
+describe('a repo that becomes eligible after the first batch', () => {
+  const two = [systematic, spaceBus]
+  const project = (...numbers: number[]) =>
+    numbers.map(number => ({content_repo: 'fro-bot/.github', content_number: number}))
+  const created = (changes: Partial<GoalIssue> = {}) => goalFor('initial', 50, two, changes)
+  const complete = {
+    comments: {
+      50: [
+        checklistComment(
+          1,
+          two.map(repo => lineFor(repo)),
+        ),
+      ],
+    },
+  }
+  const noPart0 = {part0Names: new Set<string>()}
+
+  it('gets its own join batch, the first batch is not listed again, and no checklist is posted on the first goal', () => {
+    const result = planGoals(input({...noPart0, projectItems: project(50)}), readers({goals: [created()], ...complete}))
+
+    expect(batchesOf(result).map(batch => [batch.batch, batch.repos, batch.goal_issue])).toStrictEqual([
+      [`join-${dashboard.nodeId}`, [dashboard.nameWithOwner], null],
+    ])
+    expect(batchesOf(result)[0]).toMatchObject({
+      marker: goalMarker('harness', `join-${dashboard.nodeId}`),
+      title: 'Program harness: your part, joining after the first batch',
+      error: null,
+      part0_pr: null,
+    })
+    expect(batchesOf(result)[0]?.checklist).toContain(`- [ ] ${dashboard.nameWithOwner}: `)
+    expect(batchesOf(result)[0]?.checklist).not.toContain(systematic.nameWithOwner)
+    expect(batchesOf(result)[0]?.body).toContain(goalReposMarker([dashboard.nameWithOwner]))
+  })
+
+  it('writes the join ask like the first batch, not like a parity ask', () => {
+    const [batch] = batchesOf(
+      planGoals(input({...noPart0, projectItems: project(50)}), readers({goals: [created()], ...complete})),
+    )
+
+    expect(batch?.checklist).not.toContain('Part 0 has merged')
+    expect(batch?.checklist).toContain('Part issue: https://github.com/fro-bot/dashboard/issues/13')
+  })
+
+  it('keeps the first batch at the repos its goal was created for, when the checklist is still missing', () => {
+    const result = planGoals(input(noPart0), readers({goals: [created()], comments: {50: []}}))
+
+    expect(
+      batchesOf(result).map(batch => [batch.batch, batch.repos, batch.goal_issue, batch.has_checklist]),
+    ).toStrictEqual([
+      ['initial', two.map(repo => repo.nameWithOwner), 50, false],
+      [`join-${dashboard.nodeId}`, [dashboard.nameWithOwner], null, false],
+    ])
+    expect(batchesOf(result)[0]?.checklist).not.toContain(dashboard.nameWithOwner)
+  })
+
+  it('lists a join batch for a closed first goal too', () => {
+    const result = planGoals(input(noPart0), readers({goals: [created({state: 'closed'})], comments: {50: []}}))
+
+    expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual([`join-${dashboard.nodeId}`])
+  })
+
+  it('lists nothing more once the join goal, its checklist and its Project item exist', () => {
+    const join = goalFor(`join-${dashboard.nodeId}`, 60, [dashboard])
+    const result = planGoals(
+      input({...noPart0, projectItems: project(50, 60)}),
+      readers({
+        goals: [created(), join],
+        comments: {...complete.comments, 60: [checklistComment(2, [lineFor(dashboard)])]},
+      }),
+    )
+
+    expect(batchesOf(result)).toStrictEqual([])
+  })
+
+  it('reuses a join goal that is missing its checklist, and writes only that', () => {
+    const join = goalFor(`join-${dashboard.nodeId}`, 60, [dashboard])
+    const result = planGoals(
+      input({...noPart0, projectItems: project(50, 60)}),
+      readers({goals: [created(), join], comments: {...complete.comments, 60: []}}),
+    )
+
+    expect(
+      batchesOf(result).map(batch => [batch.batch, batch.goal_issue, batch.has_checklist, batch.in_project]),
+    ).toStrictEqual([[`join-${dashboard.nodeId}`, 60, false, true]])
+  })
+
+  it('does not join a repo that has no part issue yet', () => {
+    const partIssues = new Map([
+      [systematic.nameWithOwner.toLowerCase(), 11],
+      [spaceBus.nameWithOwner.toLowerCase(), 12],
+    ])
+
+    const result = planGoals(
+      input({...noPart0, partIssues, projectItems: project(50)}),
+      readers({goals: [created()], ...complete}),
+    )
+
+    expect(batchesOf(result)).toStrictEqual([])
+  })
+
+  it('never joins a repo with Part 0: its batch is the parity batch', () => {
+    const result = planGoals(
+      input({part0Names: new Set([dashboard.nameWithOwner.toLowerCase()]), projectItems: project(50)}),
+      readers({goals: [created()], ...complete}),
+    )
+
+    expect(batchesOf(result)).toStrictEqual([])
+  })
+
+  it('leaves a repo out of the first batch that has left the eligible set since the goal was created', () => {
+    const result = planGoals(
+      input({...noPart0, eligible: [systematic, dashboard]}),
+      readers({goals: [created()], comments: {50: []}}),
+    )
+
+    expect(batchesOf(result).map(batch => [batch.batch, batch.repos])).toStrictEqual([
+      ['initial', [systematic.nameWithOwner]],
+      [`join-${dashboard.nodeId}`, [dashboard.nameWithOwner]],
+    ])
+  })
+
+  it('falls back to the current repos for a goal whose body records none', () => {
+    const result = planGoals(input(noPart0), readers({goals: [goal('initial', 50)], comments: {50: []}}))
+
+    expect(batchesOf(result).map(batch => [batch.batch, batch.repos.length])).toStrictEqual([['initial', 3]])
+  })
+
+  it.each([
+    ['a repo name that is not a name', '<!-- fro-bot-program-goal-repos not a name -->'],
+    ['an empty list', '<!-- fro-bot-program-goal-repos  -->'],
+    ['a list with an empty item', '<!-- fro-bot-program-goal-repos fro-bot/a,,fro-bot/b -->'],
+  ])('ignores %s in a goal body and falls back to the current repos', (_name, line) => {
+    const body = `A goal.\n${line}\n${goalMarker('harness', 'initial')}\n`
+
+    const result = planGoals(input(noPart0), readers({goals: [goal('initial', 50, {body})], comments: {50: []}}))
+
+    expect(batchesOf(result).map(batch => batch.repos.length)).toStrictEqual([3])
+  })
+
+  it('takes the repos from a recorded line only when it is a line of its own', () => {
+    const body = `A goal. <!-- fro-bot-program-goal-repos ${systematic.nameWithOwner} -->\n${goalMarker('harness', 'initial')}\n`
+
+    const result = planGoals(input(noPart0), readers({goals: [goal('initial', 50, {body})], comments: {50: []}}))
+
+    expect(batchesOf(result)[0]?.repos).toHaveLength(3)
   })
 })
 
@@ -565,7 +739,7 @@ describe('the instructions', () => {
 })
 
 describe('goalReaders from fixtures', () => {
-  const read = (env: Record<string, string | undefined>) => goalReaders('fro-bot/.github', 'marcusrbrown', env)
+  const read = (env: Record<string, string | undefined>) => goalReaders('fro-bot/.github', env)
 
   it('reads the goal issues from the fixture', () => {
     const issues = [goal('initial', 5)]
@@ -610,63 +784,60 @@ describe('goalReaders from fixtures', () => {
     expect(() => read({ROLLOUT_TRACKER_GOAL_COMMENTS_JSON: JSON.stringify(listed)}).goalComments(5)).toThrow()
   })
 
-  const part0 = (comments: unknown[], merged: Record<string, unknown>) => ({
-    ROLLOUT_TRACKER_PART0_JSON: JSON.stringify({'Fro-Bot/Space-Bus': {comments, merged}}),
+  /** A reference to the part issue from a pull request or issue, as the timeline's cross-referenced event reports it. */
+  const reference = (number: number, changes: Record<string, unknown> = {}) => ({
+    number,
+    repo: 'fro-bot/space-bus',
+    pull_request: true,
+    merged: true,
+    ...changes,
   })
-  const link = (author: string, url: string, id = 1) => ({id, author, body: `Part 0 is ${url}`})
-
-  it('finds the repo ignoring case, and a pull request linked by the operator, by name ignoring case', () => {
-    const env = part0([link('MarcusRBrown', 'https://github.com/fro-bot/space-bus/pull/3')], {'3': true})
-
-    expect(read(env).mergedPart0('fro-bot/space-bus', 12)).toBe('https://github.com/fro-bot/space-bus/pull/3')
-  })
-
-  it.each(['fro-bot', 'fro-bot[bot]'])('counts a link by %s', author => {
-    const env = part0([link(author, 'https://github.com/fro-bot/space-bus/pull/3')], {'3': true})
-
-    expect(read(env).mergedPart0('fro-bot/space-bus', 12)).toBe('https://github.com/fro-bot/space-bus/pull/3')
+  const part0 = (references: unknown) => ({
+    ROLLOUT_TRACKER_PART0_JSON: JSON.stringify({'Fro-Bot/Space-Bus': {references}}),
   })
 
-  it('takes the lowest merged pull request among several links, and skips one that did not merge', () => {
-    const env = part0(
-      [
-        link('fro-bot', 'https://github.com/fro-bot/space-bus/pull/9'),
-        link('fro-bot', 'https://github.com/fro-bot/space-bus/pull/4', 2),
-        link('fro-bot', 'https://github.com/fro-bot/space-bus/pull/3', 3),
-      ],
-      {'3': false, '4': true, '9': true},
+  it('finds a merged pull request of the repo that references the part issue, ignoring the case of the name', () => {
+    expect(read(part0([reference(3)])).mergedPart0('fro-bot/space-bus', 12)).toBe(
+      'https://github.com/fro-bot/space-bus/pull/3',
     )
+  })
+
+  it('takes the lowest merged pull request among several, and skips one that did not merge', () => {
+    const env = part0([reference(9), reference(4), reference(3, {merged: false})])
 
     expect(read(env).mergedPart0('fro-bot/space-bus', 12)).toBe('https://github.com/fro-bot/space-bus/pull/4')
   })
 
   it.each([
-    ['a link by someone else', [link('octocat', 'https://github.com/fro-bot/space-bus/pull/3')]],
-    ['a pull request of another repository', [link('fro-bot', 'https://github.com/fro-bot/agent/pull/3')]],
-    [
-      'a repository whose name only starts the same',
-      [link('fro-bot', 'https://github.com/fro-bot/space-bus-x/pull/3')],
-    ],
-    ['an issue link', [link('fro-bot', 'https://github.com/fro-bot/space-bus/issues/3')]],
-    ['no link', []],
-  ])('finds no Part 0 for %s', (_name, comments) => {
-    expect(read(part0(comments, {'3': true})).mergedPart0('fro-bot/space-bus', 12)).toBeNull()
+    ['a merged pull request of another repository', [reference(3, {repo: 'fro-bot/agent'})]],
+    ['a repository whose name only starts the same', [reference(3, {repo: 'fro-bot/space-bus-x'})]],
+    ['a merged issue, which is not a pull request', [reference(3, {pull_request: false})]],
+    ['a pull request that has not merged', [reference(3, {merged: false})]],
+    ['no reference at all', []],
+  ])('finds no Part 0 for %s', (_name, references) => {
+    expect(read(part0(references)).mergedPart0('fro-bot/space-bus', 12)).toBeNull()
+  })
+
+  it('reads no comment: a pull request linked in a comment is not a reference', () => {
+    const env = {
+      ROLLOUT_TRACKER_PART0_JSON: JSON.stringify({
+        'fro-bot/space-bus': {
+          references: [],
+          comments: [{id: 1, author: 'marcusrbrown', body: 'https://github.com/fro-bot/space-bus/pull/3'}],
+        },
+      }),
+    }
+
+    expect(read(env).mergedPart0('fro-bot/space-bus', 12)).toBeNull()
   })
 
   it.each([
     ['a repo the fixture lacks', {ROLLOUT_TRACKER_PART0_JSON: '{}'}],
-    [
-      'a fixture with no merge map',
-      {ROLLOUT_TRACKER_PART0_JSON: JSON.stringify({'fro-bot/space-bus': {comments: []}})},
-    ],
-    [
-      'a linked pull request the merge map lacks',
-      part0([link('fro-bot', 'https://github.com/fro-bot/space-bus/pull/3')], {}),
-    ],
-    [
-      'a merge answer that is not a boolean',
-      part0([link('fro-bot', 'https://github.com/fro-bot/space-bus/pull/3')], {'3': 'yes'}),
-    ],
+    ['a fixture with no references', {ROLLOUT_TRACKER_PART0_JSON: JSON.stringify({'fro-bot/space-bus': {}})}],
+    ['references that are not a list', part0({})],
+    ['a reference with no number', part0([{repo: 'fro-bot/space-bus', pull_request: true, merged: true}])],
+    ['a reference whose merged is not a boolean', part0([reference(3, {merged: 'yes'})])],
+    ['not JSON', {ROLLOUT_TRACKER_PART0_JSON: 'nope'}],
   ])('fails the Part 0 read for %s', (_name, env) => {
     expect(() => read(env).mergedPart0('fro-bot/space-bus', 12)).toThrow()
   })
@@ -691,10 +862,7 @@ describe('goalReaders through gh', () => {
         'case "$*" in',
         '  "api --paginate repos/fro-bot/.github/issues?state=all&creator=fro-bot&labels=cross-repo-goal&per_page=100 --jq "*) cat "$FAKE_GOALS" ;;',
         '  "api --paginate repos/fro-bot/.github/issues/50/comments?per_page=100 --jq "*) cat "$FAKE_COMMENTS" ;;',
-        '  "api --paginate repos/marcusrbrown/systematic/issues/11/comments?per_page=100 --jq "*) cat "$FAKE_PART0" ;;',
-        '  "api repos/marcusrbrown/systematic/pulls/7 --jq .merged") echo true ;;',
-        '  "api repos/marcusrbrown/systematic/pulls/8 --jq .merged") echo false ;;',
-        '  "api repos/marcusrbrown/systematic/pulls/9 --jq .merged") echo maybe ;;',
+        '  "api --paginate repos/marcusrbrown/systematic/issues/11/timeline?per_page=100 --jq "*) cat "$FAKE_PART0" ;;',
         '  *) echo unexpected >&2; exit 1 ;;',
         'esac',
       ].join('\n'),
@@ -722,7 +890,7 @@ describe('goalReaders through gh', () => {
     }
   }
 
-  const readers = () => goalReaders('fro-bot/.github', 'marcusrbrown', {})
+  const readers = () => goalReaders('fro-bot/.github', {})
 
   it('lists the goal issues Fro Bot created with the goal label, in every state, across every page', () => {
     const gh = stubGh()
@@ -766,38 +934,38 @@ describe('goalReaders through gh', () => {
     ])
   })
 
-  it('finds a merged Part 0 pull request: reads the part issue comments, then each linked pull request of that repo in order', () => {
+  const ref = (number: number, changes: Record<string, unknown> = {}) =>
+    JSON.stringify({number, repo: 'marcusrbrown/systematic', pull_request: true, merged: true, ...changes})
+
+  it('finds a merged Part 0 pull request from one read of the part issue timeline, and reads no comment', () => {
     const gh = stubGh()
-    gh.set(
-      'part0',
-      `${JSON.stringify({id: 1, author: 'marcusrbrown', body: 'https://github.com/marcusrbrown/systematic/pull/8 then https://github.com/marcusrbrown/systematic/pull/7 and https://github.com/fro-bot/agent/pull/2'})}\n`,
-    )
+    gh.set('part0', `${ref(8, {merged: false})}\n${ref(7)}\n${ref(2, {repo: 'fro-bot/agent'})}\n`)
 
     expect(readers().mergedPart0('marcusrbrown/systematic', 11)).toBe(
       'https://github.com/marcusrbrown/systematic/pull/7',
     )
-    expect(gh.log().map(line => line.split(' --jq')[0])).toStrictEqual([
-      'api --paginate repos/marcusrbrown/systematic/issues/11/comments?per_page=100',
-      'api repos/marcusrbrown/systematic/pulls/7',
+    expect(gh.log()).toStrictEqual([
+      'api --paginate repos/marcusrbrown/systematic/issues/11/timeline?per_page=100 --jq .[] | select(.event == "cross-referenced") | {number: .source.issue.number, repo: (.source.issue.repository.full_name // ""), pull_request: (.source.issue.pull_request != null), merged: (.source.issue.pull_request.merged_at != null)}',
     ])
   })
 
-  it('finds none when the linked pull request did not merge', () => {
+  it('finds none when the referencing pull request did not merge', () => {
     const gh = stubGh()
-    gh.set(
-      'part0',
-      `${JSON.stringify({id: 1, author: 'fro-bot', body: 'https://github.com/marcusrbrown/systematic/pull/8'})}\n`,
-    )
+    gh.set('part0', `${ref(8, {merged: false})}\n`)
 
     expect(readers().mergedPart0('marcusrbrown/systematic', 11)).toBeNull()
   })
 
-  it('fails the read when gh answers something that is not true or false', () => {
+  it('fails the read on a cut-off record', () => {
     const gh = stubGh()
-    gh.set(
-      'part0',
-      `${JSON.stringify({id: 1, author: 'fro-bot', body: 'https://github.com/marcusrbrown/systematic/pull/9'})}\n`,
-    )
+    gh.set('part0', ref(7).slice(0, 20))
+
+    expect(() => readers().mergedPart0('marcusrbrown/systematic', 11)).toThrow()
+  })
+
+  it('fails the read when gh fails', () => {
+    stubGh()
+    vi.stubEnv('FAKE_PART0', join(directory, 'missing.ndjson'))
 
     expect(() => readers().mergedPart0('marcusrbrown/systematic', 11)).toThrow()
   })

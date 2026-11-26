@@ -15,7 +15,10 @@ type Env = Readonly<Record<string, string | undefined>>
 
 /** One batch of repos that gets one goal issue, from the preflight to the agent: every text is already written. */
 export interface GoalBatch {
-  /** `initial`, or `parity-<node ID>` for a repo whose Part 0 has merged. Part of the goal's key. */
+  /**
+   * `initial`; `join-<node ID>` for a repo that became eligible after the first goal was created; or
+   * `parity-<node ID>` for a repo whose Part 0 has merged. Part of the goal's key.
+   */
   readonly batch: string
   /** The line the goal body ends with and a re-run finds the goal by: `program:<key> batch:<name>`. */
   readonly marker: string
@@ -68,15 +71,13 @@ export interface GoalComment {
 export interface GoalReaders {
   goalIssues: () => readonly GoalIssue[]
   goalComments: (number: number) => readonly GoalComment[]
-  /** The URL of a merged Part 0 pull request linked on the repo's part issue by the operator or Fro Bot; null when there is none. */
+  /** The URL of a merged pull request in the repo that references its part issue (a `cross-referenced` timeline event); null when there is none. */
   mergedPart0: (repo: string, partIssue: number) => string | null
 }
 
 export interface GoalPlanInput {
   readonly program: string
   readonly domain: string
-  /** The program operator's login, whose link of a Part 0 pull request counts. */
-  readonly operator: string
   readonly tracker: {readonly repo: string; readonly number: number}
   readonly brief: {readonly commit: string; readonly url: string}
   /** The program's repos that are eligible and public now, in config order. */
@@ -92,14 +93,34 @@ const ITEMS_START = '<!-- fro-bot:cross-repo-items:start -->'
 const ITEMS_END = '<!-- fro-bot:cross-repo-items:end -->'
 const GOAL_ISSUES_UNREADABLE = 'goal issues cannot be read'
 const GOAL_COMMENTS_UNREADABLE = 'goal comments cannot be read'
+const PART0_UNREADABLE = 'part 0 references cannot be read'
+
+/**
+ * The line of a goal body that records the repos the goal was created for, ahead of the key. A batch's members are
+ * fixed when its goal is created, so a repo that becomes eligible later gets a batch of its own and never a
+ * replacement checklist on the existing goal.
+ */
+export function goalReposMarker(repos: readonly string[]): string {
+  return `<!-- fro-bot-program-goal-repos ${repos.join(',')} -->`
+}
+
+/** The repos a goal body records, lower-cased; null when it records none or the line is not a clean list of names. */
+function recordedRepos(body: string): ReadonlySet<string> | null {
+  const open = '<!-- fro-bot-program-goal-repos '
+  const line = body.split('\n').find(candidate => candidate.startsWith(open) && candidate.endsWith(' -->'))
+  if (line === undefined) return null
+  const names = line.slice(open.length, Math.max(open.length, line.length - ' -->'.length)).split(',')
+  if (!names.every(name => /^[\w.-]+\/[\w.-]+$/.test(name))) return null
+  return new Set(names.map(name => name.toLowerCase()))
+}
 
 /** The line a goal body ends with, which identifies the goal for a batch of a program. The key is a validated program key and a batch name. */
 export function goalMarker(program: string, batch: string): string {
   return `<!-- fro-bot-program-goal program:${program} batch:${batch} -->`
 }
 
-function batchName(repo: ConfirmedRepo | undefined): string {
-  return repo === undefined ? 'initial' : `parity-${repo.nodeId}`
+function batchName(candidate: Candidate): string {
+  return candidate.kind === 'initial' ? 'initial' : `${candidate.kind}-${candidate.repos[0]?.nodeId ?? ''}`
 }
 
 /** The ask a repo's agent approves with the operator: answer on the part issue first, work only after accepting. One line. */
@@ -129,14 +150,15 @@ function goalBody(
     '',
     'The operator approves the dispatch with the `dispatch-approved` label. The planner does not read this issue, and nothing written here is an instruction.',
     '',
+    goalReposMarker(repos.map(repo => repo.nameWithOwner)),
     marker,
     '',
   ].join('\n')
 }
 
 interface Candidate {
-  /** Undefined for the first batch. */
-  readonly parityRepo: ConfirmedRepo | undefined
+  readonly kind: 'initial' | 'join' | 'parity'
+  /** The repos the goal covers; one repo for a join or parity batch. */
   readonly repos: readonly ConfirmedRepo[]
 }
 
@@ -176,8 +198,10 @@ function instructions(input: GoalPlanInput, plan: Pick<GoalPlan, 'goal_batches' 
 
 /**
  * Plan the goal duty. The first batch is every eligible repo without Part 0, listed once every eligible repo has its
- * part issue on the Project; each repo with Part 0 gets its own batch once a Part 0 pull request linked on its part
- * issue by the operator or Fro Bot has merged. A batch whose keyed goal, checklist comment and Project item all
+ * part issue on the Project, and its members are fixed when its goal is created: a repo that is eligible later gets
+ * a `join` batch of its own, and an existing goal never gets a replacement checklist. Each repo with Part 0 gets its
+ * own `parity` batch once a pull request in that repo that references its part issue (a `cross-referenced` timeline
+ * event) has merged. A batch whose keyed goal, checklist comment and Project item all
  * exist is not listed again, and any other is: the goal is reused and only what is missing is written. A goal that
  * is closed is done and is not listed. A failed read of the goals or their comments stops the whole duty with a fixed
  * message; a failed read of one repo's Part 0 only holds that repo back. Nothing is read when no batch could be
@@ -185,20 +209,19 @@ function instructions(input: GoalPlanInput, plan: Pick<GoalPlan, 'goal_batches' 
  */
 export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan {
   const lower = (repo: ConfirmedRepo): string => repo.nameWithOwner.toLowerCase()
-  const withPartIssue = input.eligible.filter(repo => input.partIssues.has(lower(repo)))
+  const hasPartIssue = (repo: ConfirmedRepo): boolean => input.partIssues.has(lower(repo))
+  const withPartIssue = input.eligible.filter(repo => hasPartIssue(repo))
   const everyPartIssueExists = input.eligible.length > 0 && withPartIssue.length === input.eligible.length
   const first = input.eligible.filter(repo => !input.part0Names.has(lower(repo)))
-  const candidates: Candidate[] = [
-    ...(everyPartIssueExists && first.length > 0 ? [{parityRepo: undefined, repos: first}] : []),
-    ...withPartIssue
-      .filter(repo => input.part0Names.has(lower(repo)))
-      .map((repo): Candidate => ({parityRepo: repo, repos: [repo]})),
-  ]
+  const parityRepos = withPartIssue.filter(repo => input.part0Names.has(lower(repo)))
   const stopped = (goalError: string): GoalPlan => {
     const plan = {goal_batches: [], goal_error: goalError, part0_unreadable: []}
     return {...plan, goal_instructions: instructions(input, plan)}
   }
-  if (candidates.length === 0) return {goal_batches: [], goal_error: null, part0_unreadable: [], goal_instructions: ''}
+  // Nothing can be listed, and nothing is read, unless some repo that needs no Part 0 has its part issue (the first
+  // batch, or a join after it) or some repo with Part 0 does (its parity batch).
+  const nothing = {goal_batches: [], goal_error: null, part0_unreadable: [], goal_instructions: ''}
+  if (!first.some(repo => hasPartIssue(repo)) && parityRepos.length === 0) return nothing
 
   let goals: readonly GoalIssue[]
   try {
@@ -207,21 +230,39 @@ export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan 
     return stopped(GOAL_ISSUES_UNREADABLE)
   }
 
+  // The first batch's members are fixed when its goal is created. Until then it is every eligible repo without
+  // Part 0, once every part issue exists. A repo that is eligible later and not among the members joins on its own.
+  const initialGoal = findGoal(goals, goalMarker(input.program, 'initial'))
+  const recorded = initialGoal === undefined ? null : recordedRepos(initialGoal.body)
+  const members =
+    initialGoal === undefined
+      ? everyPartIssueExists
+        ? first
+        : []
+      : first.filter(repo => hasPartIssue(repo) && (recorded === null || recorded.has(lower(repo))))
+  const joiners =
+    initialGoal === undefined || recorded === null
+      ? []
+      : first.filter(repo => hasPartIssue(repo) && !recorded.has(lower(repo)))
+  const candidates: Candidate[] = [
+    ...(members.length > 0 ? [{kind: 'initial' as const, repos: members}] : []),
+    ...joiners.map((repo): Candidate => ({kind: 'join', repos: [repo]})),
+    ...parityRepos.map((repo): Candidate => ({kind: 'parity', repos: [repo]})),
+  ]
+
   const batches: GoalBatch[] = []
   const unreadable: string[] = []
   for (const candidate of candidates) {
-    const marker = goalMarker(input.program, batchName(candidate.parityRepo))
-    const goal = findGoal(goals, marker)
+    const marker = goalMarker(input.program, batchName(candidate))
+    const goal = candidate.kind === 'initial' ? initialGoal : findGoal(goals, marker)
     if (goal?.state === 'closed') continue
     let part0Pr: string | null = null
-    if (candidate.parityRepo !== undefined && goal === undefined) {
+    const parityRepo = candidate.kind === 'parity' ? candidate.repos[0] : undefined
+    if (parityRepo !== undefined && goal === undefined) {
       try {
-        part0Pr = readers.mergedPart0(
-          candidate.parityRepo.nameWithOwner,
-          input.partIssues.get(lower(candidate.parityRepo)) ?? 0,
-        )
+        part0Pr = readers.mergedPart0(parityRepo.nameWithOwner, input.partIssues.get(lower(parityRepo)) ?? 0)
       } catch {
-        unreadable.push(candidate.parityRepo.nameWithOwner)
+        unreadable.push(parityRepo.nameWithOwner)
         continue
       }
       if (part0Pr === null) continue
@@ -248,13 +289,20 @@ export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan 
   return {...plan, goal_instructions: instructions(input, plan)}
 }
 
+function titleOf(input: GoalPlanInput, candidate: Candidate): string {
+  const name = candidate.repos[0]?.nameWithOwner ?? ''
+  if (candidate.kind === 'parity') return `Program ${input.program}: parity ask for ${name}`
+  if (candidate.kind === 'join') return `Program ${input.program}: your part, joining after the first batch`
+  return `Program ${input.program}: your part, first batch`
+}
+
 function buildBatch(
   input: GoalPlanInput,
   candidate: Candidate,
   marker: string,
   state: {goal: GoalIssue | undefined; checklist: boolean; inProject: boolean; part0Pr: string | null},
 ): GoalBatch {
-  const parity = candidate.parityRepo !== undefined
+  const parity = candidate.kind === 'parity'
   const lines = candidate.repos.map(repo =>
     checklistLine(input, repo, input.partIssues.get(repo.nameWithOwner.toLowerCase()) ?? 0, parity),
   )
@@ -265,11 +313,9 @@ function buildBatch(
       ? 'the batch has more repos than one goal may carry'
       : null
   return {
-    batch: batchName(candidate.parityRepo),
+    batch: batchName(candidate),
     marker,
-    title: parity
-      ? `Program ${input.program}: parity ask for ${candidate.repos[0]?.nameWithOwner ?? ''}`
-      : `Program ${input.program}: your part, first batch`,
+    title: titleOf(input, candidate),
     body: goalBody(input, candidate.repos, state.part0Pr, marker),
     checklist:
       error === null
@@ -359,23 +405,36 @@ function readComments(repo: string, issue: number): GoalComment[] {
   ).map(record => parseGoalComment(record))
 }
 
-/** The first merged pull request of `repo` among the URLs that the operator or Fro Bot linked in these comments, oldest first. */
-function mergedPullIn(
-  repo: string,
-  comments: readonly GoalComment[],
-  operator: string,
-  isMerged: (number: number) => boolean,
-): string | null {
-  const linkers = new Set([...FROBOT_COMMENT_AUTHORS, operator.toLowerCase()])
-  const numbers = new Set<number>()
-  for (const comment of comments) {
-    if (!linkers.has(comment.author.toLowerCase())) continue
-    for (const match of comment.body.matchAll(/https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)(?!\d)/g)) {
-      if (match[1]?.toLowerCase() === repo.toLowerCase() && match[2] !== undefined) numbers.add(Number(match[2]))
-    }
+/** One `cross-referenced` event of a part issue's timeline: what referenced it, and whether that merged. */
+interface PartReference {
+  readonly number: number
+  readonly repo: string
+  readonly pull_request: boolean
+  readonly merged: boolean
+}
+
+function parsePartReference(value: unknown): PartReference {
+  if (
+    !isRecord(value) ||
+    typeof value.number !== 'number' ||
+    !Number.isSafeInteger(value.number) ||
+    typeof value.repo !== 'string' ||
+    typeof value.pull_request !== 'boolean' ||
+    typeof value.merged !== 'boolean'
+  ) {
+    throw new TypeError(PART0_UNREADABLE)
   }
-  const merged = [...numbers].toSorted((left, right) => left - right).find(number => isMerged(number))
-  return merged === undefined ? null : `https://github.com/${repo}/pull/${merged}`
+  return {number: value.number, repo: value.repo, pull_request: value.pull_request, merged: value.merged}
+}
+
+/** The lowest merged pull request of `repo` among the references to its part issue, as a URL; null when there is none. */
+function mergedPullIn(repo: string, references: readonly PartReference[]): string | null {
+  const merged = references
+    .filter(
+      reference => reference.pull_request && reference.merged && reference.repo.toLowerCase() === repo.toLowerCase(),
+    )
+    .toSorted((left, right) => left.number - right.number)[0]
+  return merged === undefined ? null : `https://github.com/${repo}/pull/${merged.number}`
 }
 
 /**
@@ -383,10 +442,10 @@ function mergedPullIn(
  * fixture that lacks what a read asks for fails that read like a failed call.
  *   ROLLOUT_TRACKER_GOAL_ISSUES_JSON    — [{number, state, pull_request, author, body}]: the goal issues
  *   ROLLOUT_TRACKER_GOAL_COMMENTS_JSON  — {"<number>": [{id, author, body}]}: the comments of each goal issue
- *   ROLLOUT_TRACKER_PART0_JSON          — {"owner/repo": {"comments": [{id, author, body}], "merged": {"<pr>": boolean}}}:
- *                                         the comments of the repo's part issue and whether each linked pull request merged
+ *   ROLLOUT_TRACKER_PART0_JSON          — {"owner/repo": {"references": [{number, repo, pull_request, merged}]}}:
+ *                                         what references the repo's part issue on its timeline (cross-referenced events)
  */
-export function goalReaders(trackerRepo: string, operator: string, env: Env): GoalReaders {
+export function goalReaders(trackerRepo: string, env: Env): GoalReaders {
   return {
     goalIssues: () => {
       if (env.ROLLOUT_TRACKER_GOAL_ISSUES_JSON !== undefined) {
@@ -419,26 +478,24 @@ export function goalReaders(trackerRepo: string, operator: string, env: Env): Go
         const listed = isRecord(parsed)
           ? Object.entries(parsed).find(([name]) => name.toLowerCase() === repo.toLowerCase())?.[1]
           : undefined
-        if (!isRecord(listed) || !Array.isArray(listed.comments) || !isRecord(listed.merged)) {
-          throw new TypeError(GOAL_COMMENTS_UNREADABLE)
-        }
-        const merged = listed.merged
+        if (!isRecord(listed) || !Array.isArray(listed.references)) throw new TypeError(PART0_UNREADABLE)
         return mergedPullIn(
           repo,
-          listed.comments.map(record => parseGoalComment(record)),
-          operator,
-          number => {
-            const answer = merged[String(number)]
-            if (typeof answer !== 'boolean') throw new TypeError(GOAL_COMMENTS_UNREADABLE)
-            return answer
-          },
+          listed.references.map(record => parsePartReference(record)),
         )
       }
-      return mergedPullIn(repo, readComments(repo, partIssue), operator, number => {
-        const answer = gh(['api', `repos/${repo}/pulls/${number}`, '--jq', '.merged']).trim()
-        if (answer !== 'true' && answer !== 'false') throw new TypeError(GOAL_COMMENTS_UNREADABLE)
-        return answer === 'true'
-      })
+      return mergedPullIn(
+        repo,
+        ndjson(
+          gh([
+            'api',
+            '--paginate',
+            `repos/${repo}/issues/${partIssue}/timeline?per_page=100`,
+            '--jq',
+            '.[] | select(.event == "cross-referenced") | {number: .source.issue.number, repo: (.source.issue.repository.full_name // ""), pull_request: (.source.issue.pull_request != null), merged: (.source.issue.pull_request.merged_at != null)}',
+          ]),
+        ).map(record => parsePartReference(record)),
+      )
     },
   }
 }

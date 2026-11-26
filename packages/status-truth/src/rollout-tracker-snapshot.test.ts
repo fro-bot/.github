@@ -4089,7 +4089,7 @@ describe('a domain program: part issues with the brief', () => {
     goalIssues?: readonly unknown[]
     /** The comments of each goal issue by number; a goal not listed is a failed read. */
     goalComments?: Record<string, readonly unknown[]>
-    /** By repo: the comments of its part issue and whether each linked pull request merged; a repo not listed is a failed read. */
+    /** By repo: what references its part issue on the timeline (`{number, repo, pull_request, merged}`); a repo not listed is a failed read. */
     part0?: Record<string, unknown>
   }
 
@@ -4124,8 +4124,8 @@ describe('a domain program: part issues with the brief', () => {
       ROLLOUT_TRACKER_GOAL_COMMENTS_JSON: JSON.stringify(params.goalComments ?? {}),
       ROLLOUT_TRACKER_PART0_JSON: JSON.stringify(
         params.part0 ?? {
-          [systematic.nameWithOwner]: {comments: [], merged: {}},
-          [spaceBus.nameWithOwner]: {comments: [], merged: {}},
+          [systematic.nameWithOwner]: {references: []},
+          [spaceBus.nameWithOwner]: {references: []},
         },
       ),
     })
@@ -5074,12 +5074,14 @@ describe('a domain program: part issues with the brief', () => {
         '<!-- fro-bot:cross-repo-items:end -->',
       ].join('\n'),
     })
-    const part0Merged = {
-      [systematic.nameWithOwner]: {
-        comments: [{id: 1, author: 'marcusrbrown', body: 'Part 0: https://github.com/marcusrbrown/systematic/pull/7'}],
-        merged: {'7': true},
-      },
-    }
+    const reference = (changes: Record<string, unknown> = {}) => ({
+      number: 7,
+      repo: systematic.nameWithOwner,
+      pull_request: true,
+      merged: true,
+      ...changes,
+    })
+    const part0Merged = {[systematic.nameWithOwner]: {references: [reference()]}}
 
     it('lists the first batch once every part issue exists, as the repos that need no Part 0', () => {
       const result = preflight(allCards())
@@ -5123,6 +5125,26 @@ describe('a domain program: part issues with the brief', () => {
       )
     })
 
+    it('lists a join batch for a repo that became eligible after the first goal was created, and not the first batch again', () => {
+      const configPath = domainConfig({part0: []})
+      const cards = allCards()
+      const first = goalIssue('initial', 50, {
+        body: `A goal.\n<!-- fro-bot-program-goal-repos ${systematic.nameWithOwner},${spaceBus.nameWithOwner} -->\n${goalMarker('harness', 'initial')}\n`,
+      })
+
+      const result = preflight({
+        ...cards,
+        configPath,
+        items: [...(cards.items ?? []), goalCard(50)],
+        goalIssues: [first],
+        goalComments: {'50': [checklistComment([systematic, spaceBus])]},
+      })
+
+      expect(batchesOf(result).map(batch => [batch.batch, batch.repos, batch.goal_issue])).toEqual([
+        [`join-${dashboard.nodeId}`, [dashboard.nameWithOwner], null],
+      ])
+    })
+
     it('lists nothing while any part issue is missing', () => {
       const result = preflight(withCards(partIssueCard(systematic, 11), partIssueCard(dashboard, 13)))
 
@@ -5142,19 +5164,21 @@ describe('a domain program: part issues with the brief', () => {
       expect(batchesOf(after)[1]?.part0_pr).toBe('https://github.com/marcusrbrown/systematic/pull/7')
     })
 
-    it('counts a Part 0 pull request linked by someone else as no link, and an unmerged one as not merged', () => {
-      const stranger = {
+    it('counts only a merged pull request of that repo that references the part issue', () => {
+      const unrelated = {
         [systematic.nameWithOwner]: {
-          comments: [{id: 1, author: 'octocat', body: 'https://github.com/marcusrbrown/systematic/pull/7'}],
-          merged: {'7': true},
+          references: [
+            reference({merged: false}),
+            reference({number: 8, repo: 'fro-bot/agent'}),
+            reference({number: 9, pull_request: false}),
+          ],
+          // A pull request linked in a comment, however trusted its author, is no reference.
+          comments: [{id: 1, author: 'marcusrbrown', body: 'https://github.com/marcusrbrown/systematic/pull/10'}],
         },
-        [spaceBus.nameWithOwner]: {
-          comments: [{id: 2, author: 'fro-bot', body: 'https://github.com/fro-bot/space-bus/pull/3'}],
-          merged: {'3': false},
-        },
+        [spaceBus.nameWithOwner]: {references: []},
       }
 
-      const result = preflight({...allCards(), part0: stranger})
+      const result = preflight({...allCards(), part0: unrelated})
 
       expect(batchesOf(result).map(batch => batch.batch)).toEqual(['initial'])
     })
