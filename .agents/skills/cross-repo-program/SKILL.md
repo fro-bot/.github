@@ -50,8 +50,27 @@ The start run creates an issue and a Project before confirmation. That costs at 
 | `operator` | Numeric `id` and `login` of the one person whose comments drive the program |
 | `evidence` | `gateway` for #3512's releases, deploys and health contract. `none` for a program whose evidence is issue and PR state |
 | `repos` | Optional. The confirmed repos (`nameWithOwner`, `nodeId`) that bootstrap files issues in |
+| `domain` | Optional. The key of a domain in `program-domains.json`. A program with a domain files fixed part issues and dispatches through goals, see [Domain programs and their goals](#domain-programs-and-their-goals) |
+| `part0` | Optional, and only with a `domain`. The confirmed repos, as `owner/repo`, whose first ask is Part 0 (adopting dispatch-to-pull-request routing) |
 
 Routing comes from this file and the literals in the content job. The `program-tracker` label is for humans and discovery. Removing it changes no routing. A test fails when the content-job literals disagree with the file.
+
+## Domain programs and their goals
+
+A program can run in a domain: a group of repositories in `program-domains.json` that shares one reviewed brief. Its repositories each have a part issue that carries the answer protocol, and its work reaches them through approved cross-repo goals.
+
+**The start step accepts or declines the offer with a reason before any repository work starts.** Read the domain and its brief on `main`. Decline, with the reason in plain prose and nothing created, when the offer conflicts with the brief or a repository's rules, names a repository the domain does not list, or meets an empty brief. Accept, and the start run writes the config entry with `domain` (and `part0`, when some repositories need Part 0 first) and stops at the pull request, exactly as above. Declining never creates a tracker issue, a Project or a pull request.
+
+**The start run opens no goal.** Goals are the tracker's, and it opens them after the start pull request merges. The preflight lists the batches that need work as `goal_batches` under `domain`:
+
+- the first batch is every eligible repository without Part 0, listed once every part issue exists;
+- after that, one batch for each Part 0 repository whose Part 0 pull request has merged (linked on its part issue by the operator or Fro Bot).
+
+Each batch becomes one goal: an issue labeled `cross-repo-goal`, opened as `fro-bot`, whose body ends with the batch key `<!-- fro-bot-program-goal program:<key> batch:<name> -->`, and one checklist comment. Each checklist line is `owner/repo: <ask>. Brief: program-domains.json@<sha>#<domain>. Part issue: <url>`, and the preflight writes it, so the agent never composes what the operator approves. The ask is the whole of what the repository's agent receives, so it has to fit dispatch's 4,000-character prompt limit; a batch whose line is over the limit, or that has more repositories than one goal carries, is stopped with a reason on the tracker and nothing is written for it. The goal is added to the program's Project and linked on the tracker. A batch whose goal, checklist comment and Project item all exist is not listed again.
+
+A run that stops partway is finished by the next one: any other batch stays listed, and the tracker reuses the goal and writes only what is missing, whether that is the checklist comment or the Project item. A goal that is closed is done and is not listed.
+
+The operator approves each goal with `dispatch-approved`, and each batch is its own goal with its own approval; no item is ever added to a goal that dispatch has already seeded. An approved goal keeps the brief commit it was approved with: a later change to the brief reaches repositories only through a new goal. The planner skips a goal authored by `fro-bot`, so its checklist is never rewritten, and dispatch seeds its marker from the `fro-bot` checklist when the operator applies the label. Before the first dispatch, dispatch checks for itself that each target name resolves to exactly one registry row whose node ID equals the brief's node ID at that commit, and blocks the item otherwise. Editing a part issue changes nothing that was approved.
 
 ## The Project
 

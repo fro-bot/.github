@@ -62,6 +62,7 @@ describe('the cross-repo-program skill', () => {
         'Dependencies',
         'Acceptance gates and evidence',
         'Handing a step to the operator',
+        'Domain programs and their goals',
         'Per-repo work',
         'Keep it current',
         'Close a program out',
@@ -152,5 +153,63 @@ describe('the cross-repo-program skill', () => {
     expect(text).not.toMatch(/docs\/plans\//)
     expect(text).not.toMatch(/docs\/brainstorms\//)
     expect(text).not.toMatch(/\bsubagent\b/i)
+  })
+})
+
+describe('the cross-repo-program skill: a domain program', () => {
+  const {body} = readSkill('cross-repo-program')
+  const section = body.split(/^## /m).find(part => part.startsWith('Domain programs and their goals')) ?? ''
+  const flat = section.replaceAll(/\s+/g, ' ')
+
+  it('has the section', () => {
+    expect(section).not.toBe('')
+  })
+
+  it('has the start step accept or decline an offered program with a reason, and stop at the pull request', () => {
+    expect(flat).toContain('accepts or declines the offer with a reason')
+    expect(flat).toContain('before any repository work starts')
+    expect(flat).toContain('`domain`')
+    expect(flat).toContain('stops at the pull request')
+  })
+
+  it('gives the goals to the tracker, never to the start run', () => {
+    expect(flat).toContain('The start run opens no goal')
+    expect(flat).toContain('`goal_batches`')
+    expect(flat).toContain('after the start pull request merges')
+  })
+
+  it('names the goal issue, its batch key, its label and the Project', () => {
+    expect(flat).toContain('`cross-repo-goal`')
+    expect(flat).toContain('<!-- fro-bot-program-goal program:<key> batch:<name> -->')
+    expect(flat).toContain("added to the program's Project")
+    expect(flat).toContain('as `fro-bot`')
+  })
+
+  it('names the checklist line format with the pinned commit and its limit', () => {
+    expect(flat).toContain('`owner/repo: <ask>. Brief: program-domains.json@<sha>#<domain>. Part issue: <url>`')
+    expect(flat).toContain('4,000')
+  })
+
+  it('says when each batch is listed: the first once every part issue exists, then one for each Part 0 repo whose Part 0 merged', () => {
+    expect(flat).toContain('the first batch')
+    expect(flat).toContain('every part issue exists')
+    expect(flat).toContain('Part 0')
+    expect(flat).toContain('merged')
+  })
+
+  it('says a batch is repaired by reusing its goal and writing only what is missing', () => {
+    expect(flat).toContain('reuses the goal')
+    expect(flat).toContain('only what is missing')
+  })
+
+  it('says each goal is approved by the operator and keeps the commit it was approved with', () => {
+    expect(flat).toContain('`dispatch-approved`')
+    expect(flat).toContain('keeps the brief commit')
+    expect(flat).toContain('its own approval')
+  })
+
+  it('says the planner skips the goal and dispatch checks the target against the brief', () => {
+    expect(flat).toContain('The planner skips')
+    expect(flat).toContain('dispatch checks')
   })
 })

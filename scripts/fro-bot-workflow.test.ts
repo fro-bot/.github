@@ -2173,6 +2173,52 @@ describe('fro-bot.yaml content-job tracker exclusion matches program-trackers.js
   })
 })
 
+describe("fro-bot.yaml: the planner's job condition and a goal that fro-bot opened", () => {
+  const contentIf = String(froBotParsed.jobs['fro-bot']?.if ?? '')
+  const goalEvent = (fixture: {action: string; authorLogin: string; senderLogin: string}): unknown => ({
+    github: {
+      event_name: 'issues',
+      event: {
+        action: fixture.action,
+        issue: {
+          number: 5001,
+          user: {login: fixture.authorLogin},
+          author_association: 'OWNER',
+          labels: [{name: 'cross-repo-goal'}, {name: 'dispatch-approved'}],
+        },
+        sender: {login: fixture.senderLogin, id: fixture.senderLogin === 'marcusrbrown' ? OPERATOR_ID : STRANGER_ID},
+      },
+    },
+  })
+
+  it.each([
+    ['opened by fro-bot', 'opened', 'fro-bot'],
+    ['labeled by fro-bot', 'labeled', 'fro-bot'],
+    ['labeled dispatch-approved by the operator', 'labeled', 'marcusrbrown'],
+    ['edited by the operator', 'edited', 'marcusrbrown'],
+  ])('skips a cross-repo-goal authored by fro-bot, %s, so the planner never decomposes it', (_name, action, sender) => {
+    expect(evaluateExpression(contentIf, goalEvent({action, authorLogin: 'fro-bot', senderLogin: sender}))).toBe(false)
+  })
+
+  it('skips a goal authored by the fro-bot App as well', () => {
+    expect(
+      evaluateExpression(
+        contentIf,
+        goalEvent({action: 'opened', authorLogin: 'fro-bot[bot]', senderLogin: 'fro-bot[bot]'}),
+      ),
+    ).toBe(false)
+  })
+
+  it('still decomposes a goal the operator wrote', () => {
+    expect(
+      evaluateExpression(
+        contentIf,
+        goalEvent({action: 'opened', authorLogin: 'marcusrbrown', senderLogin: 'marcusrbrown'}),
+      ),
+    ).toBe(true)
+  })
+})
+
 describe('fro-bot.yaml: program requests read the program skill', () => {
   const env = froBotParsed.env as Record<string, string>
   const note = flat(env.PROGRAM_REQUEST_NOTE ?? '')
@@ -2182,6 +2228,14 @@ describe('fro-bot.yaml: program requests read the program skill', () => {
     expect(note).toContain('.agents/skills/cross-repo-program/SKILL.md')
     expect(note).toContain('Read it before you act on such a request')
     expect(note).toContain('It does not apply to any other request')
+  })
+
+  it('tells a program offer to be accepted or declined with a reason before work starts, and leaves the goals to the tracker', () => {
+    expect(note).toContain('offers a program in a domain')
+    expect(note).toContain('accept or decline it with a reason')
+    expect(note).toContain('before any repository work starts')
+    expect(note).toContain('opens no goal issue itself')
+    expect(note).toContain('the tracker opens them after the start pull request merges')
   })
 
   it.each(['fro-bot-remediate', 'fro-bot-observe'])(
