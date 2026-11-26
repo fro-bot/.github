@@ -240,7 +240,21 @@ describe('the cross-repo-program skill: a start from a program proposal', () => 
   })
 
   it('puts the proposal URL in the start pull request body', () => {
-    expect(flat).toContain("put the proposal's URL in the start pull request body")
+    expect(flat).toContain("put the proposal's URL in the tracker issue body and the start pull request body")
+  })
+
+  it('posts the accepted reply only once the start pull request is open, and says what the daily pass does otherwise', () => {
+    expect(flat).toContain('post the accepted reply only once the start pull request is open')
+    expect(flat).toContain('when the run cannot confirm that the start pull request is open')
+    expect(flat).toContain(
+      'closes the proposal only when a `fro-bot` pull request whose body contains the proposal URL exists, and until then shows it as start in progress',
+    )
+  })
+
+  it('never starts a partial start again', () => {
+    expect(flat).toContain(
+      'a partial start (a tracker issue or a pull request that holds the proposal URL) is not started again',
+    )
   })
 
   it('answers on the proposal with one of two first-line forms, and says who reads them', () => {

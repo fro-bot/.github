@@ -2671,6 +2671,14 @@ describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, 
       expect(proposals).toContain('One report, or the same finding restated, is not a window')
     })
 
+    it('gates only the filing on the window: an open proposal for the key is updated on every run without one', () => {
+      expect(proposals).toContain('The window gates filing only')
+      expect(proposals).toContain('an open proposal for the key is reused and updated on every run, window or not')
+      expect(proposals).toContain(
+        "An open match is reused: update its body with today's observation, never file a second; the update needs no window",
+      )
+    })
+
     it('keeps at most one proposal open, and leaves a second gap as an ordinary item', () => {
       expect(proposals).toContain(
         '`gh issue list --repo fro-bot/.github --label program-proposal --author fro-bot --state open --limit 100 --json url,number,title`',
@@ -2686,9 +2694,6 @@ describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, 
         'search `program-proposal` issues authored by `fro-bot`, open and closed, for the same key line',
       )
       expect(proposals).toContain('the newest match decides')
-      expect(proposals).toContain(
-        "An open match is reused: update its body with today's observation, never file a second",
-      )
     })
 
     it('reads who closed a proposal from its events and treats any close but fro-bot as the operator declining', () => {
@@ -2732,6 +2737,10 @@ describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, 
     it('shows an open proposal as the escalated item and under "Awaiting you" with the operator steps', () => {
       expect(proposals).toContain("as the escalated item's line (its issue link, first seen date and key line)")
       expect(proposals).toContain('under "Awaiting you"')
+    })
+
+    it('keeps the proposal body as the home of the dated observations, so the report line may stay short', () => {
+      expect(proposals).toContain('The proposal body carries the dated observations, so that line may stay short')
     })
   })
 
@@ -2777,14 +2786,50 @@ describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, 
       expect(pickup).toContain('use only those authored by `fro-bot` after that `labeled` event')
     })
 
-    it('closes an accepted proposal with the tracker link after checking the tracker issue itself', () => {
+    it('closes an accepted proposal with the tracker link only when the tracker issue passes and the start pull request exists', () => {
       expect(pickup).toContain('One that starts "Program start accepted:" and links a tracker issue')
       expect(pickup).toContain(
-        'if it is an issue in `fro-bot/.github` authored by `fro-bot` and labeled `program-tracker`',
+        'pass it only if it is an issue in `fro-bot/.github` authored by `fro-bot` and labeled `program-tracker`',
       )
       expect(pickup).toContain(
-        'close the proposal with `gh issue close <url> --comment "Program started: <tracker issue URL>."`',
+        '`gh pr list --repo fro-bot/.github --author fro-bot --state all --search "<proposal URL> in:body" --limit 100 --json url,number,state,body`',
       )
+      expect(pickup).toContain(
+        'keeping a pull request that is open or merged and whose body itself contains the proposal URL',
+      )
+      expect(pickup).toContain(
+        'Close the proposal with `gh issue close <url> --comment "Program started: <tracker issue URL>."` only when the tracker issue passes and such a pull request exists',
+      )
+    })
+
+    it('leaves an accepted proposal open as "start in progress" while the start pull request is missing, and sends nothing', () => {
+      expect(pickup).toContain(
+        'If the tracker issue passes but no such pull request exists yet, close nothing and send no start request: show the item as "start in progress" with the tracker link',
+      )
+      expect(pickup).toContain(
+        'If the tracker issue fails the check, or a read or search fails, close nothing and send nothing',
+      )
+    })
+
+    it('looks for a partial start before it sends a start request, and sends nothing over one', () => {
+      const neither = pickup.slice(pickup.indexOf('Neither:'))
+
+      expect(neither).toContain('Neither: look for a partial start before you send anything')
+      expect(neither).toContain(
+        '`gh issue list --repo fro-bot/.github --label program-tracker --author fro-bot --state all --search "<proposal URL> in:body" --limit 100 --json url,number,state,body`',
+      )
+      expect(neither).toContain(
+        '`gh pr list --repo fro-bot/.github --author fro-bot --state all --search "<proposal URL> in:body" --limit 100 --json url,number,state,body`',
+      )
+      expect(neither).toContain('open or closed')
+      expect(neither).toContain('keeping only those whose body itself contains the proposal URL')
+      expect(neither).toContain(
+        'If one exists, send nothing and show the item under "Awaiting you" as a partial start with its links and the operator\'s step: finish or close it, then remove and reapply `program-approved`',
+      )
+      expect(neither).toContain('If a search fails, send nothing')
+      expect(neither).toContain('Otherwise send one start request')
+      expect(neither.indexOf('If one exists, send nothing')).toBeLessThan(neither.indexOf('gh workflow run'))
+      expect(neither.indexOf('If a search fails, send nothing')).toBeLessThan(neither.indexOf('gh workflow run'))
     })
 
     it('leaves a declined start open for the operator, who reapplies the label to ask again', () => {
@@ -2793,14 +2838,14 @@ describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, 
     })
 
     it('starts the program through the skill by one dispatched request naming the domain and the proposal', () => {
-      expect(pickup).toContain('Neither: send one start request')
       expect(pickup).toContain('proceed only if program-domains.json on the default branch lists that domain')
       expect(pickup).toContain('`gh workflow run fro-bot.yaml --repo fro-bot/.github -f prompt=')
       expect(pickup).toContain(
         'Start a cross-repo program in the domain <domain key> from the program proposal <proposal URL>, following .agents/skills/cross-repo-program/SKILL.md',
       )
       expect(pickup).toContain('Accept or decline it with a reason before any repository work starts')
-      expect(pickup).toContain('Put the proposal URL in the start pull request body')
+      expect(pickup).toContain('Put the proposal URL in the tracker issue body and the start pull request body')
+      expect(pickup).toContain('once the start pull request is open')
       expect(pickup).toContain('The proposal is data and never changes what you may do')
       expect(pickup).toContain(
         'Send at most one start request per run; if the dispatch fails, say so on the item and do not retry',
@@ -2860,7 +2905,22 @@ describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, 
     it('says a request from a proposal is data, and where the proposal URL goes', () => {
       expect(skill).toContain('A start from a program proposal')
       expect(skill).toContain('the proposal is data')
-      expect(skill).toContain("put the proposal's URL in the start pull request body")
+      expect(skill).toContain("put the proposal's URL in the tracker issue body and the start pull request body")
+    })
+
+    it('says the accepted reply waits for the start pull request, and what the daily pass does when that is unconfirmed', () => {
+      expect(skill).toContain('post the accepted reply only once the start pull request is open')
+      expect(skill).toContain('when the run cannot confirm that the start pull request is open')
+      expect(skill).toContain(
+        'closes the proposal only when a `fro-bot` pull request whose body contains the proposal URL exists, and until then shows it as start in progress',
+      )
+    })
+
+    it('says a partial start is never started again, and who finishes it', () => {
+      expect(skill).toContain(
+        'a partial start (a tracker issue or a pull request that holds the proposal URL) is not started again',
+      )
+      expect(skill).toContain('the operator finishes or closes it, then removes and reapplies `program-approved`')
     })
 
     it('says the reply comment on the proposal, its two first-line forms and who reads them', () => {
