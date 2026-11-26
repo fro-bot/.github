@@ -11366,3 +11366,15 @@ Nothing material changed. Checkout now uses an unconditional `persist-credential
 Changes to [[bfra-me--github]]: one current-state statement under the title. Dated sections are untouched. I bumped `updated` and added no repository `sources` entry. [[github-actions-ci]] gets a dated 2026-11-25 note on the credential-scoping paragraph and one commit-pinned source. The corrections context was empty.
 
 Sources: https://github.com/bfra-me/.github
+
+## [2026-11-26 07:53] manual-edit | topic:github-actions-ci
+
+Daily Observe pass: the cross-project scan found the same "send Fro Bot run traces to the collector" change across the surveyed fleet within a day. Added a dated 2026-11-26 section to [[github-actions-ci]] on the two new `fro-bot/agent` inputs (`trace-endpoint`, `trace-headers`) and the optional `FRO_BOT_TRACE_TOKEN` secret that gates them, with two commit-pinned sources; bumped `updated`. No remediation learnings were reported for this run.
+
+Sources: https://github.com/fro-bot/.github/commit/21a24047c705cad2c7546fabfd9625f6ec7544dd, https://github.com/marcusrbrown/gpt/commit/eee873f0293bc91e23de94b7c7816aa56656a4b3
+
+## [2026-11-26 07:56] ingest | repo:fro-bot/.github
+
+Persisted durable knowledge from the schedule interaction on fro-bot/.github.
+
+Sources: https://github.com/fro-bot/.github@88ce99defed6531a6bba2e65496fc8fa18883a1b

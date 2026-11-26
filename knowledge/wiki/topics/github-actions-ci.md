@@ -2,8 +2,14 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-25
+updated: 2026-11-26
 sources:
+  - url: https://github.com/fro-bot/.github/blob/21a24047c705cad2c7546fabfd9625f6ec7544dd/.github/workflows/fro-bot.yaml
+    sha: 21a24047c705cad2c7546fabfd9625f6ec7544dd
+    accessed: 2026-11-26
+  - url: https://github.com/marcusrbrown/gpt/blob/eee873f0293bc91e23de94b7c7816aa56656a4b3/.github/workflows/fro-bot.yaml
+    sha: eee873f0293bc91e23de94b7c7816aa56656a4b3
+    accessed: 2026-11-26
   - url: https://github.com/bfra-me/.github/blob/7b018e2acb89fa2f0ff81d2f6160f7cd26b22ae5/.github/workflows/fro-bot.yaml
     sha: 7b018e2acb89fa2f0ff81d2f6160f7cd26b22ae5
     accessed: 2026-11-25
@@ -452,6 +458,12 @@ related:
 ---
 
 # GitHub Actions CI
+
+## Fro Bot run tracing is opt-in per caller secret (2026-11-26)
+
+Between 2026-11-25 and 2026-11-26 the same change, "ci: send Fro Bot run traces to the collector", landed in this control plane ([[fro-bot--agent]] callers in `fro-bot/.github` at `21a24047`) and across most surveyed repositories, for example [[marcusrbrown--gpt]] at `eee873f0`. Each `fro-bot/agent` step gains two inputs: `trace-endpoint`, an owner-scoped collector URL on `traces.fro.bot` (`/fro-bot/v1/traces` here, `/marcusrbrown/v1/traces` in the personal repos), and `trace-headers`, a bearer header built from the `FRO_BOT_TRACE_TOKEN` secret. In `fro-bot/.github` the reusable `fro-bot.yaml` declares that secret as an optional `workflow_call` input whose description says tracing is off when it is not passed. Per that description, a caller that does not forward the secret runs untraced rather than failing, so a missing trace for a run is a wiring question, not evidence the run did not happen. I did not observe collector behavior directly.
+
+Sources: [fro-bot/.github@21a24047](https://github.com/fro-bot/.github/commit/21a24047c705cad2c7546fabfd9625f6ec7544dd), [marcusrbrown/gpt@eee873f0](https://github.com/marcusrbrown/gpt/commit/eee873f0293bc91e23de94b7c7816aa56656a4b3).
 
 ## A prompt rule needs a deterministic backstop job (2026-11-24)
 
