@@ -20,7 +20,7 @@ import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
 import {parse, stringify} from 'yaml'
 import {parseProgramTrackers, selectProgram, type CommentEvent} from './program-trackers.ts'
-import {goalMarker} from './rollout-tracker-goals.ts'
+import {goalBriefMarker, goalMarker, goalReposMarker} from './rollout-tracker-goals.ts'
 import {
   buildMarker,
   buildSnapshot,
@@ -5060,7 +5060,7 @@ describe('a domain program: part issues with the brief', () => {
       state: 'open',
       pull_request: false,
       author: 'fro-bot',
-      body: `A goal.\n\n${goalMarker('harness', batch)}\n`,
+      body: `A goal.\n\n${goalReposMarker([dashboard.nameWithOwner])}\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', batch)}\n`,
       ...changes,
     })
     const goalCard = (number: number): ProjectItem =>
@@ -5129,7 +5129,7 @@ describe('a domain program: part issues with the brief', () => {
       const configPath = domainConfig({part0: []})
       const cards = allCards()
       const first = goalIssue('initial', 50, {
-        body: `A goal.\n<!-- fro-bot-program-goal-repos ${systematic.nameWithOwner},${spaceBus.nameWithOwner} -->\n${goalMarker('harness', 'initial')}\n`,
+        body: `A goal.\n<!-- fro-bot-program-goal-repos ${systematic.nameWithOwner},${spaceBus.nameWithOwner} -->\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', 'initial')}\n`,
       })
 
       const result = preflight({

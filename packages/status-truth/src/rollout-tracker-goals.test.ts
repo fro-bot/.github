@@ -7,6 +7,7 @@ import {isPromptSafe, parseBriefReference} from '@fro-bot/dispatch/dispatch-plan
 import {extractItemPrompts, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
+  goalBriefMarker,
   goalMarker,
   goalReaders,
   goalReposMarker,
@@ -70,16 +71,23 @@ function readers(state: ReaderState = {}): GoalReaders & {reads: string[]} {
   }
 }
 
+/** The members a goal of this batch records by default: the first batch of `input()` is dashboard; a parity batch is its repo. */
+const defaultMembers = (batch: string): {nameWithOwner: string}[] =>
+  [systematic, spaceBus, dashboard].some(repo => batch === `parity-${repo.nodeId}`)
+    ? [systematic, spaceBus, dashboard].filter(repo => batch === `parity-${repo.nodeId}`)
+    : [dashboard]
+
+/** A goal as the preflight's own body writes it: the members, the brief commit and the key. */
 const goal = (batch: string, number: number, changes: Partial<GoalIssue> = {}): GoalIssue => ({
   number,
   state: 'open',
   pull_request: false,
   author: 'fro-bot',
-  body: `A goal.\n\n${goalMarker('harness', batch)}\n`,
+  body: `A goal.\n\n${goalReposMarker(defaultMembers(batch).map(repo => repo.nameWithOwner))}\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', batch)}\n`,
   ...changes,
 })
 
-/** A goal as the preflight's own body writes it: the marker and the repos it was created for. */
+/** A goal created for exactly these repos. */
 const goalFor = (
   batch: string,
   number: number,
@@ -87,7 +95,7 @@ const goalFor = (
   changes: Partial<GoalIssue> = {},
 ) =>
   goal(batch, number, {
-    body: `A goal.\n\n${goalReposMarker(repos.map(repo => repo.nameWithOwner))}\n${goalMarker('harness', batch)}\n`,
+    body: `A goal.\n\n${goalReposMarker(repos.map(repo => repo.nameWithOwner))}\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', batch)}\n`,
     ...changes,
   })
 
@@ -254,11 +262,11 @@ describe('goalReposMarker', () => {
     expect(goalReposMarker(['fro-bot/a', 'fro-bot/b'])).toBe('<!-- fro-bot-program-goal-repos fro-bot/a,fro-bot/b -->')
   })
 
-  it('is part of every goal body the preflight writes, ahead of the key', () => {
+  it('is part of every goal body the preflight writes, ahead of the brief commit and the key', () => {
     const [batch] = batchesOf(planGoals(input({part0Names: new Set()}), readers()))
 
     expect(batch?.body).toContain(
-      `${goalReposMarker([systematic.nameWithOwner, spaceBus.nameWithOwner, dashboard.nameWithOwner])}\n${goalMarker('harness', 'initial')}`,
+      `${goalReposMarker([systematic.nameWithOwner, spaceBus.nameWithOwner, dashboard.nameWithOwner])}\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', 'initial')}`,
     )
   })
 })
@@ -372,34 +380,77 @@ describe('a repo that becomes eligible after the first batch', () => {
     expect(batchesOf(result)).toStrictEqual([])
   })
 
-  it('leaves a repo out of the first batch that has left the eligible set since the goal was created', () => {
+  it('defers the checklist, with nothing posted, when a recorded member has left the eligible set since the goal was created', () => {
     const result = planGoals(
       input({...noPart0, eligible: [systematic, dashboard]}),
       readers({goals: [created()], comments: {50: []}}),
     )
 
-    expect(batchesOf(result).map(batch => [batch.batch, batch.repos])).toStrictEqual([
-      ['initial', [systematic.nameWithOwner]],
-      [`join-${dashboard.nodeId}`, [dashboard.nameWithOwner]],
+    expect(batchesOf(result).map(batch => [batch.batch, batch.error, batch.checklist])).toStrictEqual([
+      ['initial', 'a member of the goal is not ready, so its checklist waits', ''],
+      [`join-${dashboard.nodeId}`, null, expect.stringContaining(dashboard.nameWithOwner)],
     ])
   })
 
-  it('falls back to the current repos for a goal whose body records none', () => {
-    const result = planGoals(input(noPart0), readers({goals: [goal('initial', 50)], comments: {50: []}}))
+  const unrecorded = 'the goal does not record its members and brief commit'
+  const bare = (batch = 'initial') => `A goal.\n${goalMarker('harness', batch)}\n`
 
-    expect(batchesOf(result).map(batch => [batch.batch, batch.repos.length])).toStrictEqual([['initial', 3]])
+  it("defers a missing checklist for a goal that records nothing, and never guesses members from today's repos", () => {
+    const result = planGoals(
+      input(noPart0),
+      readers({goals: [goal('initial', 50, {body: bare()})], comments: {50: []}}),
+    )
+
+    expect(batchesOf(result).map(batch => [batch.batch, batch.error, batch.checklist])).toStrictEqual([
+      ['initial', unrecorded, ''],
+    ])
+  })
+
+  it('does not defer a goal that records nothing once its checklist exists: only the Project item is missing', () => {
+    const result = planGoals(
+      input(noPart0),
+      readers({
+        goals: [goal('initial', 50, {body: bare()})],
+        comments: {
+          50: [
+            checklistComment(
+              1,
+              [systematic, spaceBus, dashboard].map(repo => lineFor(repo)),
+            ),
+          ],
+        },
+      }),
+    )
+
+    expect(batchesOf(result)[0]).toMatchObject({goal_issue: 50, has_checklist: true, in_project: false, error: null})
   })
 
   it.each([
-    ['a repo name that is not a name', '<!-- fro-bot-program-goal-repos not a name -->'],
-    ['an empty list', '<!-- fro-bot-program-goal-repos  -->'],
-    ['a list with an empty item', '<!-- fro-bot-program-goal-repos fro-bot/a,,fro-bot/b -->'],
-  ])('ignores %s in a goal body and falls back to the current repos', (_name, line) => {
-    const body = `A goal.\n${line}\n${goalMarker('harness', 'initial')}\n`
+    ['a repo name that is not a name', `<!-- fro-bot-program-goal-repos not a name -->\n${goalBriefMarker(COMMIT)}`],
+    ['an empty list', `<!-- fro-bot-program-goal-repos  -->\n${goalBriefMarker(COMMIT)}`],
+    [
+      'a list with an empty item',
+      `<!-- fro-bot-program-goal-repos fro-bot/a,,fro-bot/b -->\n${goalBriefMarker(COMMIT)}`,
+    ],
+    ['no brief commit', goalReposMarker([dashboard.nameWithOwner])],
+    [
+      'a short brief commit',
+      `${goalReposMarker([dashboard.nameWithOwner])}\n<!-- fro-bot-program-goal-brief abc123 -->`,
+    ],
+    [
+      'an upper-case brief commit',
+      `${goalReposMarker([dashboard.nameWithOwner])}\n<!-- fro-bot-program-goal-brief ${'A'.repeat(40)} -->`,
+    ],
+    [
+      'two different brief commits',
+      `${goalReposMarker([dashboard.nameWithOwner])}\n${goalBriefMarker(COMMIT)}\n${goalBriefMarker('b'.repeat(40))}`,
+    ],
+  ])('defers a missing checklist for a goal body with %s', (_name, lines) => {
+    const body = `A goal.\n${lines}\n${goalMarker('harness', 'initial')}\n`
 
     const result = planGoals(input(noPart0), readers({goals: [goal('initial', 50, {body})], comments: {50: []}}))
 
-    expect(batchesOf(result).map(batch => batch.repos.length)).toStrictEqual([3])
+    expect(batchesOf(result).map(batch => [batch.error, batch.checklist])).toStrictEqual([[unrecorded, '']])
   })
 
   it('takes the repos from a recorded line only when it is a line of its own', () => {
@@ -407,7 +458,165 @@ describe('a repo that becomes eligible after the first batch', () => {
 
     const result = planGoals(input(noPart0), readers({goals: [goal('initial', 50, {body})], comments: {50: []}}))
 
-    expect(batchesOf(result)[0]?.repos).toHaveLength(3)
+    expect(batchesOf(result)[0]?.error).toBe('the goal does not record its members and brief commit')
+  })
+})
+
+describe('goalBriefMarker', () => {
+  it('names the brief commit a goal was created at, in one comment line', () => {
+    expect(goalBriefMarker(COMMIT)).toBe(`<!-- fro-bot-program-goal-brief ${COMMIT} -->`)
+  })
+
+  it('is part of every goal body the preflight writes, between the members and the key', () => {
+    const [batch] = batchesOf(planGoals(input(), readers()))
+
+    expect(batch?.body).toContain(
+      `${goalReposMarker([dashboard.nameWithOwner])}\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', 'initial')}`,
+    )
+  })
+})
+
+describe("resuming a goal from what was created, not from today's inputs", () => {
+  const OLD = COMMIT
+  const NEW = 'b'.repeat(40)
+  const advanced = {brief: {commit: NEW, url: `https://github.com/fro-bot/.github/blob/${NEW}/program-domains.json`}}
+  const two = [systematic, spaceBus]
+  const noPart0 = {part0Names: new Set<string>()}
+  const created = () => goalFor('initial', 50, two)
+  const project = [{content_repo: 'fro-bot/.github', content_number: 50}]
+  const noDashboard = new Map([
+    [systematic.nameWithOwner.toLowerCase(), 11],
+    [spaceBus.nameWithOwner.toLowerCase(), 12],
+  ])
+  const checklistOf = (result: ReturnType<typeof planGoals>) =>
+    batchesOf(result).find(batch => batch.batch === 'initial')?.checklist ?? ''
+
+  it('writes a missing checklist at the recorded commit, after main has moved on', () => {
+    const result = planGoals(
+      input({...noPart0, ...advanced, eligible: two, partIssues: noDashboard, projectItems: project}),
+      readers({goals: [created()], comments: {50: []}}),
+    )
+
+    expect(checklistOf(result)).toContain(`program-domains.json@${OLD}#harness-tools`)
+    expect(checklistOf(result)).not.toContain(NEW)
+  })
+
+  it('writes the checklist for every recorded member, however many are eligible now', () => {
+    const result = planGoals(
+      input({...noPart0, ...advanced, eligible: two, partIssues: noDashboard, projectItems: project}),
+      readers({goals: [created()], comments: {50: []}}),
+    )
+
+    expect((checklistOf(result).match(/^- \[ \] /gm) ?? []).length).toBe(2)
+    expect(batchesOf(result)[0]?.repos).toStrictEqual(two.map(repo => repo.nameWithOwner))
+  })
+
+  it('writes the goal body for an existing goal with the recorded commit too, so nothing advertises the new pin', () => {
+    const result = planGoals(
+      input({...noPart0, ...advanced, eligible: two, partIssues: noDashboard, projectItems: project}),
+      readers({goals: [created()], comments: {50: []}}),
+    )
+
+    expect(batchesOf(result)[0]?.body).toContain(goalBriefMarker(OLD))
+    expect(batchesOf(result)[0]?.body).not.toContain(NEW)
+  })
+
+  describe('a recorded member whose part issue is missing from the Project', () => {
+    const without = new Map([
+      [spaceBus.nameWithOwner.toLowerCase(), 12],
+      [dashboard.nameWithOwner.toLowerCase(), 13],
+    ])
+
+    it('defers the repair with a fixed reason and writes no checklist: never a subset', () => {
+      const result = planGoals(
+        input({...noPart0, ...advanced, eligible: two, partIssues: without, projectItems: project}),
+        readers({goals: [created()], comments: {50: []}}),
+      )
+
+      expect(
+        batchesOf(result).map(batch => [batch.batch, batch.error, batch.checklist, batch.goal_issue]),
+      ).toStrictEqual([['initial', 'a member of the goal is not ready, so its checklist waits', '', 50]])
+      expect(result.goal_error).toBeNull()
+    })
+
+    it('posts exactly one complete checklist at the original commit once the part issue returns', () => {
+      const posted: string[] = []
+      const run = (partIssues: ReadonlyMap<string, number>, comments: GoalComment[]) => {
+        const result = planGoals(
+          input({...noPart0, ...advanced, eligible: two, partIssues, projectItems: project}),
+          readers({goals: [created()], comments: {50: comments}}),
+        )
+        const batch = batchesOf(result).find(candidate => candidate.batch === 'initial')
+        if (batch !== undefined && batch.error === null && !batch.has_checklist) {
+          posted.push(batch.checklist)
+          comments.push({id: comments.length + 1, author: 'fro-bot', body: batch.checklist})
+        }
+        return result
+      }
+      const comments: GoalComment[] = []
+
+      run(without, comments)
+      run(without, comments)
+      run(noDashboard, comments)
+      const afterwards = run(noDashboard, comments)
+
+      expect(posted).toHaveLength(1)
+      expect((posted[0]?.match(/^- \[ \] /gm) ?? []).length).toBe(2)
+      expect(posted[0]).toContain(`program-domains.json@${OLD}#harness-tools`)
+      expect(batchesOf(afterwards)).toStrictEqual([])
+    })
+  })
+
+  it('does the same for a join goal: its one member and the recorded commit', () => {
+    const join = goalFor(`join-${dashboard.nodeId}`, 60, [dashboard])
+
+    const result = planGoals(
+      input({
+        ...noPart0,
+        ...advanced,
+        projectItems: [...project, {content_repo: 'fro-bot/.github', content_number: 60}],
+      }),
+      readers({
+        goals: [created(), join],
+        comments: {
+          50: [
+            checklistComment(
+              1,
+              two.map(repo => lineFor(repo)),
+            ),
+          ],
+          60: [],
+        },
+      }),
+    )
+
+    const batch = batchesOf(result).find(candidate => candidate.batch === `join-${dashboard.nodeId}`)
+    expect(batch?.checklist).toContain(`program-domains.json@${OLD}#harness-tools`)
+    expect(batch?.error).toBeNull()
+  })
+
+  it('does the same for a parity goal, and waits, listing nothing, while its repo has no part issue', () => {
+    const parity = goalFor(parityName(systematic), 70, [systematic])
+    const items = [...project, {content_repo: 'fro-bot/.github', content_number: 70}]
+    const comments = {
+      50: [
+        checklistComment(
+          1,
+          two.map(repo => lineFor(repo)),
+        ),
+      ],
+      70: [],
+    }
+
+    const ready = planGoals(input({...advanced, projectItems: items}), readers({goals: [created(), parity], comments}))
+    const missing = planGoals(
+      input({...advanced, projectItems: items, partIssues: new Map([[spaceBus.nameWithOwner.toLowerCase(), 12]])}),
+      readers({goals: [created(), parity], comments}),
+    )
+
+    const parityBatch = batchesOf(ready).find(batch => batch.batch === parityName(systematic))
+    expect(parityBatch?.checklist).toContain(`program-domains.json@${OLD}#harness-tools`)
+    expect(batchesOf(missing).map(batch => batch.batch)).not.toContain(parityName(systematic))
   })
 })
 
@@ -530,7 +739,10 @@ describe('repair: what exists is reused, and only what is missing is listed', ()
   it('needs the checklist to name each of the batch repos', () => {
     const result = planGoals(
       input({part0Names: new Set(), projectItems: project(50)}),
-      readers({goals: [goal('initial', 50)], comments: {50: [checklistComment(1, [lineFor(dashboard)])]}}),
+      readers({
+        goals: [goalFor('initial', 50, [systematic, spaceBus, dashboard])],
+        comments: {50: [checklistComment(1, [lineFor(dashboard)])]},
+      }),
     )
 
     expect(batchesOf(result)[0]).toMatchObject({goal_issue: 50, has_checklist: false})
@@ -728,6 +940,18 @@ describe('the instructions', () => {
     expect(instructions).toContain('Never apply `dispatch-approved`')
     expect(instructions).toContain('never edit or delete an existing checklist comment')
     expect(instructions).toContain('the next run lists the batch again')
+  })
+
+  it('carry an explicit exception to the public item set, for a goal created in this run and only after a live check', () => {
+    const instructions = planGoals(input(), readers()).goal_instructions
+
+    expect(instructions).toContain('Exception to the public item set')
+    expect(instructions).toContain('a goal issue you created in this run')
+    expect(instructions).toContain(
+      'only after you have read live that its repository is public and that the issue is an item of the Project',
+    )
+    expect(instructions).toContain('name only that goal issue and its repos')
+    expect(instructions).toContain('Every other item outside the public item set stays out')
   })
 
   it('tell the agent to write nothing for a stopped batch and to say why on the tracker', () => {

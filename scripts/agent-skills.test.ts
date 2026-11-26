@@ -200,12 +200,15 @@ describe('the cross-repo-program skill: a domain program', () => {
   it('says Part 0 is a merged pull request in that repo that references the part issue, and a later repo joins as its own batch', () => {
     expect(flat).toContain('merged pull request in that repository that references the part issue')
     expect(flat).toContain('`join-<node ID>`')
-    expect(flat).toContain('never posts a replacement checklist on an existing goal')
+    expect(flat).toContain('and its brief commit are fixed when it is created')
+    expect(flat).toContain('never posts a subset checklist, a second one, or one at another commit')
   })
 
   it('says a transient brief read failure holds an item and a mismatch blocks it for good', () => {
-    expect(flat).toContain('a read that fails leaves the item pending')
+    expect(flat).toContain('read that fails (the brief, or the live repository) leaves the item pending and held')
     expect(flat).toContain('blocks it for good')
+    expect(flat).toContain('remove and reapply dispatch-approved to retry')
+    expect(flat).not.toContain('the next dispatch run retries')
   })
 
   it('says a batch is repaired by reusing its goal and writing only what is missing', () => {

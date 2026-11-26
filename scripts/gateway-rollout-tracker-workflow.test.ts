@@ -517,3 +517,19 @@ describe('gateway-rollout-tracker.yaml: the domain goal duty', () => {
     expect(prompt).not.toContain('dispatch-approved')
   })
 })
+
+describe('gateway-rollout-tracker.yaml: a goal the tracker just created may be linked', () => {
+  const prompt = String(update?.with?.prompt ?? '')
+  const flat = prompt.replaceAll(/\s+/g, ' ')
+  const goalsOutput = expr('needs.preflight.outputs.domain_goals')
+
+  it('keeps the public item allowlist as it was, so the rendered prompt of a program with no domain is unchanged', () => {
+    expect(flat).toContain('A Project item outside that set stays out of everything you write')
+    expect(flat).not.toContain('Exception')
+  })
+
+  it("delivers the exception with the goals duty: after the allowlist, and only in a domain program's prompt", () => {
+    expect(flat.indexOf(goalsOutput)).toBeGreaterThan(flat.indexOf('Public item set.'))
+    expect(prompt.split(goalsOutput)).toHaveLength(2)
+  })
+})

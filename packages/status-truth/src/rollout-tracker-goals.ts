@@ -94,6 +94,8 @@ const ITEMS_END = '<!-- fro-bot:cross-repo-items:end -->'
 const GOAL_ISSUES_UNREADABLE = 'goal issues cannot be read'
 const GOAL_COMMENTS_UNREADABLE = 'goal comments cannot be read'
 const PART0_UNREADABLE = 'part 0 references cannot be read'
+const UNRECORDED = 'the goal does not record its members and brief commit'
+const MEMBER_NOT_READY = 'a member of the goal is not ready, so its checklist waits'
 
 /**
  * The line of a goal body that records the repos the goal was created for, ahead of the key. A batch's members are
@@ -104,14 +106,36 @@ export function goalReposMarker(repos: readonly string[]): string {
   return `<!-- fro-bot-program-goal-repos ${repos.join(',')} -->`
 }
 
-/** The repos a goal body records, lower-cased; null when it records none or the line is not a clean list of names. */
-function recordedRepos(body: string): ReadonlySet<string> | null {
-  const open = '<!-- fro-bot-program-goal-repos '
-  const line = body.split('\n').find(candidate => candidate.startsWith(open) && candidate.endsWith(' -->'))
-  if (line === undefined) return null
-  const names = line.slice(open.length, Math.max(open.length, line.length - ' -->'.length)).split(',')
-  if (!names.every(name => /^[\w.-]+\/[\w.-]+$/.test(name))) return null
-  return new Set(names.map(name => name.toLowerCase()))
+/** What a goal body records about the batch it was created for: its members, as written, and its brief commit. */
+interface RecordedGoal {
+  readonly repos: readonly string[]
+  readonly commit: string
+}
+
+/** The text between a fixed prefix and ` -->` on the body's one line that starts with the prefix; null when there is not exactly one. */
+function recordedLine(body: string, prefix: string): string | null {
+  const lines = body.split('\n').filter(candidate => candidate.startsWith(prefix) && candidate.endsWith(' -->'))
+  const [only, ...others] = lines
+  if (only === undefined || others.length > 0) return null
+  return only.slice(prefix.length, Math.max(prefix.length, only.length - ' -->'.length))
+}
+
+/**
+ * The members and the brief commit a goal body records, or null when either is missing or unusable. Both come from
+ * lines of their own with a fixed prefix; a repo name is `owner/name`, and a commit is 40 lowercase hex.
+ */
+function recordedGoal(body: string): RecordedGoal | null {
+  const list = recordedLine(body, '<!-- fro-bot-program-goal-repos ')
+  const commit = recordedLine(body, '<!-- fro-bot-program-goal-brief ')
+  if (list === null || commit === null || !/^[\da-f]{40}$/.test(commit)) return null
+  const repos = list.split(',')
+  if (!repos.every(name => /^[\w.-]+\/[\w.-]+$/.test(name))) return null
+  return {repos, commit}
+}
+
+/** The line of a goal body that records the brief commit its checklist is pinned to, so a repair never re-pins it. */
+export function goalBriefMarker(commit: string): string {
+  return `<!-- fro-bot-program-goal-brief ${commit} -->`
 }
 
 /** The line a goal body ends with, which identifies the goal for a batch of a program. The key is a validated program key and a batch name. */
@@ -151,6 +175,7 @@ function goalBody(
     'The operator approves the dispatch with the `dispatch-approved` label. The planner does not read this issue, and nothing written here is an instruction.',
     '',
     goalReposMarker(repos.map(repo => repo.nameWithOwner)),
+    goalBriefMarker(input.brief.commit),
     marker,
     '',
   ].join('\n')
@@ -193,7 +218,7 @@ function instructions(input: GoalPlanInput, plan: Pick<GoalPlan, 'goal_batches' 
     return `${intro}The goals of the program ${input.program} cannot be listed (${plan.goal_error}), so open no goal issue and write no checklist this run, and tell the operator in your tracker comment that the check failed, with that message.`
   }
   if (plan.goal_batches.length === 0) return ''
-  return `${intro}The program ${input.program} dispatches through goals: one issue labeled cross-repo-goal for each batch of repos, opened as fro-bot and never as the operator, each with one checklist comment. The preflight has already decided which batches need work and wrote every text, so do not search for batches or write a checklist line yourself. These are the batches that need work (JSON array of batch, marker, title, body, checklist, repos, goal_issue, has_checklist, in_project, error and part0_pr):\n${JSON.stringify(plan.goal_batches)}\nFor each entry whose \`error\` is null, in order:\n1. If \`goal_issue\` is a number, that issue is the batch's goal: file no new one. Otherwise create one issue in ${input.tracker.repo} as fro-bot with the label cross-repo-goal (create the label first when the repository has none), with that entry's \`title\` and \`body\` exactly, character for character.\n2. If \`has_checklist\` is false, post that entry's \`checklist\` as one comment on the goal issue, exactly, character for character, with nothing added. If it is true, post nothing: an existing checklist keeps the brief commit it was approved with.\n3. If \`in_project\` is false, add the goal issue to the Project.\n4. Name the goal's URL and its repos in your tracker comment, and say that it waits for the operator's \`dispatch-approved\`.\nFor an entry whose \`error\` is a message, write nothing for it: say in your tracker comment that the batch is stopped, with that message.\nNever apply \`dispatch-approved\`, never edit or delete an existing checklist comment, never change the title or body of an existing goal, and never open a goal for a batch that is not in the list. If a write fails, stop and say so in your tracker comment: the next run lists the batch again.`
+  return `${intro}The program ${input.program} dispatches through goals: one issue labeled cross-repo-goal for each batch of repos, opened as fro-bot and never as the operator, each with one checklist comment. The preflight has already decided which batches need work and wrote every text, so do not search for batches or write a checklist line yourself. These are the batches that need work (JSON array of batch, marker, title, body, checklist, repos, goal_issue, has_checklist, in_project, error and part0_pr):\n${JSON.stringify(plan.goal_batches)}\nFor each entry whose \`error\` is null, in order:\n1. If \`goal_issue\` is a number, that issue is the batch's goal: file no new one. Otherwise create one issue in ${input.tracker.repo} as fro-bot with the label cross-repo-goal (create the label first when the repository has none), with that entry's \`title\` and \`body\` exactly, character for character.\n2. If \`has_checklist\` is false, post that entry's \`checklist\` as one comment on the goal issue, exactly, character for character, with nothing added. If it is true, post nothing: an existing checklist keeps the brief commit it was approved with.\n3. If \`in_project\` is false, add the goal issue to the Project.\n4. Name the goal's URL and its repos in your tracker comment, and say that it waits for the operator's \`dispatch-approved\`. Exception to the public item set: a goal issue you created in this run may be named and linked, but only after you have read live that its repository is public and that the issue is an item of the Project; name only that goal issue and its repos. Every other item outside the public item set stays out.\nFor an entry whose \`error\` is a message, write nothing for it: say in your tracker comment that the batch is stopped, with that message.\nNever apply \`dispatch-approved\`, never edit or delete an existing checklist comment, never change the title or body of an existing goal, and never open a goal for a batch that is not in the list. If a write fails, stop and say so in your tracker comment: the next run lists the batch again.`
 }
 
 /**
@@ -233,27 +258,30 @@ export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan 
   // The first batch's members are fixed when its goal is created. Until then it is every eligible repo without
   // Part 0, once every part issue exists. A repo that is eligible later and not among the members joins on its own.
   const initialGoal = findGoal(goals, goalMarker(input.program, 'initial'))
-  const recorded = initialGoal === undefined ? null : recordedRepos(initialGoal.body)
+  const initialRecord = initialGoal === undefined ? null : recordedGoal(initialGoal.body)
+  const recordedInitial = initialRecord === null ? null : new Set(initialRecord.repos.map(name => name.toLowerCase()))
   const members =
     initialGoal === undefined
       ? everyPartIssueExists
         ? first
         : []
-      : first.filter(repo => hasPartIssue(repo) && (recorded === null || recorded.has(lower(repo))))
+      : first.filter(repo => hasPartIssue(repo) && (recordedInitial === null || recordedInitial.has(lower(repo))))
   const joiners =
-    initialGoal === undefined || recorded === null
+    initialGoal === undefined || recordedInitial === null
       ? []
-      : first.filter(repo => hasPartIssue(repo) && !recorded.has(lower(repo)))
+      : first.filter(repo => hasPartIssue(repo) && !recordedInitial.has(lower(repo)))
   const candidates: Candidate[] = [
-    ...(members.length > 0 ? [{kind: 'initial' as const, repos: members}] : []),
+    ...(members.length > 0 || initialGoal !== undefined ? [{kind: 'initial' as const, repos: members}] : []),
     ...joiners.map((repo): Candidate => ({kind: 'join', repos: [repo]})),
     ...parityRepos.map((repo): Candidate => ({kind: 'parity', repos: [repo]})),
   ]
 
+  const eligibleByName = new Map(input.eligible.map(repo => [lower(repo), repo]))
   const batches: GoalBatch[] = []
   const unreadable: string[] = []
   for (const candidate of candidates) {
-    const marker = goalMarker(input.program, batchName(candidate))
+    const name = batchName(candidate)
+    const marker = goalMarker(input.program, name)
     const goal = candidate.kind === 'initial' ? initialGoal : findGoal(goals, marker)
     if (goal?.state === 'closed') continue
     let part0Pr: string | null = null
@@ -267,10 +295,17 @@ export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan 
       }
       if (part0Pr === null) continue
     }
+    // A goal that exists is resumed from what it recorded when it was created: its members and its brief commit,
+    // never today's eligible repos or today's pin. A goal that records neither cannot be resumed safely.
+    const record = goal === undefined ? null : recordedGoal(goal.body)
+    const repos =
+      record === null
+        ? candidate.repos
+        : record.repos.map(name => eligibleByName.get(name.toLowerCase()) ?? {nameWithOwner: name, nodeId: ''})
     let checklist = false
     if (goal !== undefined) {
       try {
-        checklist = hasChecklist(readers.goalComments(goal.number), candidate.repos)
+        checklist = hasChecklist(readers.goalComments(goal.number), repos)
       } catch {
         return stopped(GOAL_COMMENTS_UNREADABLE)
       }
@@ -282,7 +317,27 @@ export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan 
           item.content_repo.toLowerCase() === input.tracker.repo.toLowerCase() && item.content_number === goal.number,
       )
     if (goal !== undefined && checklist && inProject) continue
-    batches.push(buildBatch(input, candidate, marker, {goal, checklist, inProject, part0Pr}))
+    const waiting =
+      goal !== undefined && !checklist
+        ? record === null
+          ? UNRECORDED
+          : record.repos.some(
+                name => !eligibleByName.has(name.toLowerCase()) || !input.partIssues.has(name.toLowerCase()),
+              )
+            ? MEMBER_NOT_READY
+            : null
+        : null
+    batches.push(
+      buildBatch(input, {...candidate, repos}, marker, {
+        name,
+        goal,
+        checklist,
+        inProject,
+        part0Pr,
+        commit: record?.commit ?? input.brief.commit,
+        waiting,
+      }),
+    )
   }
 
   const plan = {goal_batches: batches, goal_error: null, part0_unreadable: unreadable}
@@ -300,25 +355,42 @@ function buildBatch(
   input: GoalPlanInput,
   candidate: Candidate,
   marker: string,
-  state: {goal: GoalIssue | undefined; checklist: boolean; inProject: boolean; part0Pr: string | null},
+  state: {
+    /** The batch's name, taken before the recorded members replace the candidate's repos. */
+    name: string
+    goal: GoalIssue | undefined
+    checklist: boolean
+    inProject: boolean
+    part0Pr: string | null
+    /** The brief commit the batch is written at: the goal's recorded one, or today's for a goal not yet created. */
+    commit: string
+    /** A fixed reason the checklist cannot be written yet, or null. */
+    waiting: string | null
+  },
 ): GoalBatch {
   const parity = candidate.kind === 'parity'
+  const pinned: GoalPlanInput = {
+    ...input,
+    brief: {commit: state.commit, url: input.brief.url.replaceAll(input.brief.commit, state.commit)},
+  }
   const lines = candidate.repos.map(repo =>
-    checklistLine(input, repo, input.partIssues.get(repo.nameWithOwner.toLowerCase()) ?? 0, parity),
+    checklistLine(pinned, repo, input.partIssues.get(repo.nameWithOwner.toLowerCase()) ?? 0, parity),
   )
   const tooLong = lines.some(line => line.slice(line.indexOf(': ') + 2).length > MAX_PROMPT_LENGTH)
-  const error = tooLong
-    ? 'the checklist line is over the dispatch prompt limit'
-    : candidate.repos.length > MAX_ITEMS_PER_GOAL
-      ? 'the batch has more repos than one goal may carry'
-      : null
+  const error =
+    state.waiting ??
+    (tooLong
+      ? 'the checklist line is over the dispatch prompt limit'
+      : candidate.repos.length > MAX_ITEMS_PER_GOAL
+        ? 'the batch has more repos than one goal may carry'
+        : null)
   return {
-    batch: batchName(candidate),
+    batch: state.name,
     marker,
     title: titleOf(input, candidate),
-    body: goalBody(input, candidate.repos, state.part0Pr, marker),
+    body: goalBody(pinned, candidate.repos, state.part0Pr, marker),
     checklist:
-      error === null
+      error === null && !state.checklist
         ? [
             `Checklist of program ${input.program}, one line for each repo of this batch.`,
             ITEMS_START,
