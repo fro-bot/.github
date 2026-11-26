@@ -121,6 +121,7 @@ jobs:
       project_url: ${{ steps.snapshot.outputs.project_url }}
       operator_login: ${{ steps.snapshot.outputs.operator_login }}
       evidence: ${{ steps.snapshot.outputs.evidence }}
+      domain_bootstrap: ${{ steps.snapshot.outputs.domain_bootstrap }}
     steps:
       # The comment ID is templated into the agent prompt, so it is checked before anything else runs.
       - name: Validate comment ID
@@ -162,6 +163,10 @@ jobs:
           ROLLOUT_TRACKER_PROGRAM: ${{ inputs.program }}
           ROLLOUT_TRACKER_COMMENT_ID: ${{ inputs.comment_id }}
           ROLLOUT_TRACKER_COMMENT_EVENT: ${{ inputs.comment_event }}
+          # A domain program pins its brief to the commit this run reads, and only a run on main pins one:
+          # an empty value stops that program's bootstrap with a fixed error, not the tracker.
+          ROLLOUT_TRACKER_BRIEF_COMMIT: ${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+          ROLLOUT_TRACKER_BRIEF_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           RESULT="$(bun scripts/rollout-tracker-snapshot.ts)"
@@ -180,6 +185,7 @@ jobs:
           PROJECT_URL="$(echo "$RESULT" | jq -r '.program.project_url')"
           OPERATOR_LOGIN="$(echo "$RESULT" | jq -r '.program.operator_login')"
           EVIDENCE="$(echo "$RESULT" | jq -r '.program.evidence')"
+          DOMAIN_BOOTSTRAP="$(echo "$RESULT" | jq -r '.domain.bootstrap_instructions // ""')"
           {
             echo "should_comment=${SHOULD_COMMENT}"
             echo "reason=${REASON}"
@@ -195,6 +201,9 @@ jobs:
             echo "project_url=${PROJECT_URL}"
             echo "operator_login=${OPERATOR_LOGIN}"
             echo "evidence=${EVIDENCE}"
+            echo "domain_bootstrap<<DOMAIN_BOOTSTRAP_TEXT"
+            echo "${DOMAIN_BOOTSTRAP}"
+            echo "DOMAIN_BOOTSTRAP_TEXT"
             echo "marker<<MARKER_TEXT"
             echo "${MARKER}"
             echo "MARKER_TEXT"
@@ -309,7 +318,7 @@ jobs:
         links back to the tracker issue and add it to the Project. Skip a
         listed repo that already has a Project item. If an issue cannot be
         filed in a repo that is still public, say so in your tracker comment.
-        Report a filing failure only for a repo that is still public.
+        Report a filing failure only for a repo that is still public.${{ needs.preflight.outputs.domain_bootstrap }}
 
         Blocked repos. Confirmed repos that have issues disabled (JSON array,
         empty when none):

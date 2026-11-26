@@ -201,7 +201,7 @@ This repository provides shared configurations and automation for the Fro Bot ec
 | [`@fro-bot/dispatch`](packages/dispatch/README.md) | In the repository | The dispatchers: `cross-repo-dispatch` (split into seven modules by responsibility) and `dispatch-renovate`. `scripts/` keeps one entrypoint per CLI. |
 | [`@fro-bot/test-kit`](packages/test-kit/README.md) | In the repository | Shared test fakes and helpers. Imported by tests only. |
 | [`@fro.bot/wiki-write-core`](packages/wiki-write-core/README.md) | Published | Wiki-write validation and commit primitives. |
-| [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. It depends on `@fro-bot/core`, `@fro-bot/privacy` and `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the plan frontmatter block. |
+| [`@fro-bot/status-truth`](packages/status-truth/README.md) | In the repository | The status-truth loop (`status-truth-detect` and `status-truth-proposals`, each split into seams, and `status-truth-prs`) and the `rollout-tracker-snapshot` preflight. `scripts/` keeps one entrypoint per CLI. It depends on `@fro-bot/core`, `@fro-bot/dispatch` (the target gate a part issue must pass), `@fro-bot/privacy` and `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the plan frontmatter block and whose schema validates the registry. |
 | [`@fro-bot/wiki-ops`](packages/wiki-ops/README.md) | In the repository | The wiki handoff (baseline, build, apply), change detection, the wiki and solutions queries, `wiki-context-expand`, `wiki-repair`, `wiki-lint-issues`, the index rebuild, the corrections lifecycle and context, `knowledge-mcp`, the `knowledge` MCP server that serves wiki and solutions lookups to agent runs, and `route-stderr`, the warning router that lifts routed stderr lines into the job summary. `scripts/` keeps one entrypoint per CLI. `wiki-context-safety`, `wiki-change-detect-core`, `knowledge-mcp` and `route-stderr` are held at 100% mutation kills. |
 | [`@fro-bot/knowledge`](packages/knowledge/README.md) | In the repository | The learning capture (`capture-learnings-harvest` and `-open`), the pattern synthesis (`capture-patterns-cluster`, `-open` and `-synthesis`) and the drafted solution docs (`drafted-solutions-harvest`, `-validate-rows`, `-handoff-build`, `-publish`, `-pr-body`, `-shared`). `scripts/` keeps one entrypoint per CLI. It imports `@fro.bot/wiki-write-core`, whose frontmatter splitter finds the solution-doc block, and never `@fro-bot/status-truth`. |
 | [`@fro-bot/reports`](packages/reports/README.md) | In the repository | The improvement-metrics loop (`improvement-metrics-detect`, `-report` and `-core`), `daily-digest-counts` and `gateway-announce`. `scripts/` keeps one entrypoint per CLI. The four CLI modules and `gateway-announce` are held at 100% mutation kills. It depends only on `@fro-bot/core`, `@fro-bot/privacy` and `@fro.bot/wiki-write-core`. |
@@ -240,7 +240,7 @@ flowchart BT
   registry --> core & wwc
   dispatch --> core & wwc
   wikiops --> core & wwc & privacy
-  statustruth --> core & privacy & wwc
+  statustruth --> core & dispatch & privacy & wwc
   knowledge --> core & privacy & wikiops & wwc
   reports --> core & privacy & wwc
   cichecks --> core & wwc
@@ -289,6 +289,7 @@ C4Container
   Rel(dispatch, wwc, "imports")
   Rel(scripts, statustruth, "fronts")
   Rel(statustruth, core, "imports")
+  Rel(statustruth, dispatch, "imports")
   Rel(statustruth, privacy, "imports")
   Rel(statustruth, wwc, "imports")
   Rel(scripts, wikiops, "fronts")
@@ -325,6 +326,7 @@ C4Container
   UpdateRelStyle(dispatch, wwc, $offsetX="50", $offsetY="50")
   UpdateRelStyle(scripts, statustruth, $offsetX="-40", $offsetY="-70")
   UpdateRelStyle(statustruth, core, $offsetX="60", $offsetY="20")
+  UpdateRelStyle(statustruth, dispatch, $offsetX="-20", $offsetY="-30")
   UpdateRelStyle(statustruth, privacy, $offsetX="-60", $offsetY="40")
   UpdateRelStyle(statustruth, wwc, $offsetX="20", $offsetY="-50")
   UpdateRelStyle(scripts, knowledge, $offsetX="60", $offsetY="-40")
@@ -395,7 +397,7 @@ Fro Bot control plane:
 | **Protection Drift** | Open, update and close one `protection-drift` issue when the `main` protection rule is edited outside the settings automation or no longer matches the declared settings; never blocks or reverts | `branch_protection_rule` events |
 | **Update Metadata** | Refresh `metadata/renovate.yaml` from the fro-bot org scan | Daily 04:30 UTC, dispatch |
 | **Dispatch Renovate** | Dispatch Renovate runs across repos tracked in `metadata/renovate.yaml` | Scheduled every 4 hours at `:30`, dispatch |
-| **Gateway Rollout Tracker** | Keep each cross-repo program's tracker current, starting with the #3512 gateway rollout. On the schedule and when `program-trackers.json` changes on `main`, a fan-out job dispatches one run per program. Each run's preflight hashes tracked issue state (and, for the gateway program, agent and dashboard releases, infra deploy runs and the health contract), leaves out items from repos that are not public, and wakes Fro Bot on a change, on an operator `@fro-bot` comment above the marker's `last_mention_id`, or on an operator edit of an older comment, or when a confirmed repo of the program has no Project item yet (a newly started program); Fro Bot verifies claims, rewrites the issue body, updates the Project, maintains the acceptance list and replies, or edits the latest marker comment in place when nothing changed. A comment is pending only when the program's operator wrote it on the tracker issue. A mention left unanswered by a failed hop or preflight is answered by the next scheduled run or a manual dispatch | Daily 06:00 UTC, push to `main` that changes `program-trackers.json`, dispatch (`program`, and `comment_id` with `comment_event` from Rollout Tracker Mention) |
+| **Gateway Rollout Tracker** | Keep each cross-repo program's tracker current, starting with the #3512 gateway rollout. On the schedule and when `program-trackers.json` changes on `main`, a fan-out job dispatches one run per program. Each run's preflight hashes tracked issue state (and, for the gateway program, agent and dashboard releases, infra deploy runs and the health contract), leaves out items from repos that are not public, and wakes Fro Bot on a change, on an operator `@fro-bot` comment above the marker's `last_mention_id`, or on an operator edit of an older comment, or when a confirmed repo of the program has no Project item yet (a newly started program; a program that names a domain files in each eligible repo a fixed part issue that carries its pinned brief and the answer protocol); Fro Bot verifies claims, rewrites the issue body, updates the Project, maintains the acceptance list and replies, or edits the latest marker comment in place when nothing changed. A comment is pending only when the program's operator wrote it on the tracker issue. A mention left unanswered by a failed hop or preflight is answered by the next scheduled run or a manual dispatch | Daily 06:00 UTC, push to `main` that changes `program-trackers.json`, dispatch (`program`, and `comment_id` with `comment_event` from Rollout Tracker Mention) |
 | **Rollout Tracker Mention** | Dispatch a program's tracker when its operator (the user ID in `program-trackers.json`) comments `@fro-bot` on its tracker issue or edits any of their comments there, because `issue_comment` runs are credential-withheld; the Fro Bot reply job skips the operator's comments and issue edits on those issues | Issue comment created or edited |
 | **Status Truth** | Detect drift in typed public coordination claims and manage proposal issues with counts-only summaries | Sunday 21:00 UTC, dispatch |
 | **Improvement Metrics** | Measure whether recurring fixes actually decline: discovery, confirmed recidivism, and a pending-confirmation backlog on one perpetual report issue | Manual dispatch |

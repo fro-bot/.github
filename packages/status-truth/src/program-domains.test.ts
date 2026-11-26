@@ -7,6 +7,7 @@ import {afterAll, describe, expect, it} from 'vitest'
 import {
   checkDomainReposInRegistry,
   checkProgramDomainRefs,
+  findIneligibleDomainRepos,
   loadProgramDomains,
   parseProgramDomains,
   selectDomain,
@@ -527,6 +528,13 @@ describe('checkDomainReposInRegistry', () => {
     )
   })
 
+  it('fails when the node ID differs only in case', () => {
+    // A GraphQL node ID is case-sensitive, so a registry row whose ID differs by case is another object.
+    expect(() => checkDomainReposInRegistry(config, withRepo('fro-bot/space-bus', {nodeId: 'R_SPACE_BUS'}))).toThrow(
+      new Error('domains[0].repos[1] has a node ID that differs from metadata/repos.yaml'),
+    )
+  })
+
   it('reports a private repository before an archived one', () => {
     const both = withRepo('marcusrbrown/systematic', {private: true, archived: true})
 
@@ -630,6 +638,57 @@ describe('checkDomainReposInRegistry', () => {
     expect(message).not.toBe('')
     expect(message).not.toContain('systematic')
     expect(message).not.toContain('R_systematic')
+  })
+})
+
+describe('findIneligibleDomainRepos', () => {
+  const registry: RegistryRepo[] = [
+    {nameWithOwner: 'marcusrbrown/systematic', nodeId: 'R_systematic', private: false, archived: false},
+    {nameWithOwner: 'fro-bot/space-bus', nodeId: 'R_space_bus', private: false, archived: false},
+    {nameWithOwner: 'fro-bot/other', nodeId: 'R_other', private: false, archived: false},
+  ]
+  const second = validDomain({key: 'second', repos: [{nameWithOwner: 'fro-bot/other', nodeId: 'R_other'}]})
+  const config = parseProgramDomains(configText(validDomain(), second))
+
+  it('lists nothing when every repository is eligible', () => {
+    expect(findIneligibleDomainRepos(config, registry)).toEqual([])
+  })
+
+  it('lists no domains as nothing', () => {
+    expect(findIneligibleDomainRepos({domains: []}, [])).toEqual([])
+  })
+
+  it('lists every ineligible repository, not only the first, with its position and message', () => {
+    const rows = registry
+      .filter(repo => repo.nameWithOwner !== 'marcusrbrown/systematic')
+      .map(repo => (repo.nameWithOwner === 'fro-bot/other' ? {...repo, archived: true} : repo))
+
+    expect(findIneligibleDomainRepos(config, rows)).toEqual([
+      {domainIndex: 0, repoIndex: 0, reason: 'domains[0].repos[0] is not in metadata/repos.yaml'},
+      {domainIndex: 1, repoIndex: 0, reason: 'domains[1].repos[0] is archived'},
+    ])
+  })
+
+  it('reports a repository once, with the same problem checkDomainReposInRegistry throws for it', () => {
+    const rows = registry.map(repo =>
+      repo.nameWithOwner === 'fro-bot/space-bus' ? {...repo, private: true, archived: true} : repo,
+    )
+
+    expect(findIneligibleDomainRepos(config, rows)).toEqual([
+      {domainIndex: 0, repoIndex: 1, reason: 'domains[0].repos[1] is private'},
+    ])
+    expect(() => checkDomainReposInRegistry(config, rows)).toThrow(new Error('domains[0].repos[1] is private'))
+  })
+
+  it('names no repository and no node ID in a reason', () => {
+    const reasons = findIneligibleDomainRepos(config, []).map(problem => problem.reason)
+
+    expect(reasons).toHaveLength(3)
+    for (const reason of reasons) {
+      expect(reason).not.toContain('R_')
+      expect(reason).not.toContain('fro-bot/')
+      expect(reason).not.toContain('marcusrbrown/')
+    }
   })
 })
 

@@ -357,6 +357,102 @@ describe('parseProgramTrackers: rejects with a fixed message', () => {
     expect(entryOf({domain}).domain).toBe(domain)
   })
 
+  describe('part0', () => {
+    const repos = [
+      {nameWithOwner: 'marcusrbrown/systematic', nodeId: 'R_a'},
+      {nameWithOwner: 'fro-bot/space-bus', nodeId: 'R_b'},
+    ]
+    const base = {domain: 'harness-tools', repos}
+
+    it('keeps the repos an entry lists for Part 0, as written', () => {
+      expect(entryOf({...base, part0: ['fro-bot/space-bus']}).part0).toEqual(['fro-bot/space-bus'])
+    })
+
+    it('matches the confirmed repos ignoring case', () => {
+      expect(entryOf({...base, part0: ['MarcusRBrown/Systematic']}).part0).toEqual(['MarcusRBrown/Systematic'])
+    })
+
+    it('keeps an empty list', () => {
+      expect(entryOf({...base, part0: []}).part0).toEqual([])
+    })
+
+    it('leaves part0 out when an entry has none', () => {
+      expect('part0' in entryOf(base)).toBe(false)
+    })
+
+    it.each([
+      ['not an array', 'fro-bot/space-bus'],
+      ['null', null],
+      ['an object', {}],
+    ])('rejects part0 that is %s', (_name, part0) => {
+      expect(() => parseProgramTrackers(configText(validEntry({...base, part0})))).toThrow(
+        new Error('programs[0].part0 is invalid'),
+      )
+    })
+
+    it('keeps several distinct repos, in the order written', () => {
+      expect(entryOf({...base, part0: ['marcusrbrown/systematic', 'fro-bot/space-bus']}).part0).toEqual([
+        'marcusrbrown/systematic',
+        'fro-bot/space-bus',
+      ])
+    })
+
+    it.each([
+      ['a number', 1],
+      ['null', null],
+      ['an object', {}],
+    ])('rejects a part0 entry that is %s, naming its index', (_name, bad) => {
+      expect(() => parseProgramTrackers(configText(validEntry({...base, part0: ['fro-bot/space-bus', bad]})))).toThrow(
+        new Error('programs[0].part0[1] is invalid'),
+      )
+    })
+
+    it.each([
+      ['not a repo name', 'space-bus'],
+      ['empty', ''],
+      ['a name with a space', 'fro-bot/space bus'],
+    ])('rejects a part0 entry that is %s as one the program does not confirm', (_name, bad) => {
+      expect(() => parseProgramTrackers(configText(validEntry({...base, part0: ['fro-bot/space-bus', bad]})))).toThrow(
+        new Error('programs[0].part0[1] is not in repos'),
+      )
+    })
+
+    it('rejects a part0 repo that the program does not confirm, naming its index', () => {
+      expect(() =>
+        parseProgramTrackers(configText(validEntry({...base, part0: ['fro-bot/space-bus', 'fro-bot/dashboard']}))),
+      ).toThrow(new Error('programs[0].part0[1] is not in repos'))
+    })
+
+    it('rejects part0 on a program that confirms no repos', () => {
+      expect(() =>
+        parseProgramTrackers(configText(validEntry({domain: 'harness-tools', part0: ['fro-bot/space-bus']}))),
+      ).toThrow(new Error('programs[0].part0[0] is not in repos'))
+    })
+
+    it('rejects a repo listed twice, ignoring case', () => {
+      expect(() =>
+        parseProgramTrackers(configText(validEntry({...base, part0: ['fro-bot/space-bus', 'FRO-BOT/Space-Bus']}))),
+      ).toThrow(new Error('programs[0].part0 has a duplicate repo'))
+    })
+
+    it('rejects part0 on a program with no domain', () => {
+      expect(() => parseProgramTrackers(configText(validEntry({repos, part0: ['fro-bot/space-bus']})))).toThrow(
+        new Error('programs[0].part0 needs a domain'),
+      )
+    })
+
+    it('never echoes a repo name in a message', () => {
+      let message = ''
+      try {
+        parseProgramTrackers(configText(validEntry({...base, part0: ['secret-org/secret-repo']})))
+      } catch (error) {
+        message = error instanceof Error ? error.message : ''
+      }
+
+      expect(message).toBe('programs[0].part0[0] is not in repos')
+    })
+  })
+
   it('accepts an empty repos array', () => {
     expect(entryOf({repos: []}).repos).toEqual([])
   })
