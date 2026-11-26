@@ -197,6 +197,17 @@ describe('the cross-repo-program skill: a domain program', () => {
     expect(flat).toContain('merged')
   })
 
+  it('says Part 0 is a merged pull request in that repo that references the part issue, and a later repo joins as its own batch', () => {
+    expect(flat).toContain('merged pull request in that repository that references the part issue')
+    expect(flat).toContain('`join-<node ID>`')
+    expect(flat).toContain('never posts a replacement checklist on an existing goal')
+  })
+
+  it('says a transient brief read failure holds an item and a mismatch blocks it for good', () => {
+    expect(flat).toContain('a read that fails leaves the item pending')
+    expect(flat).toContain('blocks it for good')
+  })
+
   it('says a batch is repaired by reusing its goal and writing only what is missing', () => {
     expect(flat).toContain('reuses the goal')
     expect(flat).toContain('only what is missing')
