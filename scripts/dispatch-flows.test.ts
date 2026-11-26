@@ -777,6 +777,138 @@ describe('cross-repo-dispatch decline flow (bun: planner comment → marker → 
   })
 })
 
+describe('cross-repo-dispatch domain goal (bun: a fro-bot checklist on a fro-bot goal → marker → brief identity → dispatch)', () => {
+  const COMMIT = 'a'.repeat(40)
+  const PINNED_NONCE = Buffer.alloc(32, PINNED_FILL).toString('base64url')
+  const BRIEF_LINE = `Bring this repository to the domain brief. Brief: program-domains.json@${COMMIT}#harness-tools. Part issue: https://github.com/fro-bot/agent/issues/9`
+  const briefAnswer = (nodeId: string) =>
+    route('GET', `${CONTROL}/contents/program-domains.json`, {
+      q: `ref=${COMMIT}`,
+      b: {
+        type: 'file',
+        encoding: 'base64',
+        content: Buffer.from(
+          JSON.stringify({domains: [{key: 'harness-tools', repos: [{nameWithOwner: 'fro-bot/agent', nodeId}]}]}),
+        ).toString('base64'),
+      },
+    })
+
+  it('seeds a marker from the checklist a fro-bot goal carries, when the operator applies the label', async () => {
+    const event = {...EVENT, issue: {number: 50, user: {login: 'fro-bot'}}}
+    const cwd = checkout({'event.json': JSON.stringify(event), 'metadata/repos.yaml': REPOS_YAML})
+    const checklist = decomposition(`- [ ] fro-bot/legacy: ${BRIEF_LINE}`)
+    const seedMarker = buildMarkerComment({
+      goal: 'issue-50',
+      items: parseDecomposition(checklist).items,
+      markerHash: '',
+    })
+    const planner = comment(1, checklist, 'fro-bot')
+
+    const result = await run(
+      'cross-repo-dispatch',
+      ['dispatch'],
+      [
+        goalIssues(50),
+        issueComments(50, [planner], [planner], [planner, comment(77, seedMarker, 'fro-bot')]),
+        anyCommentPost,
+        anyCommentPatch,
+      ],
+      {cwd, env: crossRepoEnv(cwd)},
+    )
+
+    expect(result.exitCode).toBe(0)
+    expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+      blocked: 1,
+      dispatched: 0,
+      seedRejected: 0,
+    })
+    expect(requestsTo('POST /repos/fro-bot/.github/issues/50/comments')).toHaveLength(1)
+    expect(unhandledMutations()).toStrictEqual([])
+  })
+
+  async function approvedRun(nodeId: string | null) {
+    const checklist = decomposition(`- [ ] fro-bot/agent: ${BRIEF_LINE}`)
+    const pending = parseDecomposition(checklist).items[0]
+    if (pending === undefined) throw new TypeError('the fixture checklist did not parse')
+    const approved = {
+      goal: 'issue-50',
+      items: [pending],
+      approvalFingerprint: computeApprovalFingerprint([pending]),
+      markerHash: '',
+    }
+    const intent = {
+      ...approved,
+      items: [
+        {
+          ...pending,
+          status: 'intent' as const,
+          correlationId: computeCorrelationId('issue-50', pending.id, PINNED_NONCE),
+          nonceHash: hashNonce(PINNED_NONCE),
+        },
+      ],
+    }
+    const planner = comment(1, checklist, 'fro-bot')
+    const cwd = checkout({'event.json': JSON.stringify(EVENT), 'metadata/repos.yaml': REPOS_YAML})
+    const result = await run(
+      'cross-repo-dispatch',
+      ['dispatch'],
+      [
+        goalIssues(50),
+        issueComments(
+          50,
+          [planner, comment(2, buildMarkerComment(approved), 'fro-bot')],
+          [planner, comment(2, buildMarkerComment(approved), 'fro-bot')],
+          [planner, comment(2, buildMarkerComment(approved), 'fro-bot')],
+          [planner, comment(2, buildMarkerComment(intent), 'fro-bot')],
+        ),
+        ...(nodeId === null ? [] : [briefAnswer(nodeId)]),
+        anyCommentPatch,
+        route('POST', '/repos/fro-bot/agent/actions/workflows/fro-bot.yaml/dispatches', {s: 204}),
+      ],
+      {cwd, env: crossRepoEnv(cwd), pinNonce: true},
+    )
+    return {result, cwd}
+  }
+
+  it('dispatches when the brief at the pinned commit names the registry row by its node ID, reading it once', async () => {
+    const {result, cwd} = await approvedRun('R_kgDOAGENT001')
+
+    expect(result.exitCode).toBe(0)
+    expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+      dispatched: 1,
+      blocked: 0,
+    })
+    const reads = requestsTo('GET /repos/fro-bot/.github/contents/program-domains.json')
+    expect(reads).toHaveLength(1)
+    expect(reads[0]).toContain(`ref=${COMMIT}`)
+    expect(reads[0]).toContain('auth=tok-control')
+    expect(requests().filter(line => line.includes('/dispatches'))).toHaveLength(1)
+  })
+
+  it('blocks the item and dispatches nothing when the brief names another node ID for the repository', async () => {
+    const {result, cwd} = await approvedRun('R_kgDOSOMEONE01')
+
+    expect(result.exitCode).toBe(0)
+    expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+      dispatched: 0,
+      blocked: 1,
+    })
+    expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
+    expect(unhandledMutations()).toStrictEqual([])
+  })
+
+  it('blocks the item when the brief cannot be read', async () => {
+    const {result, cwd} = await approvedRun(null)
+
+    expect(result.exitCode).toBe(0)
+    expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+      dispatched: 0,
+      blocked: 1,
+    })
+    expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
+  })
+})
+
 describe('cross-repo-dispatch argv (bun)', () => {
   const MODE_ERROR = 'cross-repo-dispatch: expected argv[2] to be "dispatch" or "track"\n'
 

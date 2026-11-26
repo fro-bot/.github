@@ -1,5 +1,6 @@
 /** GitHub adapters: run and goal-issue lookups, the per-owner token map and the per-owner client resolver. */
 
+import {Buffer} from 'node:buffer'
 import {createOctokit} from '@fro-bot/core/github'
 import {
   CROSS_REPO_GOAL_LABEL,
@@ -9,6 +10,38 @@ import {
   type GoalState,
 } from './dispatch-model.ts'
 import {readLatestMarker, type OpenGoalIssue, type RepoRepository} from './dispatch-run.ts'
+
+/**
+ * The text of `program-domains.json` of `repo` at `commit`, through the contents API. The commit is a full SHA a
+ * checklist line carries, so what is read is what the operator's approval covers. A client with no contents API, a
+ * failed read, a directory, a symlink or content that is not base64 fails with one fixed message that names nothing
+ * of the failure.
+ */
+export async function loadBriefFile(
+  octokit: CrossRepoDispatchOctokitClient,
+  repo: RepoRepository,
+  commit: string,
+): Promise<string> {
+  const failure = new Error('the domain brief cannot be read')
+  if (octokit.rest.repos === undefined) throw failure
+  let data: unknown
+  try {
+    data = (
+      await octokit.rest.repos.getContent({
+        owner: repo.owner,
+        repo: repo.repo,
+        path: 'program-domains.json',
+        ref: commit,
+      })
+    ).data
+  } catch {
+    throw failure
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw failure
+  const file = data as Record<string, unknown>
+  if (file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string') throw failure
+  return Buffer.from(file.content, 'base64').toString('utf8')
+}
 
 /** Bounded page size for recent-run lookups — correlation ids are recent by construction. */
 const RUN_LOOKUP_PAGE_SIZE = 30

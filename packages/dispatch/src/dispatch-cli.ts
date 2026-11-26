@@ -8,6 +8,7 @@ import {
   createTargetClientResolver,
   findRunByCorrelationId,
   findRunConclusion,
+  loadBriefFile,
   loadOpenGoalIssues,
   loadOtherOpenGoalMarkers,
   parseTargetTokens,
@@ -42,6 +43,7 @@ export async function loadRegistryFromDisk(): Promise<GateEntry[]> {
       name: entry.name,
       has_fro_bot_workflow: entry.has_fro_bot_workflow,
       private: entry.private,
+      node_id: entry.node_id,
       onboarding_status: entry.onboarding_status,
       cross_repo_receipts: entry.cross_repo_receipts,
     }))
@@ -92,6 +94,7 @@ export async function runDispatchCli(
     repo,
     approveLabel,
     loadRegistry: loadRegistryFromDisk,
+    loadBriefFile: async (briefRepo, commit) => loadBriefFile(octokit, briefRepo, commit),
     loadOtherOpenGoalMarkers: async () => loadOtherOpenGoalMarkers(octokit, repo, event.issue.number),
     findRunByCorrelationId: async (target, correlationId) =>
       findRunByCorrelationId(targetClientFor(target.owner))(target, correlationId),

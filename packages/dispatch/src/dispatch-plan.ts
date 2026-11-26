@@ -9,7 +9,9 @@ import {
   type DispatchItem,
   type DispatchPlanInput,
   type DispatchPlanResult,
+  type DispatchTarget,
   type GateEntry,
+  type GateReason,
   type GateResult,
   type GoalState,
   type ReceiptCapability,
@@ -34,6 +36,93 @@ export function gateTarget(entry: GateEntry | undefined): GateResult {
   if (entry.private !== false) return 'blocked-ineligible'
   if (!entry.has_fro_bot_workflow) return 'blocked-not-onboarded'
   return 'ok'
+}
+
+/** The brief a prompt names: `program-domains.json@<commit>#<domain>`, as a domain program's checklist line writes it. */
+export interface BriefReference {
+  commit: string
+  domain: string
+}
+
+const BRIEF_UNREADABLE = 'the domain brief cannot be read'
+
+/**
+ * The domain brief an item's prompt names, if it names one. A prompt with no `program-domains.json@` is no domain
+ * item (`null`) and is dispatched as ever. A prompt that has one must name exactly one well-formed reference
+ * (`Brief: program-domains.json@<40 hex>#<domain>`, the same reference written any number of times); anything else
+ * is `'malformed'`, so a half-written or doubled reference blocks the item and never passes as a non-domain one.
+ */
+export function parseBriefReference(prompt: string): BriefReference | 'malformed' | null {
+  if (!prompt.includes('program-domains.json@')) return null
+  const references = new Map<string, BriefReference>()
+  for (const match of prompt.matchAll(/Brief: program-domains\.json@([\da-f]{40})#([a-z\d][a-z\d-]*)(?![\w-])/g)) {
+    const [, commit, domain] = match
+    if (commit !== undefined && domain !== undefined) references.set(`${commit}#${domain}`, {commit, domain})
+  }
+  const [only, ...others] = references.values()
+  if (only === undefined || others.length > 0) return 'malformed'
+  // A well-formed reference next to a half-written one (`Brief: program-domains.json@abc#x`) is as bad as none.
+  const mentions = prompt.split('program-domains.json@').length - 1
+  const wellFormed = [...prompt.matchAll(/program-domains\.json@[\da-f]{40}#[a-z\d][a-z\d-]*(?![\w-])/g)].length
+  return mentions === wellFormed ? only : 'malformed'
+}
+
+/**
+ * The program's node ID for each repository of one domain, read from the text of `program-domains.json` at the
+ * pinned commit, keyed by the lower-cased `owner/name`. Dispatch reads no more of the file than this, and it keeps
+ * its own small parser: `@fro-bot/status-truth` owns the file's full schema and imports this package, so it
+ * cannot be imported back. Any shape problem, a missing domain, an empty domain, a repository with no node ID or a
+ * repository listed twice fails with one fixed message that names nothing of the content.
+ */
+export function parseBriefDomain(text: string, domain: string): ReadonlyMap<string, string> {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    throw new Error(BRIEF_UNREADABLE)
+  }
+  const domains: unknown = isObject(parsed) ? parsed.domains : undefined
+  if (!Array.isArray(domains)) throw new Error(BRIEF_UNREADABLE)
+  const entry: unknown = domains.find(candidate => isObject(candidate) && candidate.key === domain)
+  const repos: unknown = isObject(entry) ? entry.repos : undefined
+  if (!Array.isArray(repos) || repos.length === 0) throw new Error(BRIEF_UNREADABLE)
+  const ids = new Map<string, string>()
+  for (const repo of repos) {
+    const name: unknown = isObject(repo) ? repo.nameWithOwner : undefined
+    const nodeId: unknown = isObject(repo) ? repo.nodeId : undefined
+    if (typeof name !== 'string' || name === '' || typeof nodeId !== 'string' || nodeId === '') {
+      throw new Error(BRIEF_UNREADABLE)
+    }
+    if (ids.has(name.toLowerCase())) throw new Error(BRIEF_UNREADABLE)
+    ids.set(name.toLowerCase(), nodeId)
+  }
+  return ids
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
+
+/**
+ * Whether a domain item's target is the repository the program means. Dispatch does not take the preflight's word
+ * for identity: the target name must resolve to exactly one registry row (ignoring case), that row's node ID must
+ * equal the program's node ID for the name, and no other row may carry that node ID. A target the domain does not
+ * list, a name with no row, or a row with another or no node ID is a mismatch; a name or node ID that resolves to
+ * more than one row is ambiguous. `null` means the identity holds.
+ */
+export function checkBriefIdentity(input: {
+  registry: readonly GateEntry[]
+  target: DispatchTarget
+  programIds: ReadonlyMap<string, string>
+}): GateReason | null {
+  const name = `${input.target.owner}/${input.target.name}`.toLowerCase()
+  const programId = input.programIds.get(name)
+  if (programId === undefined) return 'brief-identity-mismatch'
+  const byName = input.registry.filter(entry => `${entry.owner}/${entry.name}`.toLowerCase() === name)
+  if (byName.length > 1) return 'brief-identity-ambiguous'
+  if (byName[0]?.node_id !== programId) return 'brief-identity-mismatch'
+  if (input.registry.filter(entry => entry.node_id === programId).length > 1) return 'brief-identity-ambiguous'
+  return null
 }
 
 /** The only value the coordinator recognizes for an opted-in receipt contract. */

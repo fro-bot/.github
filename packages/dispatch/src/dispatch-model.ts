@@ -66,6 +66,12 @@ export interface DispatchItem {
    * item carries none. Optional so a marker written before the field existed still loads.
    */
   blockedReason?: BlockedReason
+  /**
+   * Set only when the dispatch gate itself blocked this item because its domain brief could not vouch for the target:
+   * the brief was unreadable, or the target's registry row is not the repository the program names. Optional so a
+   * marker written before the field existed still loads. It never means a worker answered.
+   */
+  gateReason?: GateReason
 }
 
 export interface GoalState {
@@ -102,6 +108,14 @@ export type ResultStatus = 'success' | 'noop' | 'failed' | 'declined' | 'counter
 
 /** Why an item is `blocked` by a worker's answer rather than by the registry gate. */
 export type BlockedReason = 'declined' | 'countered'
+
+/**
+ * Why the gate blocked an item whose prompt names a domain brief. A closed vocabulary, never free text: the brief
+ * could not be read or parsed (`brief-unreadable`), the target is not the repository the program names, by name or
+ * by node ID (`brief-identity-mismatch`), or its name or node ID resolves to more than one registry row
+ * (`brief-identity-ambiguous`).
+ */
+export type GateReason = 'brief-unreadable' | 'brief-identity-mismatch' | 'brief-identity-ambiguous'
 
 /**
  * Completion receipt posted by a worker to the coordination issue. `nonce`
@@ -151,6 +165,8 @@ export interface GateEntry {
   name: string
   has_fro_bot_workflow: boolean
   private?: boolean
+  /** The repository's GraphQL node ID. A goal whose items name a domain brief is dispatched only when it matches the brief's. */
+  node_id?: string
   /** The row's `onboarding_status`. `archived` blocks the target; any other value, or none, does not. */
   onboarding_status?: string
   /**
@@ -228,6 +244,12 @@ export const TERMINAL_STATUSES: ReadonlySet<ItemStatus> = new Set(['completed', 
 
 export const IN_FLIGHT_STATUSES: ReadonlySet<ItemStatus> = new Set(['intent', 'dispatched'])
 
+const GATE_REASONS: ReadonlySet<GateReason> = new Set([
+  'brief-unreadable',
+  'brief-identity-mismatch',
+  'brief-identity-ambiguous',
+])
+
 function isDispatchTarget(value: unknown): value is DispatchTarget {
   return (
     value !== null &&
@@ -275,6 +297,7 @@ function isDispatchItem(value: unknown): value is DispatchItem {
   ) {
     return false
   }
+  if (record.gateReason !== undefined && !GATE_REASONS.has(record.gateReason as GateReason)) return false
   return true
 }
 
@@ -328,6 +351,15 @@ export interface CrossRepoDispatchOctokitClient {
         state?: 'open' | 'closed' | 'all'
         per_page?: number
       }) => Promise<{data: {number: number}[]}>
+    }
+    /** The contents read behind a domain brief. Absent on a client that cannot make it, which blocks such an item. */
+    readonly repos?: {
+      readonly getContent: (params: {
+        owner: string
+        repo: string
+        path: string
+        ref?: string
+      }) => Promise<{data: unknown}>
     }
     readonly actions: {
       readonly createWorkflowDispatch: (params: {

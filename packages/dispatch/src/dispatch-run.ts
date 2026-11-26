@@ -23,6 +23,7 @@ import {
   type DispatchItem,
   type DispatchTarget,
   type GateEntry,
+  type GateReason,
   type GoalState,
   type ItemStatus,
   type MarkerData,
@@ -33,9 +34,12 @@ import {
 } from './dispatch-model.ts'
 import {
   buildDispatchPrompt,
+  checkBriefIdentity,
   classifyReceiptCapability,
   gateTarget,
   isPromptSafe,
+  parseBriefDomain,
+  parseBriefReference,
   planDispatch,
   planSnapshot,
 } from './dispatch-plan.ts'
@@ -164,6 +168,11 @@ export interface RunDispatchInput {
   repo: RepoRepository
   approveLabel: string
   loadRegistry: () => Promise<GateEntry[]>
+  /**
+   * The text of `program-domains.json` of `repo` at `commit`, for an item whose prompt names a domain brief. Without
+   * it, or when it throws, such an item is blocked as `brief-unreadable`; an item that names no brief never calls it.
+   */
+  loadBriefFile?: (repo: RepoRepository, commit: string) => Promise<string>
   loadOtherOpenGoalMarkers: () => Promise<GoalState[]>
   findRunByCorrelationId: (target: DispatchTarget, correlationId: string) => Promise<boolean>
   createWorkflowDispatch: (params: {
@@ -321,7 +330,13 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   // an unrecognized `cross_repo_receipts` value must fail closed at this point,
   // not later at confirmed-dispatch time after `createWorkflowDispatch` already ran.
   let state: GoalState = {...marker.state, markerHash: marker.hash}
-  const gatedItems = state.items.map<DispatchItem>(item => {
+  const briefFiles = new Map<string, Promise<string>>()
+  const briefFile = async (commit: string): Promise<string> => {
+    const loaded = briefFiles.get(commit) ?? loadBrief(input, commit)
+    briefFiles.set(commit, loaded)
+    return loaded
+  }
+  const gateItem = async (item: DispatchItem): Promise<DispatchItem> => {
     if (item.status !== 'pending') return item
     const registryEntry = registryByKey.get(`${item.target.owner}/${item.target.name}`)
     classifyReceiptCapability(registryEntry)
@@ -333,8 +348,16 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
     if (input.hasTargetToken !== undefined && !input.hasTargetToken(item.target.owner)) {
       return {...item, status: 'blocked'}
     }
+    // A domain item names a brief, and dispatch checks for itself that the target is the repository that brief
+    // names. It does not take the checklist author's word for it, or the preflight's.
+    const reason = await briefGateReason(item, prompts.get(item.promptHash), registry, briefFile)
+    if (reason !== null) return {...item, status: 'blocked', gateReason: reason}
     return item
-  })
+  }
+  const gatedItems: DispatchItem[] = []
+  for (const item of state.items) {
+    gatedItems.push(await gateItem(item))
+  }
   state = {...state, items: gatedItems}
 
   // 3. Compute current approval fingerprint; store as approval record via CAS.
@@ -504,6 +527,36 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
 
   await writeResult(input.resultPath, {counts})
   return {counts}
+}
+
+/** One read of a pinned brief; a rejected read is kept, so every item that names the commit is blocked by it. */
+async function loadBrief(input: RunDispatchInput, commit: string): Promise<string> {
+  if (input.loadBriefFile === undefined) throw new Error('no way to read a domain brief')
+  return input.loadBriefFile(input.repo, commit)
+}
+
+/**
+ * The reason the gate blocks an item whose prompt names a domain brief, or `null` when the prompt names none or the
+ * target is the repository the brief names. Every failure to read or understand the brief is `brief-unreadable`,
+ * which carries no detail of the failure.
+ */
+async function briefGateReason(
+  item: DispatchItem,
+  prompt: string | undefined,
+  registry: readonly GateEntry[],
+  readBrief: (commit: string) => Promise<string>,
+): Promise<GateReason | null> {
+  if (prompt === undefined) return null
+  const reference = parseBriefReference(prompt)
+  if (reference === null) return null
+  if (reference === 'malformed') return 'brief-unreadable'
+  let programIds: ReadonlyMap<string, string>
+  try {
+    programIds = parseBriefDomain(await readBrief(reference.commit), reference.domain)
+  } catch {
+    return 'brief-unreadable'
+  }
+  return checkBriefIdentity({registry, target: item.target, programIds})
 }
 
 function flipItemStatus(
