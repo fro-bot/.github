@@ -150,6 +150,7 @@ describe('loadRegistryFromDisk', () => {
     discovery_channel: owned
     next_survey_eligible_at: null
     private: false
+    node_id: R_kgDO${name}
 `
 
   it('passes each row status into the gate entry, an archived row included', async () => {
@@ -163,6 +164,20 @@ describe('loadRegistryFromDisk', () => {
     expect(registry.map(row => [row.name, row.onboarding_status])).toEqual([
       ['live-repo', 'onboarded'],
       ['retired-repo', 'archived'],
+    ])
+  })
+
+  it('passes each row node ID into the gate entry, so a domain target is checked by identity and not by name alone', async () => {
+    writeFileSync(
+      join(directory, 'metadata/repos.yaml'),
+      `version: 1\nrepos:\n${entry('live-repo', 'onboarded')}${entry('retired-repo', 'archived')}`,
+    )
+
+    const registry = await loadRegistryFromDisk()
+
+    expect(registry.map(row => [row.name, row.node_id])).toEqual([
+      ['live-repo', 'R_kgDOlive-repo'],
+      ['retired-repo', 'R_kgDOretired-repo'],
     ])
   })
 

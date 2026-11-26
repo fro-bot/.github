@@ -129,7 +129,9 @@ env:
   PROGRAM_REQUEST_NOTE: |
     A request to start, run or close out a cross-repo program (one tracker issue and one Project that span several
     repos) follows .agents/skills/cross-repo-program/SKILL.md. Read it before you act on such a request. It does not
-    apply to any other request.
+    apply to any other request. When the request offers a program in a domain, accept or decline it with a reason
+    before any repository work starts, and stop at the start pull request: the start run opens no goal issue itself,
+    because the tracker opens them after the start pull request merges.
 
   # Rendered by the fro-bot job's DELIVERY_NOTE for an issue_comment on a pull request only. That run has no
   # credential, and the agent can push to the PR branch only through its brokered push, which needs a

@@ -151,6 +151,8 @@ All four repositories pin agent v0.148.0 and run `isolate-agent` and `persist-cr
 
 - Whether systematic's and space-bus's issue paths can open a pull request that changes workflows; observed on Part 0 itself (R19 fallback: the operator authors it).
 - The exact part issue title and body wording; pinned by the bootstrap prompt tests.
+- Unit 3, parity anchor: a parity batch is listed only after the tracker's parity-follows anchor comment exists on the part issue (Unit 5 lists it as soon as a merged pull request in the repo references the part issue).
+- Unit 3, wake on goal problems: a goal batch stopped with an `error`, and a `goal_error`, wake the tracker when they change, with the domain-state digest (Unit 5 reports them only when the tracker wakes for another reason, as `bootstrap_blocked` does).
 
 ## High-Level Technical Design
 

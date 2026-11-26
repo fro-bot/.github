@@ -66,6 +66,20 @@ export interface DispatchItem {
    * item carries none. Optional so a marker written before the field existed still loads.
    */
   blockedReason?: BlockedReason
+  /**
+   * Set only when the dispatch gate itself blocked this item for good because its domain brief could not vouch for
+   * the target: the reference or the brief is unusable, or the target's registry row is not the repository the
+   * program names. Optional so a
+   * marker written before the field existed still loads. It never means a worker answered.
+   */
+  gateReason?: GateReason
+  /**
+   * Set while a domain item is held pending because a read it needs before dispatch failed (the brief at its pinned
+   * commit, or the live repository behind its name). Not terminal: the item is neither dispatched nor blocked, and
+   * nothing re-dispatches it by itself, so the operator removes and reapplies `dispatch-approved`
+   * (see `HELD_MESSAGE`). Cleared when a run dispatches or blocks the item.
+   */
+  hold?: 'brief-read-failed'
 }
 
 export interface GoalState {
@@ -102,6 +116,25 @@ export type ResultStatus = 'success' | 'noop' | 'failed' | 'declined' | 'counter
 
 /** Why an item is `blocked` by a worker's answer rather than by the registry gate. */
 export type BlockedReason = 'declined' | 'countered'
+
+/** What a run says, on stderr and in the job summary, about an item held for a failed read. A fixed text. */
+export const HELD_MESSAGE = 'brief read failed; remove and reapply dispatch-approved to retry'
+
+/**
+ * Why the gate blocked, for good, an item whose prompt names a domain brief. A closed vocabulary, never free text,
+ * and every value is a fact that a retry cannot change: the prompt's reference is malformed or not the only one
+ * (`brief-reference-invalid`), the file at the pinned commit is no usable brief for the domain
+ * (`brief-content-invalid`), the target is not the repository the program names, by name or by node ID
+ * (`brief-identity-mismatch`), or its name or node ID resolves to more than one registry row
+ * (`brief-identity-ambiguous`), or the repository is confirmed not public right now (`target-not-public`). A read that
+ * fails, or a visibility that is missing or unrecognized, is none of these: it leaves the item pending.
+ */
+export type GateReason =
+  | 'brief-reference-invalid'
+  | 'brief-content-invalid'
+  | 'brief-identity-mismatch'
+  | 'brief-identity-ambiguous'
+  | 'target-not-public'
 
 /**
  * Completion receipt posted by a worker to the coordination issue. `nonce`
@@ -151,6 +184,8 @@ export interface GateEntry {
   name: string
   has_fro_bot_workflow: boolean
   private?: boolean
+  /** The repository's GraphQL node ID. A goal whose items name a domain brief is dispatched only when it matches the brief's. */
+  node_id?: string
   /** The row's `onboarding_status`. `archived` blocks the target; any other value, or none, does not. */
   onboarding_status?: string
   /**
@@ -228,6 +263,14 @@ export const TERMINAL_STATUSES: ReadonlySet<ItemStatus> = new Set(['completed', 
 
 export const IN_FLIGHT_STATUSES: ReadonlySet<ItemStatus> = new Set(['intent', 'dispatched'])
 
+const GATE_REASONS: ReadonlySet<GateReason> = new Set([
+  'brief-reference-invalid',
+  'brief-content-invalid',
+  'brief-identity-mismatch',
+  'brief-identity-ambiguous',
+  'target-not-public',
+])
+
 function isDispatchTarget(value: unknown): value is DispatchTarget {
   return (
     value !== null &&
@@ -275,6 +318,8 @@ function isDispatchItem(value: unknown): value is DispatchItem {
   ) {
     return false
   }
+  if (record.gateReason !== undefined && !GATE_REASONS.has(record.gateReason as GateReason)) return false
+  if (record.hold !== undefined && record.hold !== 'brief-read-failed') return false
   return true
 }
 
@@ -328,6 +373,17 @@ export interface CrossRepoDispatchOctokitClient {
         state?: 'open' | 'closed' | 'all'
         per_page?: number
       }) => Promise<{data: {number: number}[]}>
+    }
+    /** The contents read behind a domain brief. Absent on a client that cannot make it, which blocks such an item. */
+    readonly repos?: {
+      /** The repository itself, for the node ID behind a name. */
+      readonly get?: (params: {owner: string; repo: string}) => Promise<{data: unknown}>
+      readonly getContent: (params: {
+        owner: string
+        repo: string
+        path: string
+        ref?: string
+      }) => Promise<{data: unknown}>
     }
     readonly actions: {
       readonly createWorkflowDispatch: (params: {

@@ -1,5 +1,6 @@
 /** GitHub adapters: run and goal-issue lookups, the per-owner token map and the per-owner client resolver. */
 
+import {Buffer} from 'node:buffer'
 import {createOctokit} from '@fro-bot/core/github'
 import {
   CROSS_REPO_GOAL_LABEL,
@@ -9,6 +10,79 @@ import {
   type GoalState,
 } from './dispatch-model.ts'
 import {readLatestMarker, type OpenGoalIssue, type RepoRepository} from './dispatch-run.ts'
+
+/** What one live read of a repository says about it: the identity behind the name, and whether it is public now. */
+export interface LiveRepository {
+  readonly nodeId: string
+  /**
+   * The API's `visibility` as written (`public`, `private` or `internal`), or null when the answer has none, has one
+   * that is not a non-empty string, or says `public` while `private` is true: a guess is never a visibility.
+   */
+  readonly visibility: string | null
+}
+
+/**
+ * The repository that `target` names right now, through the target owner's client: its node ID and its visibility,
+ * from the same response. A name can be reused by another repository before the registry refreshes, and a visibility
+ * change does not change the node ID, so a domain item is dispatched only to the repository its brief names while
+ * that repository is public. A client with no repository API, a failed read or an answer with no node ID fails with
+ * one fixed message that names nothing of the failure.
+ */
+export async function loadLiveRepository(
+  octokit: CrossRepoDispatchOctokitClient,
+  target: DispatchTarget,
+): Promise<LiveRepository> {
+  const failure = new Error('the repository cannot be read')
+  if (octokit.rest.repos?.get === undefined) throw failure
+  let data: unknown
+  try {
+    data = (await octokit.rest.repos.get({owner: target.owner, repo: target.name})).data
+  } catch {
+    throw failure
+  }
+  const answer = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+  const nodeId = answer.node_id
+  if (typeof nodeId !== 'string' || nodeId === '') throw failure
+  const visibility =
+    typeof answer.visibility === 'string' && answer.visibility !== ''
+      ? answer.visibility === 'public' && answer.private === true
+        ? null
+        : answer.visibility
+      : null
+  return {nodeId, visibility}
+}
+
+/**
+ * The text of `program-domains.json` of `repo` at `commit`, through the contents API. The commit is a full SHA a
+ * checklist line carries, so what is read is what the operator's approval covers. A client with no contents API, a
+ * failed read, a directory, a symlink or content that is not base64 fails with one fixed message that names nothing
+ * of the failure.
+ */
+export async function loadBriefFile(
+  octokit: CrossRepoDispatchOctokitClient,
+  repo: RepoRepository,
+  commit: string,
+): Promise<string> {
+  const failure = new Error('the domain brief cannot be read')
+  if (octokit.rest.repos === undefined) throw failure
+  let data: unknown
+  try {
+    data = (
+      await octokit.rest.repos.getContent({
+        owner: repo.owner,
+        repo: repo.repo,
+        path: 'program-domains.json',
+        ref: commit,
+      })
+    ).data
+  } catch {
+    throw failure
+  }
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) throw failure
+  const file = data as Record<string, unknown>
+  if (file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string') throw failure
+  return Buffer.from(file.content, 'base64').toString('utf8')
+}
 
 /** Bounded page size for recent-run lookups — correlation ids are recent by construction. */
 const RUN_LOOKUP_PAGE_SIZE = 30

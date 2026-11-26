@@ -28,6 +28,7 @@ import {
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
+import {goalReaders, planGoals, type GoalBatch} from './rollout-tracker-goals.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -191,6 +192,19 @@ export interface DomainPreflight {
   deferred_repos: {nameWithOwner: string; reason: string}[]
   /** The text that replaces the generic bootstrap issue in the tracker prompt; it starts with a blank line. */
   bootstrap_instructions: string
+  /**
+   * The batches of the program's repos that still need a goal issue, its checklist comment or its Project item, the
+   * first batch ahead of the parity batches. Each carries every text it writes, so the checklist line the operator
+   * approves is never composed by the agent. Empty when nothing needs work, when the run is stopped or when the goals
+   * could not be listed.
+   */
+  goal_batches: GoalBatch[]
+  /** A fixed message when the goal issues or their comments cannot be read; no goal is written then. */
+  goal_error: string | null
+  /** The Part 0 repos, by name, whose Part 0 pull request could not be read; they get no parity batch yet. */
+  part0_unreadable: string[]
+  /** The text that follows the bootstrap duty in the tracker prompt; empty when there is no goal duty. It starts with a blank line. */
+  goal_instructions: string
 }
 
 export interface TrackerComment {
@@ -577,6 +591,9 @@ export function buildMarker(hash: string, lastMentionId: number): string {
  *   hash, so answering them never changes the next comparison.
  * - Same hash with confirmed repos that still have no Project item: wake to bootstrap them. The list
  *   comes from the Project, so a run that stops partway is finished by the next one.
+ * - Same hash with goal batches of a domain program that still need a goal, its checklist or its Project item:
+ *   wake to open them. The count comes from the preflight's own list, so a run that stops partway is finished by
+ *   the next one.
  * - Same hash, nothing pending: no gating transition, skip.
  */
 export function decideComment(
@@ -585,6 +602,7 @@ export function decideComment(
   previousMarker: MarkerData | null,
   pendingMentionIds: readonly number[],
   bootstrapRepos: readonly ConfirmedRepo[] = [],
+  goalBatches = 0,
 ): CommentDecision {
   if (previousMarker === null) {
     return {
@@ -597,11 +615,12 @@ export function decideComment(
 
   const mentions = pendingMentionIds.length > 0 ? `; operator mention pending (${pendingMentionIds.length})` : ''
   const bootstrap = bootstrapRepos.length > 0 ? `; bootstrap pending (${bootstrapRepos.length})` : ''
+  const goals = goalBatches > 0 ? `; goal batches pending (${goalBatches})` : ''
 
   if (hash !== previousMarker.hash) {
     return {
       should_comment: true,
-      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}${bootstrap}`,
+      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}${bootstrap}${goals}`,
       hash,
       snapshot,
     }
@@ -610,7 +629,7 @@ export function decideComment(
   if (pendingMentionIds.length > 0) {
     return {
       should_comment: true,
-      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID${bootstrap}`,
+      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID${bootstrap}${goals}`,
       hash,
       snapshot,
     }
@@ -620,7 +639,16 @@ export function decideComment(
     const noun = bootstrapRepos.length === 1 ? 'repo has' : 'repos have'
     return {
       should_comment: true,
-      reason: `bootstrap — ${bootstrapRepos.length} confirmed ${noun} no Project item yet`,
+      reason: `bootstrap — ${bootstrapRepos.length} confirmed ${noun} no Project item yet${goals}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (goalBatches > 0) {
+    return {
+      should_comment: true,
+      reason: `goal batches — ${countOf(goalBatches, 'batch needs', 'batches need')} a goal issue, its checklist or its Project item`,
       hash,
       snapshot,
     }
@@ -1203,7 +1231,12 @@ function countOf(count: number, one: string, many: string): string {
 }
 
 /** The instructions that replace the generic bootstrap issue in the tracker prompt. They start with a blank line. */
-function bootstrapInstructions(domain: Omit<DomainPreflight, 'bootstrap_instructions'>, program: string): string {
+type DomainBase = Omit<
+  DomainPreflight,
+  'bootstrap_instructions' | 'goal_batches' | 'goal_error' | 'part0_unreadable' | 'goal_instructions'
+>
+
+function bootstrapInstructions(domain: DomainBase, program: string): string {
   const intro = '\n\nDomain program. '
   if (domain.brief_error === STALE_RUN) {
     return `${intro}This run is not at the head of main (${STALE_RUN}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and say in your tracker comment only that the run was stale; a fresh run files.`
@@ -1238,6 +1271,9 @@ interface DomainPlanInput {
   publicRepos: ReadonlySet<string>
   /** A fixed message when the issue behind a Project item of a confirmed repo could not be read. */
   partIssueError: string | null
+  /** The Project items that are this program's part issues, and every Project item the run read. */
+  present: readonly ProjectItem[]
+  projectItems: readonly ProjectItem[]
 }
 
 /**
@@ -1271,7 +1307,14 @@ function planDomain(
       ...changes,
     }
     return {
-      domain: {...base, bootstrap_instructions: bootstrapInstructions(base, entry.key)},
+      domain: {
+        ...base,
+        bootstrap_instructions: bootstrapInstructions(base, entry.key),
+        goal_batches: [],
+        goal_error: null,
+        part0_unreadable: [],
+        goal_instructions: '',
+      },
       ready: [],
       blocked: [],
     }
@@ -1365,8 +1408,26 @@ function planDomain(
     })),
     deferred_repos: deferred,
   }
+  const partIssues = new Map<string, number>()
+  for (const item of input.present) {
+    const name = item.content_repo.toLowerCase()
+    partIssues.set(name, Math.min(item.content_number, partIssues.get(name) ?? item.content_number))
+  }
+  const goals = planGoals(
+    {
+      program: entry.key,
+      domain: domainKey,
+      tracker,
+      brief: {commit: brief.commit, url: briefUrl},
+      eligible: programRepos.filter(repo => isEligible(repo) && publicRepos.has(repo.nameWithOwner.toLowerCase())),
+      part0Names,
+      partIssues,
+      projectItems: input.projectItems,
+    },
+    goalReaders(tracker.repo, env),
+  )
   return {
-    domain: {...base, bootstrap_instructions: bootstrapInstructions(base, entry.key)},
+    domain: {...base, bootstrap_instructions: bootstrapInstructions(base, entry.key), ...goals},
     ready,
     blocked: lists.blocked.filter(repo => isEligible(repo)),
   }
@@ -1381,7 +1442,8 @@ function domainReasonSuffix(domain: DomainPreflight): string {
   const deferred = domain.deferred_repos.length
   return (
     (count === 0 ? '' : `; ${countOf(count, 'listed repo is', 'listed repos are')} not eligible for a part issue`) +
-    (deferred === 0 ? '' : `; ${countOf(deferred, 'listed repo is', 'listed repos are')} deferred (${LOOKUP_FAILED})`)
+    (deferred === 0 ? '' : `; ${countOf(deferred, 'listed repo is', 'listed repos are')} deferred (${LOOKUP_FAILED})`) +
+    (domain.goal_error === null ? '' : `; domain goal error: ${domain.goal_error}`)
   )
 }
 
@@ -1678,12 +1740,20 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
       : planDomain(
           entry,
           entry.domain,
-          {tracker: {repo: trackerRepo, number: trackerNumber}, lists: partitioned, publicRepos, partIssueError},
+          {
+            tracker: {repo: trackerRepo, number: trackerNumber},
+            lists: partitioned,
+            publicRepos,
+            partIssueError,
+            present,
+            projectItems: items,
+          },
           env,
         )
   const bootstrapRepos = planned?.ready ?? partitioned.ready
   const bootstrapBlocked = planned?.blocked ?? partitioned.blocked
-  const decided = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos)
+  const goalBatches = planned?.domain.goal_batches.filter(batch => batch.error === null).length ?? 0
+  const decided = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos, goalBatches)
   const decision =
     planned === undefined ? decided : {...decided, reason: `${decided.reason}${domainReasonSuffix(planned.domain)}`}
   const result: PreflightResult = {

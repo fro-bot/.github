@@ -20,6 +20,7 @@ import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
 import {parse, stringify} from 'yaml'
 import {parseProgramTrackers, selectProgram, type CommentEvent} from './program-trackers.ts'
+import {goalBriefMarker, goalMarker, goalReposMarker} from './rollout-tracker-goals.ts'
 import {
   buildMarker,
   buildSnapshot,
@@ -4084,6 +4085,12 @@ describe('a domain program: part issues with the brief', () => {
     items?: ProjectItem[]
     comments?: TrackerComment[]
     visibility?: Record<string, string | {visibility: string; has_issues: boolean} | null>
+    /** The goal issues Fro Bot created in the tracker repo, in any state, as the goal read returns them. */
+    goalIssues?: readonly unknown[]
+    /** The comments of each goal issue by number; a goal not listed is a failed read. */
+    goalComments?: Record<string, readonly unknown[]>
+    /** By repo: what references its part issue on the timeline (`{number, repo, pull_request, merged}`); a repo not listed is a failed read. */
+    part0?: Record<string, unknown>
   }
 
   function runDomain(params: DomainRun = {}): CliResult {
@@ -4112,6 +4119,14 @@ describe('a domain program: part issues with the brief', () => {
       ROLLOUT_TRACKER_PART_ISSUES_JSON: JSON.stringify(params.partIssues ?? {}),
       ROLLOUT_TRACKER_EXISTING_ISSUES_JSON: JSON.stringify(
         params.existing ?? Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, []])),
+      ),
+      ROLLOUT_TRACKER_GOAL_ISSUES_JSON: JSON.stringify(params.goalIssues ?? []),
+      ROLLOUT_TRACKER_GOAL_COMMENTS_JSON: JSON.stringify(params.goalComments ?? {}),
+      ROLLOUT_TRACKER_PART0_JSON: JSON.stringify(
+        params.part0 ?? {
+          [systematic.nameWithOwner]: {references: []},
+          [spaceBus.nameWithOwner]: {references: []},
+        },
       ),
     })
   }
@@ -5033,6 +5048,284 @@ describe('a domain program: part issues with the brief', () => {
 
       expect(result.domain.part0_repos).toEqual([spaceBus])
       expect(result.bootstrap_repos).toEqual([spaceBus, dashboard])
+    })
+  })
+
+  describe('goal batches', () => {
+    const batchesOf = (result: {domain: DomainOutput}) => result.domain.goal_batches
+    const allCards = (): Pick<DomainRun, 'items' | 'partIssues'> =>
+      withCards(partIssueCard(systematic, 11), partIssueCard(spaceBus, 12), partIssueCard(dashboard, 13))
+    const goalIssue = (batch: string, number: number, changes: Record<string, unknown> = {}) => ({
+      number,
+      state: 'open',
+      pull_request: false,
+      author: 'fro-bot',
+      body: `A goal.\n\n${goalReposMarker([dashboard.nameWithOwner])}\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', batch)}\n`,
+      ...changes,
+    })
+    const goalCard = (number: number): ProjectItem =>
+      makeProjectItem({id: `PVTI_goal_${number}`, content_number: number, content_repo: 'fro-bot/.github'})
+    const checklistComment = (repos: readonly {nameWithOwner: string}[], id = 1) => ({
+      id,
+      author: 'fro-bot',
+      body: [
+        '<!-- fro-bot:cross-repo-items:start -->',
+        ...repos.map(repo => `- [ ] ${repo.nameWithOwner}: an ask`),
+        '<!-- fro-bot:cross-repo-items:end -->',
+      ].join('\n'),
+    })
+    const reference = (changes: Record<string, unknown> = {}) => ({
+      number: 7,
+      repo: systematic.nameWithOwner,
+      pull_request: true,
+      merged: true,
+      ...changes,
+    })
+    const part0Merged = {[systematic.nameWithOwner]: {references: [reference()]}}
+
+    it('lists the first batch once every part issue exists, as the repos that need no Part 0', () => {
+      const result = preflight(allCards())
+
+      expect(batchesOf(result)).toHaveLength(1)
+      expect(batchesOf(result)[0]).toMatchObject({
+        batch: 'initial',
+        repos: [dashboard.nameWithOwner],
+        goal_issue: null,
+        has_checklist: false,
+        in_project: false,
+        error: null,
+        part0_pr: null,
+      })
+      expect(result.domain.goal_error).toBeNull()
+      expect(result.domain.part0_unreadable).toEqual([])
+    })
+
+    it('prints every field of a batch, in a fixed order, with the texts ready to write', () => {
+      const [batch] = batchesOf(preflight(allCards()))
+
+      expect(Object.keys(batch ?? {})).toEqual([
+        'batch',
+        'marker',
+        'title',
+        'body',
+        'checklist',
+        'repos',
+        'goal_issue',
+        'has_checklist',
+        'in_project',
+        'error',
+        'part0_pr',
+      ])
+      expect(batch?.marker).toBe(`<!-- fro-bot-program-goal program:harness batch:initial -->`)
+      expect(batch?.checklist).toContain(
+        `- [ ] ${dashboard.nameWithOwner}: Program harness, domain harness-tools, tracked at ${TRACKER_URL}:`,
+      )
+      expect(batch?.checklist).toContain(
+        `Brief: program-domains.json@${COMMIT}#harness-tools. Part issue: https://github.com/fro-bot/dashboard/issues/13`,
+      )
+    })
+
+    it('lists a join batch for a repo that became eligible after the first goal was created, and not the first batch again', () => {
+      const configPath = domainConfig({part0: []})
+      const cards = allCards()
+      const first = goalIssue('initial', 50, {
+        body: `A goal.\n<!-- fro-bot-program-goal-repos ${systematic.nameWithOwner},${spaceBus.nameWithOwner} -->\n${goalBriefMarker(COMMIT)}\n${goalMarker('harness', 'initial')}\n`,
+      })
+
+      const result = preflight({
+        ...cards,
+        configPath,
+        items: [...(cards.items ?? []), goalCard(50)],
+        goalIssues: [first],
+        goalComments: {'50': [checklistComment([systematic, spaceBus])]},
+      })
+
+      expect(batchesOf(result).map(batch => [batch.batch, batch.repos, batch.goal_issue])).toEqual([
+        [`join-${dashboard.nodeId}`, [dashboard.nameWithOwner], null],
+      ])
+    })
+
+    it('lists nothing while any part issue is missing', () => {
+      const result = preflight(withCards(partIssueCard(systematic, 11), partIssueCard(dashboard, 13)))
+
+      expect(batchesOf(result)).toEqual([])
+      expect(result.domain.goal_instructions).toBe('')
+    })
+
+    it('does not list a repo with Part 0 unmerged, and lists its batch once Part 0 has merged', () => {
+      const before = preflight(allCards())
+      const after = preflight({...allCards(), part0: part0Merged})
+
+      expect(batchesOf(before).map(batch => batch.batch)).toEqual(['initial'])
+      expect(batchesOf(after).map(batch => [batch.batch, batch.repos])).toEqual([
+        ['initial', [dashboard.nameWithOwner]],
+        [`parity-${systematic.nodeId}`, [systematic.nameWithOwner]],
+      ])
+      expect(batchesOf(after)[1]?.part0_pr).toBe('https://github.com/marcusrbrown/systematic/pull/7')
+    })
+
+    it('counts only a merged pull request of that repo that references the part issue', () => {
+      const unrelated = {
+        [systematic.nameWithOwner]: {
+          references: [
+            reference({merged: false}),
+            reference({number: 8, repo: 'fro-bot/agent'}),
+            reference({number: 9, pull_request: false}),
+          ],
+          // A pull request linked in a comment, however trusted its author, is no reference.
+          comments: [{id: 1, author: 'marcusrbrown', body: 'https://github.com/marcusrbrown/systematic/pull/10'}],
+        },
+        [spaceBus.nameWithOwner]: {references: []},
+      }
+
+      const result = preflight({...allCards(), part0: unrelated})
+
+      expect(batchesOf(result).map(batch => batch.batch)).toEqual(['initial'])
+    })
+
+    it('holds back a Part 0 repo whose Part 0 cannot be read, names it, and still lists the rest', () => {
+      const result = preflight({...allCards(), part0: {}})
+
+      expect(result.domain.part0_unreadable).toEqual([systematic.nameWithOwner, spaceBus.nameWithOwner])
+      expect(batchesOf(result).map(batch => batch.batch)).toEqual(['initial'])
+    })
+
+    it('reuses a goal that has no checklist yet, and lists only what is missing', () => {
+      const cards = allCards()
+      const result = preflight({
+        ...cards,
+        items: [...(cards.items ?? []), goalCard(50)],
+        goalIssues: [goalIssue('initial', 50)],
+        goalComments: {'50': []},
+      })
+
+      expect(batchesOf(result)[0]).toMatchObject({goal_issue: 50, has_checklist: false, in_project: true})
+    })
+
+    it('lists nothing and does not wake the tracker once the goal, its checklist and its Project item exist', () => {
+      const cards = allCards()
+      const complete = {
+        ...cards,
+        items: [...(cards.items ?? []), goalCard(50)],
+        goalIssues: [goalIssue('initial', 50)],
+        goalComments: {'50': [checklistComment([dashboard])]},
+      }
+      const first = preflight(complete)
+      const second = preflight({...complete, comments: [comment(5, 'fro-bot', first.marker)]})
+
+      expect(batchesOf(first)).toEqual([])
+      expect(second.should_comment).toBe(false)
+    })
+
+    it('wakes the tracker for a batch that needs work when nothing else changed, with a reason that says so', () => {
+      const first = preflight(allCards())
+      const second = preflight({...allCards(), comments: [comment(5, 'fro-bot', first.marker)]})
+
+      expect(second.should_comment).toBe(true)
+      expect(second.reason).toBe('goal batches — 1 batch needs a goal issue, its checklist or its Project item')
+    })
+
+    it('does not wake the tracker for a batch that is stopped by an error', () => {
+      const first = preflight({...allCards(), goalIssues: [goalIssue('initial', 50, {state: 'closed'})]})
+      const second = preflight({
+        ...allCards(),
+        goalIssues: [goalIssue('initial', 50, {state: 'closed'})],
+        comments: [comment(5, 'fro-bot', first.marker)],
+      })
+
+      expect(batchesOf(second)).toEqual([])
+      expect(second.should_comment).toBe(false)
+    })
+
+    it('stops the goal duty with a fixed error when the goal issues cannot be read, and the run goes on', () => {
+      const result = runDomain({...allCards()})
+      const broken = runCliRaw({
+        ...fixtureEnv({items: [], issues: [], comments: []}),
+        ROLLOUT_TRACKER_ITEMS_JSON: JSON.stringify(allCards().items),
+        ROLLOUT_TRACKER_ISSUES_JSON: JSON.stringify(
+          (allCards().items ?? []).map(item => makeIssueState({number: item.content_number, repo: item.content_repo})),
+        ),
+        ROLLOUT_TRACKER_CONFIG: domainConfig(),
+        ROLLOUT_TRACKER_PROGRAM: 'harness',
+        ROLLOUT_TRACKER_DEFAULT_CONFIG: readFileSync(domainConfig(), 'utf8'),
+        ROLLOUT_TRACKER_DOMAINS: writeDomains(domainsText()),
+        ROLLOUT_TRACKER_REGISTRY: registryText(allRows),
+        ROLLOUT_TRACKER_BRIEF_COMMIT: COMMIT,
+        ROLLOUT_TRACKER_BRIEF_REPO: 'fro-bot/.github',
+        ROLLOUT_TRACKER_MAIN_HEAD: COMMIT,
+        ROLLOUT_TRACKER_PART_ISSUES_JSON: JSON.stringify(allCards().partIssues),
+        ROLLOUT_TRACKER_EXISTING_ISSUES_JSON: JSON.stringify(
+          Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, []])),
+        ),
+        ROLLOUT_TRACKER_GOAL_ISSUES_JSON: 'not json',
+        ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify(
+          Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, 'public'])),
+        ),
+      })
+
+      expect(result.status).toBe(0)
+      expect(broken.status).toBe(0)
+      const parsed = JSON.parse(broken.stdout) as PreflightResult
+      expect(parsed.domain?.goal_error).toBe('goal issues cannot be read')
+      expect(parsed.domain?.goal_batches).toEqual([])
+      expect(parsed.domain?.goal_instructions).toContain('goal issues cannot be read')
+      expect(parsed.reason).toContain('; domain goal error: goal issues cannot be read')
+    })
+
+    it('stops that batch, not the program, when its line is over the limit', () => {
+      const long = 'd'.repeat(4000)
+      const configPath = domainConfig({domain: long})
+
+      const result = preflight({...allCards(), configPath, domains: domainsText(undefined, long)})
+
+      expect(batchesOf(result)).toHaveLength(1)
+      expect(batchesOf(result)[0]).toMatchObject({
+        error: 'the checklist line is over the dispatch prompt limit',
+        checklist: '',
+      })
+    })
+
+    it('lists no goal when the run is stopped by its brief, its registry or a stale head', () => {
+      for (const params of [{commit: null}, {registry: null}, {mainHead: 'c'.repeat(40)}] as const) {
+        const result = preflight({...allCards(), ...params})
+
+        expect(batchesOf(result)).toEqual([])
+        expect(result.domain.goal_instructions).toBe('')
+        expect(result.domain.goal_error).toBeNull()
+      }
+    })
+
+    it('leaves a repo that is no longer eligible out of the batch and out of the part issue count', () => {
+      const registry = registryText(allRows.map(row => (row === dashboard ? {...row, private: true} : row)))
+
+      const result = preflight({
+        ...withCards(partIssueCard(systematic, 11), partIssueCard(spaceBus, 12)),
+        registry,
+      })
+
+      expect(batchesOf(result)).toEqual([])
+    })
+
+    it('puts the batches in the instructions as the JSON the output carries', () => {
+      const result = preflight(allCards())
+
+      expect(result.domain.goal_instructions).toContain(JSON.stringify(result.domain.goal_batches))
+    })
+
+    it('adds nothing for a program with no domain, whose result keeps the fields it printed before', () => {
+      const plain = bootstrapConfig([systematic])
+      const result = runCliRaw({
+        ...fixtureEnv({items: [], issues: [], comments: []}),
+        ROLLOUT_TRACKER_CONFIG: plain,
+        ROLLOUT_TRACKER_PROGRAM: 'plugins',
+        ROLLOUT_TRACKER_DEFAULT_CONFIG: readFileSync(plain, 'utf8'),
+        ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({[systematic.nameWithOwner]: 'public'}),
+      })
+
+      expect(result.status).toBe(0)
+      const parsed = JSON.parse(result.stdout) as Record<string, unknown>
+      expect(parsed.domain).toBeUndefined()
+      expect(result.stdout).not.toContain('goal_')
     })
   })
 
