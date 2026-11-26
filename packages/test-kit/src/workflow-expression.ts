@@ -1,7 +1,7 @@
 /**
  * Minimal GitHub Actions expression evaluator, just enough for the workflow `if:` predicates under test:
  * `||`, `&&`, `!`, `==`, `!=`, parentheses, string and integer literals, dotted property access (missing
- * paths are null), and the endsWith/contains/fromJSON functions. `||`/`&&` return operand
+ * paths are null; `.*.` maps a property over an array), and the endsWith/contains/fromJSON functions. `||`/`&&` return operand
  * values like Actions does; string comparison is case-insensitive.
  */
 const truthy = (value: unknown): boolean =>
@@ -24,7 +24,7 @@ function callFunction(name: string, args: unknown[]): unknown {
   }
 }
 
-const TOKEN = /\s*('(?:[^']|'')*'|\d+|[a-z_][\w.-]*|\|\||&&|!=|==|[!(),])/iy
+const TOKEN = /\s*('(?:[^']|'')*'|\d+|[a-z_][\w.*-]*|\|\||&&|!=|==|[!(),])/iy
 
 /** Split an expression into tokens; any character that starts no token is an error, never skipped. */
 function tokenize(source: string): string[] {
@@ -42,6 +42,15 @@ function tokenize(source: string): string[] {
     tokens.push(match[1] ?? '')
     position = TOKEN.lastIndex
   }
+}
+
+/** Follow `keys` through `current`; a `*` maps the rest of the path over an array, as the Actions object filter does. */
+function walk(current: unknown, keys: readonly string[]): unknown {
+  const [key, ...rest] = keys
+  if (key === undefined) return current
+  if (key === '*') return Array.isArray(current) ? current.map(item => walk(item, rest)) : null
+  if (typeof current !== 'object' || current === null) return null
+  return walk((current as Record<string, unknown>)[key] ?? null, rest)
 }
 
 // Recursive-descent parser; methods (not closures) so the mutually recursive productions satisfy no-use-before-define.
@@ -78,12 +87,7 @@ class ExpressionEvaluator {
   }
 
   private lookup(path: string): unknown {
-    let current: unknown = this.context
-    for (const key of path.split('.')) {
-      if (typeof current !== 'object' || current === null) return null
-      current = (current as Record<string, unknown>)[key] ?? null
-    }
-    return current
+    return walk(this.context, path.split('.'))
   }
 
   private parseOr(): unknown {

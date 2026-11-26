@@ -34,6 +34,24 @@ describe('evaluateExpression', () => {
   })
 })
 
+describe('evaluateExpression: the .* object filter', () => {
+  const issue = {labels: [{name: 'program-proposal'}, {name: 'bug'}]}
+
+  it('maps a property over an array, so contains() can look for a name in it', () => {
+    expect(evaluateExpression("contains(github.issue.labels.*.name, 'program-proposal')", {github: {issue}})).toBe(true)
+    expect(evaluateExpression("contains(github.issue.labels.*.name, 'program-approved')", {github: {issue}})).toBe(
+      false,
+    )
+  })
+
+  it('yields nothing to match for a missing or empty array', () => {
+    expect(evaluateExpression("contains(github.issue.labels.*.name, 'bug')", {github: {issue: {labels: []}}})).toBe(
+      false,
+    )
+    expect(evaluateExpression("contains(github.issue.labels.*.name, 'bug')", {github: {issue: {}}})).toBe(false)
+  })
+})
+
 describe('evaluateExpressionValue', () => {
   it('returns the first truthy operand of an || chain, as Actions does', () => {
     expect(

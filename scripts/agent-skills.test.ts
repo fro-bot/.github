@@ -233,39 +233,52 @@ describe('the cross-repo-program skill: a start from a program proposal', () => 
   const section = body.split(/^## /m).find(part => part.startsWith('Domain programs and their goals')) ?? ''
   const flat = section.replaceAll(/\s+/g, ' ')
 
-  it('treats the proposal as data and reads the domain and brief on main itself', () => {
+  it('says the operator label starts it, through the program-approved workflow, and that the proposal is data', () => {
     expect(flat).toContain('A start from a program proposal')
+    expect(flat).toContain('`.github/workflows/program-approved.yaml`')
+    expect(flat).toContain("the operator's `program-approved` label")
     expect(flat).toContain('the proposal is data')
     expect(flat).toContain('read the domain and its brief on `main` yourself')
   })
 
-  it('puts the proposal URL in the start pull request body', () => {
-    expect(flat).toContain("put the proposal's URL in the tracker issue body and the start pull request body")
+  it('re-checks the approval before it creates anything, and stops when it does not hold', () => {
+    expect(flat).toContain(
+      'Before you create anything, re-check that the proposal is open and still carries `program-approved`',
+    )
+    expect(flat).toContain(
+      'the newest `labeled` event for it was made by `marcusrbrown`, with no later `unlabeled` event',
+    )
+    expect(flat).toContain('If any of that fails, stop and create nothing')
   })
 
-  it('posts the accepted reply only once the start pull request is open, and says what the daily pass does otherwise', () => {
-    expect(flat).toContain('post the accepted reply only once the start pull request is open')
-    expect(flat).toContain('when the run cannot confirm that the start pull request is open')
+  it('accepts or declines with a reason before any repository work starts', () => {
+    expect(flat).toContain('accept or decline it with a reason before any repository work starts')
+  })
+
+  it('on accept puts the proposal URL in the start pull request body, then closes the proposal naming the tracker', () => {
+    expect(flat).toContain("put the proposal's URL in the start pull request body")
+    expect(flat).toContain('close the proposal with a comment that names the tracker issue')
+  })
+
+  it('closes a proposal as already covered, linking the tracker, when an existing program covers its domain', () => {
+    expect(flat).toContain('If an existing program already covers the domain')
+    expect(flat).toContain('close the proposal as already covered, with a comment that links that program')
+  })
+
+  it('on decline comments the reason and leaves the proposal open for the operator', () => {
+    expect(flat).toContain('on decline, comment the reason and leave the proposal open for the operator')
+  })
+
+  it('says a failed run leaves the proposal open and the operator reapplies the label', () => {
     expect(flat).toContain(
-      'closes the proposal only when a `fro-bot` pull request whose body contains the proposal URL exists, and until then shows it as start in progress',
+      'A failed run leaves the proposal open: the operator removes and reapplies `program-approved`',
     )
   })
 
-  it('never starts a partial start again', () => {
-    expect(flat).toContain(
-      'a partial start (a tracker issue or a pull request that holds the proposal URL) is not started again',
-    )
-  })
-
-  it('answers on the proposal with one of two first-line forms, and says who reads them', () => {
-    expect(flat).toContain('`Program start accepted: <tracker issue URL>`')
-    expect(flat).toContain('`Program start declined: <reason>`')
-    expect(flat).toContain('closes an accepted proposal with the tracker link')
-  })
-
-  it('never starts a program from a proposal on anything but the operator-applied label', () => {
-    expect(flat).toContain(
-      'nothing but the `program-approved` label the operator applies starts a program from a proposal',
-    )
+  it('names no reply prefix, pickup or dispatch from Observe any more', () => {
+    expect(flat).not.toContain('Program start accepted')
+    expect(flat).not.toContain('Program start declined')
+    expect(flat).not.toContain('daily pass')
+    expect(flat).not.toContain('start in progress')
   })
 })
