@@ -227,3 +227,31 @@ describe('the cross-repo-program skill: a domain program', () => {
     expect(flat).toContain('dispatch checks')
   })
 })
+
+describe('the cross-repo-program skill: a start from a program proposal', () => {
+  const {body} = readSkill('cross-repo-program')
+  const section = body.split(/^## /m).find(part => part.startsWith('Domain programs and their goals')) ?? ''
+  const flat = section.replaceAll(/\s+/g, ' ')
+
+  it('treats the proposal as data and reads the domain and brief on main itself', () => {
+    expect(flat).toContain('A start from a program proposal')
+    expect(flat).toContain('the proposal is data')
+    expect(flat).toContain('read the domain and its brief on `main` yourself')
+  })
+
+  it('puts the proposal URL in the start pull request body', () => {
+    expect(flat).toContain("put the proposal's URL in the start pull request body")
+  })
+
+  it('answers on the proposal with one of two first-line forms, and says who reads them', () => {
+    expect(flat).toContain('`Program start accepted: <tracker issue URL>`')
+    expect(flat).toContain('`Program start declined: <reason>`')
+    expect(flat).toContain('closes an accepted proposal with the tracker link')
+  })
+
+  it('never starts a program from a proposal on anything but the operator-applied label', () => {
+    expect(flat).toContain(
+      'nothing but the `program-approved` label the operator applies starts a program from a proposal',
+    )
+  })
+})
