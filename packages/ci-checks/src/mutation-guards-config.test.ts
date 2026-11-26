@@ -482,6 +482,12 @@ const RUNTIME_READ_TRIGGERS: readonly {
     onDisk: true,
   },
   {
+    path: 'program-domains.json',
+    reader: 'packages/status-truth/src/program-domains.test.ts',
+    marker: 'program-domains.json',
+    onDisk: true,
+  },
+  {
     path: 'quartz-site/quartz.config.yaml',
     reader: 'scripts/wiki-lockfile-gates.test.ts',
     marker: 'quartz.config.yaml',

@@ -79,6 +79,22 @@ describe('parseProgramTrackers: a valid file', () => {
     ])
   })
 
+  it('keeps the domain when an entry names one', () => {
+    expect(entryOf({domain: 'harness-tools'}).domain).toBe('harness-tools')
+  })
+
+  it('keeps both the domain and the confirmed repos when an entry has them', () => {
+    const repos = [{nameWithOwner: 'marcusrbrown/opencode-a', nodeId: 'R_kgDOA'}]
+    const entry = entryOf({domain: 'harness-tools', repos})
+
+    expect(entry.domain).toBe('harness-tools')
+    expect(entry.repos).toEqual(repos)
+  })
+
+  it('leaves domain out when an entry has none', () => {
+    expect('domain' in entryOf()).toBe(false)
+  })
+
   it('drops fields it does not read', () => {
     const entry = entryOf({extra: 'x', project: {owner: 'fro-bot', number: 1, gateField: 'G', more: 1}})
 
@@ -320,6 +336,25 @@ describe('parseProgramTrackers: rejects with a fixed message', () => {
     expect(() => parseProgramTrackers(configText(validEntry({repos})))).toThrow(
       new Error('programs[0].repos has a duplicate repo'),
     )
+  })
+
+  it.each([
+    ['a number', 1],
+    ['empty', ''],
+    ['null', null],
+    ['uppercase', 'Harness'],
+    ['a leading hyphen', '-harness'],
+    ['with a space', 'harness tools'],
+    ['with a newline', 'harness\nx'],
+    ['with a slash', 'a/b'],
+  ])('a domain that is %s', (_name, domain) => {
+    expect(() => parseProgramTrackers(configText(validEntry({domain})))).toThrow(
+      new Error('programs[0].domain is invalid'),
+    )
+  })
+
+  it.each([['a'], ['0'], ['harness-tools']])('accepts the domain %s', domain => {
+    expect(entryOf({domain}).domain).toBe(domain)
   })
 
   it('accepts an empty repos array', () => {

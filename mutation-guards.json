@@ -851,6 +851,7 @@
       "packages/registry/src/merge-back-data.ts",
       "packages/registry/src/protection-drift.ts",
       "packages/reports/src/gateway-announce-cli.ts",
+      "packages/status-truth/src/program-domains.ts",
       "packages/status-truth/src/program-trackers.ts",
       "packages/wiki-ops/src/route-stderr.ts",
       "packages/wiki-write-core/src/frontmatter-block.ts",

@@ -66,7 +66,7 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 **Domains**
 - R1. A committed domain file on main names each domain, its repositories and its brief. Changes go through a reviewed pull request.
 - R2. A brief states the domain's bar for security, agent automation and developer experience, as standards a repository agent can check its repository against, with any per-repository exceptions.
-- R3. A repository belongs to at most one domain, and only public tracked repositories can be listed; a check enforces this on the domain file's pull request.
+- R3. A repository belongs to at most one domain. Only public tracked repositories are eligible: the tracker's preflight reports a listed repository that is not, and dispatch's eligibility gate refuses it. The domain file's pull request checks structure only, so a registry change never blocks a promotion.
 - R4. The first domain is harness tools: `marcusrbrown/systematic`, `fro-bot/space-bus` and `fro-bot/dashboard`.
 
 **Offered programs**
@@ -104,7 +104,7 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - AE6. **Covers R11.** Given a proposal the operator closed, when daily reports keep listing the same finding with nothing new, the foreman does not propose it again; when a new repository shows the same gap, it may, and says so.
 - AE7. **Covers R17.** Given a part with no answer past its stall window, the tracker marks it stalled on its next run and the daily report lists it. Given a part whose issue could not be read, it is shown as unknown.
 - AE8. **Covers R12.** Given a brief that cannot be read on main, the dispatch for that program stops and the tracker says why.
-- AE9. **Covers R3.** Given a domain file that lists a private or untracked repository, its pull request fails the check.
+- AE9. **Covers R3.** Given a domain file that lists a repository that is private, archived or not tracked, the pull request still passes its structural check, the tracker's preflight reports that repository as ineligible, and dispatch refuses it.
 - AE10. **Covers R19.** Given Part 0 not yet merged in `fro-bot/space-bus`, its parity parts show as held and are not dispatched; once the tracker shows Part 0 merged, the operator approves the parity dispatch separately.
 - AE11. **Covers R15, R17.** Given `marcusrbrown/systematic` counters and the operator has not answered for two days, the part shows the counter, no missing-receipt alert fires, and nothing is marked complete.
 - AE12. **Covers R12.** Given an approved goal pinned to brief commit A, when the brief changes on main to commit B, the goal still sends A; brief B reaches repositories only through a new goal the operator approves.
@@ -171,7 +171,7 @@ There is no collision problem to solve. In the 30 days to 2026-11-25 there were 
 - [Affects R13, R16][Technical] The label names, and how the tracker reads a part's answer and reason.
 - [Affects R9][Needs research] The minimum window and observation count for a proposal, and which runs record observations.
 - [Affects R17][Technical] The stall windows (before an answer, after an accept), when each clock starts, and which tracker run checks them.
-- [Affects R3][Technical] Which check enforces the domain file's public-tracked rule.
+- [Affects R3][Technical] Resolved in planning: eligibility is checked at use by the tracker's preflight (`checkDomainReposInRegistry`) and by dispatch's gate, not on the domain file's pull request.
 - [Affects R18][Needs research] The inventory itself: which of this repository's automation (repo skills, model tiers, Renovate approval, review triggers, dispatch routing) applies to each harness-tools repository.
 - [Affects R19][Technical] Whether each repository's issue path can open a pull request that changes workflows, and so whether Part 0 there falls back to the operator.
 - [Affects R15][Technical] How dispatch's tracking verifies an answer's author and attempt, and which item status a decline or counter maps to.
