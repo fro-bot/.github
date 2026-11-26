@@ -125,6 +125,7 @@ jobs:
       OPENCODE_CONFIG: ${{ secrets.OPENCODE_CONFIG }}
       APPLICATION_ID: ${{ secrets.APPLICATION_ID }}
       APPLICATION_PRIVATE_KEY: ${{ secrets.APPLICATION_PRIVATE_KEY }}
+      FRO_BOT_TRACE_TOKEN: ${{ secrets.FRO_BOT_TRACE_TOKEN }}
     with:
       prompt: ${{ needs.resolve-prompt.outputs.prompt }}
       output-mode: branch-pr

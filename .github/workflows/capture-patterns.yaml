@@ -174,7 +174,7 @@ jobs:
       - name: 🤖 Draft pattern proposal bodies
         id: agent
         if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.dry_run == 'false' }}
-        uses: fro-bot/agent@da20cb2e9ac161ebd9e60c99b4efb169a29320cb # v0.149.1
+        uses: fro-bot/agent@1336cdbc1ff68944cf5121d0e4cfadc6c1eb0d95 # v0.149.2
         env:
           TASK_PROMPT: |
             You are authoring recurring-pattern proposal bodies. Each candidate in the
@@ -238,6 +238,8 @@ jobs:
             - Output only the bodies file. No summary issue. No comments.
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           # The action requires a github-token input. The workflow's auto-provisioned
           # GITHUB_TOKEN is scoped to `contents: read`/`issues: read` by this job's
           # permissions block — it carries no `issues: write`. Issue creation stays

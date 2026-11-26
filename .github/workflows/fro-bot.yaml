@@ -96,6 +96,10 @@ on:
       APPLICATION_PRIVATE_KEY:
         description: GitHub App private key paired with APPLICATION_ID (optional, see above)
         required: false
+      FRO_BOT_TRACE_TOKEN:
+        description: >-
+          Bare trc_ token for the run-tracing collector (optional; when it is not passed, tracing is off for the run)
+        required: false
 
 permissions:
   contents: read
@@ -889,7 +893,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@da20cb2e9ac161ebd9e60c99b4efb169a29320cb # v0.149.1
+        uses: fro-bot/agent@1336cdbc1ff68944cf5121d0e4cfadc6c1eb0d95 # v0.149.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -903,6 +907,8 @@ jobs:
             }}
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
@@ -1166,7 +1172,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@da20cb2e9ac161ebd9e60c99b4efb169a29320cb # v0.149.1
+        uses: fro-bot/agent@1336cdbc1ff68944cf5121d0e4cfadc6c1eb0d95 # v0.149.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1188,6 +1194,8 @@ jobs:
           opencode-config: ${{ steps.knowledge-mcp.outputs.opencode-config }}
           output-mode: branch-pr
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           repo-skills: 'true'
           prompt: |
             <persona>
@@ -1386,7 +1394,7 @@ jobs:
 
       - name: Run Fro Bot
         id: fro-bot-agent
-        uses: fro-bot/agent@da20cb2e9ac161ebd9e60c99b4efb169a29320cb # v0.149.1
+        uses: fro-bot/agent@1336cdbc1ff68944cf5121d0e4cfadc6c1eb0d95 # v0.149.2
         env:
           OPENCODE_PROMPT_ARTIFACT: 'true'
           PERSONA: ${{ steps.persona.outputs.content }}
@@ -1403,6 +1411,8 @@ jobs:
             }}
         with:
           isolate-agent: 'true'
+          trace-endpoint: https://traces.fro.bot/fro-bot/v1/traces
+          trace-headers: 'Authorization: Bearer ${{ secrets.FRO_BOT_TRACE_TOKEN }}'
           github-token: ${{ secrets.FRO_BOT_PAT }}
           auth-json: ${{ secrets.OPENCODE_AUTH_JSON }}
           model: ${{ steps.agent-model.outputs.model }}
