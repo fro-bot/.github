@@ -29,6 +29,7 @@ Each CLI keeps a `scripts/<name>.ts` entrypoint of six lines: `main` from the pa
 | `@fro-bot/status-truth/prs-cli` | `statusTruthPrsCli`, `main` | The goke CLI. |
 | `@fro-bot/status-truth/rollout-tracker-snapshot` | `runRolloutTrackerSnapshot`, `buildSnapshot`, `hashSnapshot`, `decideComment`, the marker and mention helpers, the types | The preflight. Reads through `gh` and the health endpoint. Takes its tracker issue, Project and operator from the program config. |
 | `program-trackers` (relative import, not exported) | `parseProgramTrackers`, `loadProgramTrackers`, `selectProgram`, `issueRef`, `isOperatorComment`, `isAuthorizedTrigger`, `confirmedReposMissing`, `isPublicVisibility`, the entry types | Reads and validates [`program-trackers.json`](../../program-trackers.json) (an entry may name its `domain` and, with one, the confirmed repos that get `part0`) and holds the pure predicates the snapshot uses. Every failure is an `Error` with a fixed message. Mutated by Stryker. |
+| `rollout-tracker-goals` (relative import, not exported) | `planGoals`, `goalReaders`, `goalMarker`, the batch, plan and reader types | The goal duty of a domain program: which batches of the program's repositories still need a goal issue, its checklist comment or its Project item, with every text written. Imports `@fro-bot/dispatch/dispatch-model` for the prompt and item limits. Reads through `gh`, or the fixtures below. |
 | `program-domains` (relative import, not exported) | `parseProgramDomains`, `loadProgramDomains`, `selectDomain`, `findIneligibleDomainRepos`, `checkDomainReposInRegistry`, `checkProgramDomainRefs`, the domain, brief and registry types | Reads and validates [`program-domains.json`](../../program-domains.json): each domain's repositories (by name and node ID, a repository in at most one domain, and no node ID twice anywhere in the file) and its brief, the bar for security, agent automation and developer experience as standards plus per-repository exceptions. `findIneligibleDomainRepos` and `checkDomainReposInRegistry` are pure functions for the point of use (the first lists every ineligible repository with its position, the second throws on the first): they require each listed repository's name and node ID to resolve to exactly one registry row (a name or node ID that matches several rows, or that points at different rows, fails) that is public and not archived; `checkProgramDomainRefs` requires every `domain` of a program in `program-trackers.json` to name a listed domain. Every failure is an `Error` with a fixed message that names a position, never content. Mutated by Stryker. |
 | `@fro-bot/status-truth/rollout-tracker-snapshot-cli` | `rolloutTrackerSnapshotCli`, `main` | The goke CLI. |
 
@@ -41,7 +42,7 @@ Each command declares `readOnly`, a static capability: `true` unless the command
 | `status-truth-detect` | `status-truth.yaml`: no argv | Bun | `true` | The report file, uploaded `if: always()`, and the summary keys `.status .scan_complete .counts.{total,current,drifted,unresolved,unsafe,proposal_eligible}`; a counts-only line on stdout. A missing `STATUS_TRUTH_REPORT_PATH`, a malformed `GITHUB_REPOSITORY` and an unwritable report print one message and exit 1. |
 | `status-truth-proposals` | `status-truth.yaml`: no argv, job `if: always()` | Bun | `false` | The result file `.dryRun .labelGateFailed .counts.* .plannedCounts.* .outcomeCounts.* .plannedCountsByKind .outcomeCountsByKind`, also printed on stdout. Exit 1 on a missing report path, an unreadable, unparsable or invalid report, a token-load failure, a missing token on a live run, and a failed issue fetch on a live run. |
 | `status-truth-prs` | `status-truth.yaml`: no argv, only on a manual dispatch | Bun | `false` | The result file `.armed .dryRun .plannedCounts.* .executedCounts.* .terminalFingerprint* .error`, also printed on stdout. The exit code is 1 on an early failure, with a closed-vocabulary `error`. |
-| `rollout-tracker-snapshot` | `gateway-rollout-tracker.yaml`: `RESULT="$(...)"` under `set -euo pipefail`; `status-truth.yaml`: `... 2>file \| jq -e '.snapshot'` inside an `if` | Bun | `true` | One JSON line on stdout: `.should_comment .reason .pending_mention_ids .marker .marker_comment_id .operator_comment_ids .bootstrap_repos .bootstrap_blocked .public_items .program.{key,issue,repo,project_url,operator_login,evidence} .domain.bootstrap_instructions` (the last only for a program with a `domain`) for the job outputs, and `.snapshot` for the rollout-tracker claims. The exit code is set without `process.exit`, so a result of any size is delivered whole through a pipe. A failed signal read exits 1 with an empty stdout. |
+| `rollout-tracker-snapshot` | `gateway-rollout-tracker.yaml`: `RESULT="$(...)"` under `set -euo pipefail`; `status-truth.yaml`: `... 2>file \| jq -e '.snapshot'` inside an `if` | Bun | `true` | One JSON line on stdout: `.should_comment .reason .pending_mention_ids .marker .marker_comment_id .operator_comment_ids .bootstrap_repos .bootstrap_blocked .public_items .program.{key,issue,repo,project_url,operator_login,evidence} .domain.bootstrap_instructions .domain.goal_instructions` (the last two only for a program with a `domain`) for the job outputs, and `.snapshot` for the rollout-tracker claims. The exit code is set without `process.exit`, so a result of any size is delivered whole through a pipe. A failed signal read exits 1 with an empty stdout. |
 
 Every CLI declares one root command with no positional and no option. Any argument, `--help` and `--help=false` included, is a usage error: exit 1, usage on stderr, and nothing is read or written. Before the runner an argument was ignored and the step ran.
 
@@ -89,7 +90,25 @@ A program entry that names a `domain` runs its bootstrap through part issues tha
     "ineligible_repos": ["domains[0].repos[1] is private"],
     "part_issues": [{"repo": "fro-bot/dashboard", "title": "Program <key>: your part", "body": "<fixed text>", "marker": "<!-- fro-bot-program-part program=<key> node=<node ID> -->", "existing": null}],
     "deferred_repos": [],
-    "bootstrap_instructions": "\n\nDomain program. ..."
+    "bootstrap_instructions": "\n\nDomain program. ...",
+    "goal_batches": [
+      {
+        "batch": "initial",
+        "marker": "<!-- fro-bot-program-goal program:<key> batch:initial -->",
+        "title": "Program <key>: your part, first batch",
+        "body": "<fixed text, ending in the marker>",
+        "checklist": "<one comment: the items region with one checklist line per repo>",
+        "repos": ["fro-bot/dashboard"],
+        "goal_issue": null,
+        "has_checklist": false,
+        "in_project": false,
+        "error": null,
+        "part0_pr": null
+      }
+    ],
+    "goal_error": null,
+    "part0_unreadable": [],
+    "goal_instructions": "\n\nGoals. ..."
   }
 }
 ```
@@ -101,6 +120,17 @@ A program entry that names a `domain` runs its bootstrap through part issues tha
 - **A part issue is found by its marker.** A domain program counts a repo as bootstrapped only when a Project item is an issue (not a pull request) in that repo, authored by `fro-bot`, whose body contains that repo's exact marker line (`ROLLOUT_TRACKER_PART_ISSUES_JSON` replaces the issue reads in tests). An unrelated dependency issue or pull request on the Project no longer suppresses a part issue, The tracker prompt's own search (an issue that links the tracker) does not apply to a domain program.
 - **A part issue is never created blind.** For each repo it may file in, the preflight lists the issues `fro-bot` created there in every state, across every page (`gh api --paginate 'repos/<repo>/issues?state=all&creator=fro-bot&per_page=100'`; `ROLLOUT_TRACKER_EXISTING_ISSUES_JSON` replaces the read in tests), and applies the Project test (an issue, not a pull request, by `fro-bot` or `fro-bot[bot]`, with the exact marker). The oldest match becomes `existing` on that repo's `part_issues` entry, and the agent adds that issue to the Project and files nothing new, so a retry after a created issue whose Project insert failed is idempotent. A failed or cut-off lookup moves the repo from `bootstrap_repos` to `domain.deferred_repos` with the fixed reason `part issue lookup failed`; nothing is filed for it that run, and the reason carries the count. The search finds only issues created as `fro-bot`, the account the tracker files as. An issue that cannot be read sets `part_issue_error` and stops the program's bootstrap. #3512 keeps its rule: any Project item of a confirmed repo counts.
 - **The tracker prompt** takes `domain.bootstrap_instructions` through the `domain_bootstrap` job output, placed right after the Bootstrap duty. It hands the agent each part issue to file as JSON and tells it to use the title and body exactly. For a program with no `domain` the output is empty and the rendered prompt is unchanged.
+
+### Goal batches
+
+The same preflight lists the goals the tracker still has to open, as `domain.goal_batches`. A batch is a set of the program's eligible, public repositories that dispatch as one goal with one approval.
+
+- **The first batch** (`initial`) is every eligible repo that is not in the program's `part0` list, and is listed only once every eligible repo has its part issue on the Project. **Each repo in `part0`** has its own batch (`parity-<node ID>`) once a pull request linked on its part issue, in a comment by the program's operator, `fro-bot` or `fro-bot[bot]`, and in that repo, has merged (`gh api repos/<repo>/pulls/<n> --jq .merged`; the fixture below replaces the reads). A repo whose Part 0 cannot be read is named in `part0_unreadable` and gets no batch yet; it never fails the run. A repo with Part 0 unmerged is in no batch.
+- **The goal is found by its key.** The goal body ends with `<!-- fro-bot-program-goal program:<key> batch:<name> -->`; an issue of the tracker repo, labeled `cross-repo-goal`, created by `fro-bot` (or `fro-bot[bot]`), not a pull request, carrying that exact line is the batch's goal (`gh api --paginate 'repos/<tracker repo>/issues?state=all&creator=fro-bot&labels=cross-repo-goal&per_page=100'`; the oldest wins). The preflight reads the goals only when a batch could be listed.
+- **Repair.** A batch whose goal, its checklist comment (a `fro-bot` comment with the items region and a line for each repo of the batch, whatever brief commit it pins) and its Project item all exist is not listed again. Any other batch stays listed, with `goal_issue`, `has_checklist` and `in_project` saying what exists; the tracker reuses the goal and writes only what is missing, so an approved goal keeps the brief commit it was approved with. A goal that is closed is done: it is not listed, so an operator who closes a goal declines it.
+- **The text is the preflight's.** Each checklist line is `- [ ] owner/repo: <ask>. Brief: program-domains.json@<commit>#<domain>. Part issue: <url>`, and the ask is a fixed template: the program, the domain, the tracker issue, the instruction to answer on the part issue (`part-accepted`, `part-declined` or `part-countered`, with the reason) before changing anything, and never to override the repository's rules. What follows `owner/repo: ` is at most `MAX_PROMPT_LENGTH` (4,000) characters, the limit dispatch applies to a prompt; a batch with a longer line, or with more repos than `MAX_ITEMS_PER_GOAL` (20), is listed with a fixed `error` and an empty `checklist`, and the tracker writes nothing for it and says why.
+- **Wake.** A batch without an `error` wakes the tracker with the reason `goal batches — N batch(es) need a goal issue, its checklist or its Project item`, even when the hash and the mentions are unchanged; the list is recomputed on every run, so a run that stops partway is finished by the next. A batch with an `error`, and a `goal_error`, never wake it by themselves. A goal issue or comment read that fails sets `goal_error` (`goal issues cannot be read`, `goal comments cannot be read`), lists nothing and stops the goal duty for the run.
+- **The tracker prompt** takes `domain.goal_instructions` through the `domain_goals` job output, flush after `domain_bootstrap`, so a program with no `domain` renders the prompt it always did. Fixtures for tests: `ROLLOUT_TRACKER_GOAL_ISSUES_JSON` (`[{number, state, pull_request, author, body}]`), `ROLLOUT_TRACKER_GOAL_COMMENTS_JSON` (`{"<number>": [{id, author, body}]}`) and `ROLLOUT_TRACKER_PART0_JSON` (`{"owner/repo": {"comments": [{id, author, body}], "merged": {"<pr>": true}}}`).
 
 ## Evidence the tracker may tick on
 
@@ -140,6 +170,7 @@ C4Component
     Component(prscli, "prs-cli", "TypeScript", "goke CLI: bounded correction PRs")
     Component(model, "report-model", "TypeScript", "Claim kinds, finding and report types, fingerprint, artifact validator")
     Component(programs, "program-trackers", "TypeScript", "Program config parser and the operator, trigger and bootstrap predicates")
+    Component(goals, "rollout-tracker-goals", "TypeScript", "Goal batches of a domain program")
     Component(domains, "program-domains", "TypeScript", "Domain config parser, its briefs, and the registry and program checks")
     Component(snapshot, "rollout-tracker-snapshot", "TypeScript", "Tracker preflight: snapshot, hash, wake decision")
     Component(snapshotcli, "rollout-tracker-snapshot-cli", "TypeScript", "goke CLI: print the preflight result")
@@ -175,6 +206,7 @@ C4Component
   Rel(rollout, model, "imports")
   Rel(rollout, snapshot, "imports")
   Rel(snapshot, programs, "imports")
+  Rel(snapshot, goals, "imports")
   Rel(domains, programs, "imports")
   Rel(pexec, outcomes, "imports")
   Rel(pexec, pplan, "imports")

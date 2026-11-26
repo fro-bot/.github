@@ -351,6 +351,8 @@ describe('gateway-rollout-tracker.yaml: the prompt of a program with no domain',
     'inputs.comment_id': '104',
     // A program with no domain has no domain duty: the preflight prints no domain and the output is empty.
     'needs.preflight.outputs.domain_bootstrap': '',
+    // Nor a goal duty: the output is empty, and the expression sits flush against the bootstrap one, so it adds no byte.
+    'needs.preflight.outputs.domain_goals': '',
   }
 
   function render(prompt: string): string {
@@ -429,7 +431,9 @@ describe('gateway-rollout-tracker.yaml: the domain bootstrap duty', () => {
     const flat = prompt.replaceAll(/\s+/g, ' ')
     const placeholder = expr('needs.preflight.outputs.domain_bootstrap')
 
-    expect(flat).toContain(`Report a filing failure only for a repo that is still public.${placeholder} Blocked repos.`)
+    expect(flat).toContain(
+      `Report a filing failure only for a repo that is still public.${placeholder}${expr('needs.preflight.outputs.domain_goals')} Blocked repos.`,
+    )
     expect(prompt.split(placeholder)).toHaveLength(2)
   })
 
@@ -452,5 +456,64 @@ describe('gateway-rollout-tracker.yaml: the domain bootstrap duty', () => {
     it('names the repository the brief lives in', () => {
       expect(snapshot?.env?.ROLLOUT_TRACKER_BRIEF_REPO).toBe(expr('github.repository'))
     })
+  })
+})
+
+describe('gateway-rollout-tracker.yaml: the domain goal duty', () => {
+  const snapshot = (preflight?.steps ?? []).find(step => step.id === 'snapshot')
+  const script = String(snapshot?.run ?? '')
+  const prompt = String(update?.with?.prompt ?? '')
+  const placeholder = expr('needs.preflight.outputs.domain_goals')
+
+  const result = (extra: Record<string, unknown> = {}): string =>
+    JSON.stringify({
+      should_comment: true,
+      reason: 'goal batches',
+      pending_mention_ids: [],
+      marker: '<!-- gateway-rollout-tracker:{} -->',
+      marker_comment_id: null,
+      operator_comment_ids: [],
+      bootstrap_repos: [],
+      bootstrap_blocked: [],
+      public_items: [],
+      program: {
+        key: 'harness',
+        issue: 'fro-bot/.github#5000',
+        repo: 'fro-bot/.github',
+        project_url: 'https://github.com/users/fro-bot/projects/9',
+        operator_login: 'marcusrbrown',
+        evidence: 'none',
+      },
+      ...extra,
+    })
+
+  function runSnapshot(json: string): ReturnType<typeof runStepWithStubs> {
+    return runStepWithStubs(`bun() { printf '%s' "$FAKE_RESULT"; }\n${script}`, {env: {FAKE_RESULT: json}})
+  }
+
+  it('exposes the goal instructions as a job output', () => {
+    expect(preflight?.outputs?.domain_goals).toBe(expr('steps.snapshot.outputs.domain_goals'))
+    expect(script).toContain('.domain.goal_instructions')
+  })
+
+  it('writes the instructions to the step output whole, leading blank lines, JSON and all', () => {
+    const text = '\n\nGoals. Line one.\n[{"title":"A \\"quoted\\" $dollar"}]\nLine three.'
+
+    const run = runSnapshot(result({domain: {bootstrap_instructions: '', goal_instructions: text}}))
+
+    expect(run.status).toBe(0)
+    expect(run.outputs.domain_goals).toBe(text)
+    expect(run.outputs.domain_bootstrap).toBe('')
+  })
+
+  it('writes an empty output for a program with no domain, and for a domain with no goal duty', () => {
+    expect(runSnapshot(result()).outputs.domain_goals).toBe('')
+    expect(runSnapshot(result({domain: {bootstrap_instructions: 'x'}})).outputs.domain_goals).toBe('')
+  })
+
+  it('places the instructions flush after the bootstrap instructions, once, with no static goal text of its own', () => {
+    expect(prompt.split(placeholder)).toHaveLength(2)
+    expect(prompt).not.toContain('cross-repo-goal')
+    expect(prompt).not.toContain('dispatch-approved')
   })
 })
