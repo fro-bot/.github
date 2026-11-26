@@ -3,6 +3,8 @@ import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
 import {MAX_ITEMS_PER_GOAL, MAX_PROMPT_LENGTH} from '@fro-bot/dispatch/dispatch-model'
+import {isPromptSafe, parseBriefReference} from '@fro-bot/dispatch/dispatch-plan'
+import {extractItemPrompts, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {
   goalMarker,
@@ -205,6 +207,33 @@ describe('the checklist comment', () => {
     const [batch] = batchesOf(planGoals(input(), readers()))
 
     expect(batch?.checklist.split('\n').filter(line => line.startsWith('- ['))).toHaveLength(1)
+  })
+})
+
+describe('the seam with dispatch: the checklist comment as dispatch reads it', () => {
+  it('parses into one item per repo, each with a safe prompt that names the pinned brief', () => {
+    const [batch] = batchesOf(planGoals(input({part0Names: new Set()}), readers()))
+    const parsed = parseDecomposition(batch?.checklist ?? '')
+
+    expect(parsed.ok).toBe(true)
+    expect(parsed.items.map(item => `${item.target.owner}/${item.target.name}`)).toStrictEqual(batch?.repos)
+    const prompts = [...extractItemPrompts(batch?.checklist ?? '').values()]
+    expect(prompts).toHaveLength(3)
+    for (const prompt of prompts) {
+      expect(isPromptSafe(prompt)).toBe(true)
+      expect(parseBriefReference(prompt)).toStrictEqual({commit: COMMIT, domain: 'harness-tools'})
+    }
+  })
+
+  it('parses a parity batch the same way', () => {
+    const batch = batchesOf(
+      planGoals(
+        input(),
+        readers({part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'}}),
+      ),
+    )[1]
+
+    expect(parseDecomposition(batch?.checklist ?? '').items.map(item => item.target.name)).toStrictEqual(['systematic'])
   })
 })
 
