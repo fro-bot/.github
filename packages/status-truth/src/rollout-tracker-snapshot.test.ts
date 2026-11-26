@@ -731,6 +731,14 @@ const FAKE_GH = [
   '    [ -n "$FAKE_GH_ISSUE_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
   '    printf "%s" "$FAKE_GH_ISSUE_JSON"; exit 0 ;;',
   'esac',
+  // The search for a part issue in every state: `gh api --paginate 'repos/<repo>/issues?state=all&creator=fro-bot&per_page=100' --jq ...`.
+  // The fixture file holds what the `--jq` prints: one JSON object per line.
+  'case "$*" in',
+  '  *--paginate*issues?state=all*)',
+  '    echo "$*" >> "$FAKE_GH_LOOKUP_LOG"',
+  '    [ -n "$FAKE_GH_LOOKUP_FAIL" ] && { echo "HTTP 502" >&2; exit 1; }',
+  '    cat "$FAKE_GH_LOOKUP_FILE"; exit 0 ;;',
+  'esac',
   // A repository visibility read: `gh api repos/<owner>/<repo> --jq .visibility`. It is answered before the
   // blanket API failure below, so a test can fail the signal reads and leave the visibility reads alone.
   'case "$2" in',
@@ -792,6 +800,10 @@ interface FakeGhParams {
   issueJson?: string
   /** Fails the issue read. */
   issueFail?: boolean
+  /** What the search for a part issue prints, one JSON object per line. */
+  lookup?: string
+  /** Fails the search for a part issue. */
+  lookupFail?: boolean
   /** Further env for the run, such as a program config. */
   extraEnv?: Record<string, string | undefined>
   /** Repositories whose visibility read answers private, internal, 404, 502, a network error or nothing. */
@@ -815,6 +827,7 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {
   registryReads: string[]
   mainHeadReads: string[]
   issueReads: string[]
+  lookupReads: string[]
 } {
   const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-gh-'))
   try {
@@ -839,6 +852,10 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {
     writeFileSync(mainHeadLog, '')
     const issueLog = join(dir, 'issue.log')
     writeFileSync(issueLog, '')
+    const lookupLog = join(dir, 'lookup.log')
+    writeFileSync(lookupLog, '')
+    const lookupFile = join(dir, 'lookup.ndjson')
+    writeFileSync(lookupFile, params.lookup ?? '')
     const configFile = join(dir, 'default-config.json')
     const programConfig = params.extraEnv?.ROLLOUT_TRACKER_CONFIG
     writeFileSync(
@@ -862,6 +879,9 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {
       FAKE_GH_ISSUE_LOG: issueLog,
       FAKE_GH_ISSUE_JSON: params.issueJson ?? '',
       FAKE_GH_ISSUE_FAIL: params.issueFail === true ? '1' : '',
+      FAKE_GH_LOOKUP_LOG: lookupLog,
+      FAKE_GH_LOOKUP_FILE: lookupFile,
+      FAKE_GH_LOOKUP_FAIL: params.lookupFail === true ? '1' : '',
       FAKE_GH_VIS_PRIVATE: (visibility.private ?? []).join(' '),
       FAKE_GH_VIS_INTERNAL: (visibility.internal ?? []).join(' '),
       FAKE_GH_VIS_NOTFOUND: (visibility.notFound ?? []).join(' '),
@@ -901,6 +921,9 @@ function runCliWithFakeGh(params: FakeGhParams): CliResult & {
         .split('\n')
         .filter(line => line !== ''),
       issueReads: readFileSync(issueLog, 'utf8')
+        .split('\n')
+        .filter(line => line !== ''),
+      lookupReads: readFileSync(lookupLog, 'utf8')
         .split('\n')
         .filter(line => line !== ''),
     }
@@ -4056,6 +4079,8 @@ describe('a domain program: part issues with the brief', () => {
     mainHead?: string | null
     /** The `repo#number` bodies the preflight reads for the Project items of confirmed repos. */
     partIssues?: Record<string, unknown>
+    /** What the search of each repo's issues, in every state, finds; a repo not listed is a failed lookup, and `'fail'` fails one. */
+    existing?: Record<string, readonly unknown[] | 'fail'>
     items?: ProjectItem[]
     comments?: TrackerComment[]
     visibility?: Record<string, string | {visibility: string; has_issues: boolean} | null>
@@ -4085,8 +4110,37 @@ describe('a domain program: part issues with the brief', () => {
       ROLLOUT_TRACKER_BRIEF_REPO: params.briefRepo === null ? undefined : (params.briefRepo ?? 'fro-bot/.github'),
       ROLLOUT_TRACKER_MAIN_HEAD: params.mainHead === null ? undefined : (params.mainHead ?? COMMIT),
       ROLLOUT_TRACKER_PART_ISSUES_JSON: JSON.stringify(params.partIssues ?? {}),
+      ROLLOUT_TRACKER_EXISTING_ISSUES_JSON: JSON.stringify(
+        params.existing ?? Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, []])),
+      ),
     })
   }
+
+  /** One issue the search of a repo's issues returns: the part issue unless `changes` say otherwise. */
+  function existingIssue(
+    repo: {nameWithOwner: string; nodeId: string},
+    number: number,
+    changes: {state?: string; body?: string; author?: string; pull_request?: boolean; program?: string} = {},
+  ): Record<string, unknown> {
+    return {
+      number,
+      state: changes.state ?? 'open',
+      pull_request: changes.pull_request ?? false,
+      author: changes.author ?? 'fro-bot',
+      body: changes.body ?? `A part issue.\n\n${partIssueMarker(changes.program ?? 'harness', repo.nodeId)}\n`,
+    }
+  }
+
+  /** What `gh api --paginate` prints for these issues: one JSON object per line. */
+  const ndjson = (issues: readonly unknown[]): string => issues.map(issue => JSON.stringify(issue)).join('\n')
+
+  /** `existing` for every repo, with `found` in place for the repos it names. */
+  const everyRepo = (
+    found: Record<string, readonly unknown[] | 'fail'>,
+  ): Record<string, readonly unknown[] | 'fail'> => ({
+    ...Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, []])),
+    ...found,
+  })
 
   /** The Project item a repo's part issue is, and the issue the preflight reads for it. */
   function partIssueCard(
@@ -4802,24 +4856,140 @@ describe('a domain program: part issues with the brief', () => {
   })
 
   describe('recovering a part issue after a failed Project insert', () => {
-    it('hands the agent each issue’s marker to search for, instead of the tracker-link search', () => {
-      const {domain} = preflight()
-      const text = domain.bootstrap_instructions
+    const entryOf = (result: {domain: DomainOutput}, repo: {nameWithOwner: string}) =>
+      result.domain.part_issues.find(issue => issue.repo === repo.nameWithOwner)
 
-      expect(domain.part_issues.find(issue => issue.repo === dashboard.nameWithOwner)?.marker).toBe(
-        partIssueMarker('harness', dashboard.nodeId),
-      )
-      expect(text).toContain('look in that repo for an issue authored by fro-bot whose body contains the marker')
-      expect(text).toContain('gh issue list --repo <repo> --author fro-bot --state open --json number,body')
-      expect(text).toContain('add that issue to the Project and file nothing new')
+    it('carries the marker of each issue and says nothing was found when nothing was', () => {
+      const result = preflight()
+
+      expect(entryOf(result, dashboard)).toMatchObject({
+        marker: partIssueMarker('harness', dashboard.nodeId),
+        existing: null,
+      })
+      expect(result.domain.deferred_repos).toEqual([])
     })
 
-    it('tells the agent that a card of the repo that is not the part issue does not count', () => {
+    it('adopts an open issue the search finds by its marker, and keeps the repo listed so the agent adds it to the Project', () => {
+      const result = preflight({existing: everyRepo({[dashboard.nameWithOwner]: [existingIssue(dashboard, 41)]})})
+
+      expect(entryOf(result, dashboard)?.existing).toBe(41)
+      expect(entryOf(result, spaceBus)?.existing).toBeNull()
+      expect(result.bootstrap_repos).toContainEqual(dashboard)
+    })
+
+    it('adopts a closed issue too', () => {
+      const result = preflight({
+        existing: everyRepo({[dashboard.nameWithOwner]: [existingIssue(dashboard, 12, {state: 'closed'})]}),
+      })
+
+      expect(entryOf(result, dashboard)?.existing).toBe(12)
+    })
+
+    it('takes the oldest when several carry the marker', () => {
+      const result = preflight({
+        existing: everyRepo({
+          [dashboard.nameWithOwner]: [
+            existingIssue(dashboard, 90),
+            existingIssue(dashboard, 31),
+            existingIssue(dashboard, 60),
+          ],
+        }),
+      })
+
+      expect(entryOf(result, dashboard)?.existing).toBe(31)
+    })
+
+    it.each([
+      ['a pull request', {pull_request: true}],
+      ['an issue by someone else', {author: 'octocat'}],
+      ['an issue by an impostor', {author: 'fro-bot-impostor'}],
+      ['an issue with no marker', {body: 'A part issue, they say.'}],
+      ['an issue for another program', {program: 'other-program'}],
+      ['an issue with another node ID', {body: partIssueMarker('harness', `${dashboard.nodeId}2`)}],
+    ])('does not adopt %s', (_name, changes) => {
+      const result = preflight({
+        existing: everyRepo({[dashboard.nameWithOwner]: [existingIssue(dashboard, 5, changes)]}),
+      })
+
+      expect(entryOf(result, dashboard)?.existing).toBeNull()
+    })
+
+    it('adopts an issue written as fro-bot[bot] as well', () => {
+      const result = preflight({
+        existing: everyRepo({[dashboard.nameWithOwner]: [existingIssue(dashboard, 8, {author: 'fro-bot[bot]'})]}),
+      })
+
+      expect(entryOf(result, dashboard)?.existing).toBe(8)
+    })
+
+    it('tells the agent to adopt an entry that has an existing issue and create only the others, and not to search itself', () => {
       const text = preflight().domain.bootstrap_instructions
 
+      expect(text).toContain("already searched the repo for this program's part issue, in every state")
+      expect(text).toContain(
+        'An entry whose `existing` is a number already has its part issue: add that issue to the Project and file nothing new',
+      )
+      expect(text).toContain('do not search yourself')
+      expect(text).not.toContain('gh issue list')
       expect(text).toContain('Ignore the rules above that skip a repo with a Project item')
       expect(text).toContain('search for an issue that links the tracker issue')
       expect(text).toContain('an unrelated issue or pull request of the repo never counts')
+    })
+
+    it('defers a repo whose lookup fails, with a fixed reason, and files nothing for it', () => {
+      const result = preflight({existing: everyRepo({[spaceBus.nameWithOwner]: 'fail'})})
+
+      expect(result.domain.deferred_repos).toEqual([
+        {nameWithOwner: spaceBus.nameWithOwner, reason: 'part issue lookup failed'},
+      ])
+      expect(result.bootstrap_repos).toEqual([systematic, dashboard])
+      expect(result.domain.part_issues.map(issue => issue.repo)).toEqual([
+        systematic.nameWithOwner,
+        dashboard.nameWithOwner,
+      ])
+      expect(result.reason).toContain('; 1 listed repo is deferred (part issue lookup failed)')
+      expect(result.domain.bootstrap_instructions).toContain(
+        '1 listed repo could not be checked for an existing part issue (part issue lookup failed) and gets nothing this run: file nothing for it',
+      )
+    })
+
+    it('defers a repo whose lookup answers something that is not a list of issues', () => {
+      const result = preflight({existing: everyRepo({[spaceBus.nameWithOwner]: [{number: 'x'}]})})
+
+      expect(result.domain.deferred_repos.map(deferred => deferred.nameWithOwner)).toEqual([spaceBus.nameWithOwner])
+    })
+
+    it('defers a repo the lookup has no answer for', () => {
+      const result = preflight({existing: {[systematic.nameWithOwner]: [], [dashboard.nameWithOwner]: []}})
+
+      expect(result.domain.deferred_repos.map(deferred => deferred.nameWithOwner)).toEqual([spaceBus.nameWithOwner])
+    })
+
+    it('searches only the repos it may file in', () => {
+      const registry = registryText(allRows.map(row => (row === spaceBus ? {...row, private: true} : row)))
+
+      const result = preflight({
+        registry,
+        ...withCards(partIssueCard(dashboard, 2)),
+        existing: {[systematic.nameWithOwner]: []},
+      })
+
+      expect(result.domain.deferred_repos).toEqual([])
+      expect(result.bootstrap_repos).toEqual([systematic])
+    })
+
+    it('retries without a second create: the issue made by a run whose Project insert failed is adopted by the next', () => {
+      const first = preflight()
+      // The first run created the issue in dashboard, then failed to add it to the Project.
+      const created = existingIssue(dashboard, 77, {body: entryOf(first, dashboard)?.body})
+      const second = preflight({existing: everyRepo({[dashboard.nameWithOwner]: [created]})})
+      // The second run added the card; the third finds nothing left to do for dashboard.
+      const third = preflight(withCards(partIssueCard(dashboard, 77)))
+
+      expect(entryOf(first, dashboard)?.existing).toBeNull()
+      expect(second.domain.part_issues.filter(issue => issue.repo === dashboard.nameWithOwner)).toHaveLength(1)
+      expect(entryOf(second, dashboard)?.existing).toBe(77)
+      expect(third.bootstrap_repos).not.toContainEqual(dashboard)
     })
 
     it('lists the repo again on the next run until its part issue is on the Project', () => {
@@ -4830,6 +5000,30 @@ describe('a domain program: part issues with the brief', () => {
       expect(first.bootstrap_repos).toContainEqual(dashboard)
       expect(second.bootstrap_repos).toContainEqual(dashboard)
       expect(third.bootstrap_repos).not.toContainEqual(dashboard)
+    })
+
+    it('makes no lookup when the run stops before it', () => {
+      const result = runCliWithFakeGh({
+        items: [],
+        issues: [],
+        comments: [],
+        mainHead: 'c'.repeat(40),
+        defaultConfig: readFileSync(domainConfig(), 'utf8'),
+        extraEnv: {
+          ROLLOUT_TRACKER_CONFIG: domainConfig(),
+          ROLLOUT_TRACKER_PROGRAM: 'harness',
+          ROLLOUT_TRACKER_COMMENTS_JSON: '[]',
+          ROLLOUT_TRACKER_DOMAINS: writeDomains(domainsText()),
+          ROLLOUT_TRACKER_BRIEF_COMMIT: COMMIT,
+          ROLLOUT_TRACKER_BRIEF_REPO: 'fro-bot/.github',
+          ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify(
+            Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, 'public'])),
+          ),
+        },
+      })
+
+      expect(result.status).toBe(0)
+      expect(result.lookupReads).toEqual([])
     })
   })
 
@@ -4927,6 +5121,79 @@ describe('a domain program: part issues with the brief', () => {
 
       expect(result.status).toBe(0)
       expect((JSON.parse(result.stdout) as PreflightResult).domain?.part_issue_error).toBe('part issues cannot be read')
+    })
+
+    describe('the search for an existing part issue', () => {
+      const lookupArgs = (repo: string): string =>
+        `api --paginate repos/${repo}/issues?state=all&creator=fro-bot&per_page=100 --jq .[] | {number, state: .state, pull_request: (.pull_request != null), author: (.user.login // \"\"), body: (.body // \"\")}`
+
+      const entryFor = (result: {stdout: string}, repo: {nameWithOwner: string}) =>
+        (JSON.parse(result.stdout) as PreflightResult).domain?.part_issues.find(
+          issue => issue.repo === repo.nameWithOwner,
+        )
+
+      /** `count` unrelated issues, with `genuine` placed at 1-based position `at`. */
+      const manyIssues = (count: number, at: number, genuine: Record<string, unknown>): string =>
+        ndjson(
+          Array.from({length: count}, (_, index) =>
+            index + 1 === at ? genuine : existingIssue(dashboard, index + 1000, {body: `unrelated ${index}`}),
+          ),
+        )
+
+      it('lists issues in every state, paginated, created by fro-bot, once for each repo it may file in', () => {
+        const result = runCliWithFakeGh(base())
+
+        expect(result.status).toBe(0)
+        expect(result.lookupReads).toHaveLength(3)
+        for (const repo of allRows) expect(result.lookupReads).toContain(lookupArgs(repo.nameWithOwner))
+      })
+
+      it('finds the marker on a later page', () => {
+        const genuine = existingIssue(dashboard, 230, {state: 'closed'})
+
+        const result = runCliWithFakeGh(base({lookup: manyIssues(250, 230, genuine)}))
+
+        expect(result.status).toBe(0)
+        expect(entryFor(result, dashboard)?.existing).toBe(230)
+      })
+
+      it('finds the marker on a closed issue', () => {
+        const result = runCliWithFakeGh(base({lookup: ndjson([existingIssue(dashboard, 12, {state: 'closed'})])}))
+
+        expect(entryFor(result, dashboard)?.existing).toBe(12)
+      })
+
+      it('defers every repo, and files nothing, when the search fails', () => {
+        const result = runCliWithFakeGh(base({lookupFail: true}))
+        const parsed = JSON.parse(result.stdout) as PreflightResult
+
+        expect(result.status).toBe(0)
+        expect(parsed.bootstrap_repos).toEqual([])
+        expect(parsed.domain?.part_issues).toEqual([])
+        expect(parsed.domain?.deferred_repos).toHaveLength(3)
+        expect(parsed.domain?.deferred_repos.every(deferred => deferred.reason === 'part issue lookup failed')).toBe(
+          true,
+        )
+      })
+
+      it('defers a repo when the search output is cut off mid-record', () => {
+        const half = JSON.stringify(existingIssue(dashboard, 12)).slice(0, 40)
+
+        const result = runCliWithFakeGh(base({lookup: half}))
+
+        expect((JSON.parse(result.stdout) as PreflightResult).domain?.deferred_repos).toHaveLength(3)
+      })
+
+      it('makes no search for a program with no domain', () => {
+        const plain = bootstrapConfig([systematic])
+        const result = runCliWithFakeGh({
+          ...base(),
+          defaultConfig: readFileSync(plain, 'utf8'),
+          extraEnv: {...base().extraEnv, ROLLOUT_TRACKER_CONFIG: plain, ROLLOUT_TRACKER_PROGRAM: 'plugins'},
+        })
+
+        expect(result.lookupReads).toEqual([])
+      })
     })
 
     it('does not read the registry for a program with no domain', () => {

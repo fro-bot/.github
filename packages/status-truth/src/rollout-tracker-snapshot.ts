@@ -157,6 +157,8 @@ export interface PartIssue {
   readonly body: string
   /** The marker line the body ends with; it identifies this program's part issue for this repo. */
   readonly marker: string
+  /** The number of this program's part issue already in the repo (any state) that the agent adopts instead of creating one; null when there is none. */
+  readonly existing: number | null
 }
 
 /**
@@ -183,8 +185,10 @@ export interface DomainPreflight {
    * onboarded or has no Fro Bot workflow). These stay out of the tracker's prompt and its comments.
    */
   ineligible_repos: string[]
-  /** The part issue to file in each repo of `bootstrap_repos`, in that order. */
+  /** The part issue to file, or adopt when `existing` is set, in each repo of `bootstrap_repos`, in that order. */
   part_issues: PartIssue[]
+  /** The repos left out of `bootstrap_repos` because the search for an existing part issue failed; nothing is filed for them this run. */
+  deferred_repos: {nameWithOwner: string; reason: string}[]
   /** The text that replaces the generic bootstrap issue in the tracker prompt; it starts with a blank line. */
   bootstrap_instructions: string
 }
@@ -1131,6 +1135,65 @@ function readPartIssueItems(entry: ProgramEntry, items: readonly ProjectItem[], 
   })
 }
 
+const LOOKUP_FAILED = 'part issue lookup failed'
+
+/**
+ * Every issue of the repo created by `fro-bot`, in every state and across every page, as `gh api --paginate`
+ * prints them (one JSON object per line). With `ROLLOUT_TRACKER_EXISTING_ISSUES_JSON` (`{"owner/repo": [issue, ...]}`, names compared ignoring case)
+ * the issues come from that object; a repo it lacks, or lists as anything but an array, fails like a failed read.
+ * A failed page, a cut-off record or an output too large for the buffer throws: the list is never partial.
+ */
+function readCreatedIssues(repo: string, env: Env): ItemIssueWithNumber[] {
+  let records: unknown[]
+  if (env.ROLLOUT_TRACKER_EXISTING_ISSUES_JSON === undefined) {
+    const output = execFileSync(
+      'gh',
+      [
+        'api',
+        '--paginate',
+        `repos/${repo}/issues?state=all&creator=fro-bot&per_page=100`,
+        '--jq',
+        '.[] | {number, state: .state, pull_request: (.pull_request != null), author: (.user.login // ""), body: (.body // "")}',
+      ],
+      {encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe']},
+    )
+    records = output
+      .split('\n')
+      .filter(line => line.trim() !== '')
+      .map((line): unknown => JSON.parse(line))
+  } else {
+    const parsed: unknown = JSON.parse(env.ROLLOUT_TRACKER_EXISTING_ISSUES_JSON)
+    const listed: unknown = isRecord(parsed)
+      ? Object.entries(parsed).find(([name]) => name.toLowerCase() === repo.toLowerCase())?.[1]
+      : undefined
+    if (!Array.isArray(listed)) throw new TypeError(LOOKUP_FAILED)
+    records = listed
+  }
+  return records.map(record => {
+    if (!isRecord(record) || typeof record.number !== 'number' || !Number.isSafeInteger(record.number)) {
+      throw new TypeError(LOOKUP_FAILED)
+    }
+    return {...parseItemIssue(record), number: record.number}
+  })
+}
+
+interface ItemIssueWithNumber extends ItemIssue {
+  number: number
+}
+
+/**
+ * The number of this program's part issue in a repo, in any state: an issue (not a pull request) written by
+ * Fro Bot whose body carries the repo's exact marker, the same test the Project detection applies. The oldest
+ * wins. Null when there is none; a failed or partial search throws, so a part issue is never created blind.
+ */
+function findExistingPartIssue(repo: ConfirmedRepo, program: string, env: Env): number | null {
+  const marker = partIssueMarker(program, repo.nodeId)
+  const numbers = readCreatedIssues(repo.nameWithOwner, env)
+    .filter(issue => !issue.pull_request && FROBOT_COMMENT_AUTHORS.has(issue.author) && issue.body.includes(marker))
+    .map(issue => issue.number)
+  return numbers.length === 0 ? null : Math.min(...numbers)
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error'
 }
@@ -1159,7 +1222,12 @@ function bootstrapInstructions(domain: Omit<DomainPreflight, 'bootstrap_instruct
     skipped === 0
       ? ''
       : ` ${countOf(skipped, 'listed repo is not eligible and gets', 'listed repos are not eligible and get')} no part issue. Do not name ${skipped === 1 ? 'it' : 'them'} or say why.`
-  return `${intro}The program ${program} runs in the domain ${domain.key}; its brief is pinned to commit ${domain.brief_commit} of program-domains.json. In this program the Bootstrap duty files the part issue given here, not an issue you write yourself. For each repo you file in, use that repo's title and body from this JSON array (repo, title and body; empty when no repo needs one) exactly, character for character, and add nothing. The body links the tracker issue, which is how the search for an existing issue finds it on a re-run. A repo with no entry here gets no issue; skip it silently.\n${JSON.stringify(domain.part_issues)}\nBefore you file in a repo, look in that repo for an issue authored by fro-bot whose body contains the marker of that repo's entry exactly (gh issue list --repo <repo> --author fro-bot --state open --json number,body); if there is one, add that issue to the Project and file nothing new. Ignore the rules above that skip a repo with a Project item and that search for an issue that links the tracker issue: in this program only the marker identifies a part issue, and an unrelated issue or pull request of the repo never counts.${notice}`
+  const deferred = domain.deferred_repos.length
+  const deferredNotice =
+    deferred === 0
+      ? ''
+      : ` ${countOf(deferred, 'listed repo could not be checked for an existing part issue', 'listed repos could not be checked for an existing part issue')} (${LOOKUP_FAILED}) and ${deferred === 1 ? 'gets' : 'get'} nothing this run: file nothing for ${deferred === 1 ? 'it' : 'them'} and say so in your tracker comment.`
+  return `${intro}The program ${program} runs in the domain ${domain.key}; its brief is pinned to commit ${domain.brief_commit} of program-domains.json. In this program the Bootstrap duty files the part issue given here, not an issue you write yourself. For each repo you file in, use that repo's title and body from this JSON array (repo, title and body; empty when no repo needs one) exactly, character for character, and add nothing. The body links the tracker issue, which is how the search for an existing issue finds it on a re-run. A repo with no entry here gets no issue; skip it silently.\n${JSON.stringify(domain.part_issues)}\nThe preflight has already searched the repo for this program's part issue, in every state, so do not search yourself. An entry whose \`existing\` is a number already has its part issue: add that issue to the Project and file nothing new. Every other entry has none: file it. Ignore the rules above that skip a repo with a Project item and that search for an issue that links the tracker issue: in this program only the marker identifies a part issue, and an unrelated issue or pull request of the repo never counts.${notice}${deferredNotice}`
 }
 
 /** What `planDomain` needs besides the program: where its tracker is and what the run has already found out. */
@@ -1199,6 +1267,7 @@ function planDomain(
       part0_repos: [],
       ineligible_repos: [],
       part_issues: [],
+      deferred_repos: [],
       ...changes,
     }
     return {
@@ -1255,7 +1324,19 @@ function planDomain(
 
   const part0Names = new Set((entry.part0 ?? []).map(name => name.toLowerCase()))
   const needsPart0 = (repo: ConfirmedRepo): boolean => part0Names.has(repo.nameWithOwner.toLowerCase())
-  const ready = lists.ready.filter(repo => isEligible(repo))
+  // A repo whose part issue may already exist, in any state, is searched before anything is created. If the
+  // search fails or is incomplete the repo is deferred: filing without it could duplicate the issue.
+  const existing = new Map<string, number | null>()
+  const deferred: {nameWithOwner: string; reason: string}[] = []
+  const ready: ConfirmedRepo[] = []
+  for (const repo of lists.ready.filter(candidate => isEligible(candidate))) {
+    try {
+      existing.set(repo.nameWithOwner, findExistingPartIssue(repo, entry.key, env))
+      ready.push(repo)
+    } catch {
+      deferred.push({nameWithOwner: repo.nameWithOwner, reason: LOOKUP_FAILED})
+    }
+  }
   const trackerUrl = `https://github.com/${tracker.repo}/issues/${tracker.number}`
   const briefUrl = `https://github.com/${brief.repo}/blob/${brief.commit}/program-domains.json`
   const base = {
@@ -1280,7 +1361,9 @@ function planDomain(
         operator: entry.operator.login,
         marker: partIssueMarker(entry.key, repo.nodeId),
       }),
+      existing: existing.get(repo.nameWithOwner) ?? null,
     })),
+    deferred_repos: deferred,
   }
   return {
     domain: {...base, bootstrap_instructions: bootstrapInstructions(base, entry.key)},
@@ -1295,7 +1378,11 @@ function domainReasonSuffix(domain: DomainPreflight): string {
   if (domain.registry_error !== null) return `; domain registry error: ${domain.registry_error}`
   if (domain.part_issue_error !== null) return `; domain part issue error: ${domain.part_issue_error}`
   const count = domain.ineligible_repos.length
-  return count === 0 ? '' : `; ${countOf(count, 'listed repo is', 'listed repos are')} not eligible for a part issue`
+  const deferred = domain.deferred_repos.length
+  return (
+    (count === 0 ? '' : `; ${countOf(count, 'listed repo is', 'listed repos are')} not eligible for a part issue`) +
+    (deferred === 0 ? '' : `; ${countOf(deferred, 'listed repo is', 'listed repos are')} deferred (${LOOKUP_FAILED})`)
+  )
 }
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
@@ -1350,6 +1437,8 @@ export interface SnapshotIo {
  *   ROLLOUT_TRACKER_REGISTRY    — the text of the data branch's `metadata/repos.yaml`
  *   ROLLOUT_TRACKER_PART_ISSUES_JSON — {"owner/repo#n": {pull_request, author, body}}: the issue behind each
  *                                   Project item of a confirmed repo
+ *   ROLLOUT_TRACKER_EXISTING_ISSUES_JSON — {"owner/repo": [{number, state, pull_request, author, body}]}: every
+ *                                   issue Fro Bot created in a repo it may file in, in any state
  *
  * A body fixture supplies no comment list, so it reports no pending mentions.
  */
