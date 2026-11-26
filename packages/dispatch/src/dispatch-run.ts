@@ -174,10 +174,11 @@ export interface RunDispatchInput {
    */
   loadBriefFile?: (repo: RepoRepository, commit: string) => Promise<string>
   /**
-   * The node ID of the repository that `target` names right now, read once for a domain item after its brief identity
-   * check passes and before any intent is written. Without it, or when it throws or answers nothing, the item is held.
+   * The repository that `target` names right now (node ID and visibility), read once for a domain item after its brief
+   * identity check passes and before any intent is written. Without it, or when it throws or answers no node ID or no
+   * recognized visibility, the item is held.
    */
-  loadLiveNodeId?: (target: DispatchTarget) => Promise<string>
+  loadLiveRepository?: (target: DispatchTarget) => Promise<{nodeId: string; visibility: string | null}>
   loadOtherOpenGoalMarkers: () => Promise<GoalState[]>
   findRunByCorrelationId: (target: DispatchTarget, correlationId: string) => Promise<boolean>
   createWorkflowDispatch: (params: {
@@ -362,7 +363,13 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
     // brief says the name is right, the repository behind the name is read live. A read that fails holds the item
     // pending and marks it, so the operator is told; nothing retries it by itself, and the operator reapplies the
     // label. Every other failure is a fact about the prompt, the commit or the repository, and blocks for good.
-    const reason = await briefGateReason(item, prompts.get(item.promptHash), registry, briefFile, input.loadLiveNodeId)
+    const reason = await briefGateReason(
+      item,
+      prompts.get(item.promptHash),
+      registry,
+      briefFile,
+      input.loadLiveRepository,
+    )
     if (reason === 'retry') {
       held.add(item.id)
       return {...item, hold: 'brief-read-failed'}
@@ -442,10 +449,12 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
 
   const otherOpenGoalMarkers = await input.loadOtherOpenGoalMarkers()
   const plan = planDispatch({state, fingerprint, otherOpenGoalMarkers})
-  // An item held for a read that failed is neither deferred nor blocked: nothing about it is final, and it is counted
-  // on its own so the job can say so.
+  // An item held for a read that failed is neither blocked nor dispatched: nothing about it is final, and it is counted
+  // on its own so the job can say so. The count is every item the gate held this run, not only the planner's
+  // candidates: an item the planner defers for another goal in flight on the same target is still held in the marker,
+  // and nothing retries it, so the run must still go red. Such an item is counted in `deferred` too.
   const dispatchable = plan.toDispatch.filter(item => !held.has(item.id))
-  counts.held = plan.toDispatch.length - dispatchable.length
+  counts.held = held.size
   counts.deferred = plan.deferredCount
   counts.blocked = plan.blockedCount
 
@@ -583,7 +592,7 @@ async function briefGateReason(
   prompt: string | undefined,
   registry: readonly GateEntry[],
   readBrief: (commit: string) => Promise<string>,
-  readLiveNodeId: ((target: DispatchTarget) => Promise<string>) | undefined,
+  readLiveRepository: ((target: DispatchTarget) => Promise<{nodeId: string; visibility: string | null}>) | undefined,
 ): Promise<GateReason | 'retry' | null> {
   if (prompt === undefined) return null
   const reference = parseBriefReference(prompt)
@@ -603,17 +612,20 @@ async function briefGateReason(
   }
   const identity = checkBriefIdentity({registry, target: item.target, programIds})
   if (identity !== null) return identity
-  // The registry says the name is right; the repository behind it now must say so too.
+  // The registry says the name is right; the repository behind it now must say so too, and be public: a visibility
+  // change does not change the node ID.
   const programId = programIds.get(`${item.target.owner}/${item.target.name}`.toLowerCase())
-  let live: string
+  let live: {nodeId: string; visibility: string | null}
   try {
-    if (readLiveNodeId === undefined) return 'retry'
-    live = await readLiveNodeId(item.target)
+    if (readLiveRepository === undefined) return 'retry'
+    live = await readLiveRepository(item.target)
   } catch {
     return 'retry'
   }
-  if (live === '') return 'retry'
-  return live === programId ? null : 'brief-identity-mismatch'
+  if (live.nodeId === '') return 'retry'
+  if (live.nodeId !== programId) return 'brief-identity-mismatch'
+  if (live.visibility === 'public') return null
+  return live.visibility === 'private' || live.visibility === 'internal' ? 'target-not-public' : 'retry'
 }
 
 function flipItemStatus(

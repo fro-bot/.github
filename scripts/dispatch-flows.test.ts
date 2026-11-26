@@ -857,7 +857,27 @@ describe('cross-repo-dispatch domain goal (bun: a fro-bot checklist on a fro-bot
 
   const HELD_MESSAGE = 'brief read failed; remove and reapply dispatch-approved to retry'
 
-  async function approvedRun(nodeId: string | null, live: string | null = 'R_kgDOAGENT001') {
+  /** Another open goal that already has the same target in flight: the planner defers an item of goal 50 for it. */
+  const inFlightElsewhere = buildMarkerComment({
+    goal: 'issue-51',
+    markerHash: '',
+    items: [
+      {
+        id: 'item-1',
+        target: {owner: 'fro-bot', name: 'agent'},
+        promptHash: sha16('another ask'),
+        status: 'dispatched',
+        correlationId: 'd1'.repeat(10),
+        epoch: Date.now(),
+      },
+    ],
+  })
+
+  async function approvedRun(
+    nodeId: string | null,
+    live: string | null = 'R_kgDOAGENT001',
+    options: {visibility?: string; inFlight?: boolean} = {},
+  ) {
     const checklist = decomposition(`- [ ] fro-bot/agent: ${BRIEF_LINE}`)
     const pending = parseDecomposition(checklist).items[0]
     if (pending === undefined) throw new TypeError('the fixture checklist did not parse')
@@ -884,7 +904,8 @@ describe('cross-repo-dispatch domain goal (bun: a fro-bot checklist on a fro-bot
       'cross-repo-dispatch',
       ['dispatch'],
       [
-        goalIssues(50),
+        goalIssues(...(options.inFlight === true ? [50, 51] : [50])),
+        ...(options.inFlight === true ? [issueComments(51, [comment(7, inFlightElsewhere, 'fro-bot')])] : []),
         issueComments(
           50,
           [planner, comment(2, buildMarkerComment(approved), 'fro-bot')],
@@ -893,7 +914,9 @@ describe('cross-repo-dispatch domain goal (bun: a fro-bot checklist on a fro-bot
           [planner, comment(2, buildMarkerComment(intent), 'fro-bot')],
         ),
         ...(nodeId === null ? [] : [briefAnswer(nodeId)]),
-        ...(live === null ? [] : [route('GET', '/repos/fro-bot/agent', {b: {node_id: live}})]),
+        ...(live === null
+          ? []
+          : [route('GET', '/repos/fro-bot/agent', {b: {node_id: live, visibility: options.visibility ?? 'public'}})]),
         anyCommentPatch,
         route('POST', '/repos/fro-bot/agent/actions/workflows/fro-bot.yaml/dispatches', {s: 204}),
       ],
@@ -968,6 +991,46 @@ describe('cross-repo-dispatch domain goal (bun: a fro-bot checklist on a fro-bot
       expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
     },
   )
+
+  it.each(['private', 'internal'])(
+    'blocks the item and dispatches nothing when the matching repository is now %s',
+    async visibility => {
+      const {result, cwd} = await approvedRun('R_kgDOAGENT001', 'R_kgDOAGENT001', {visibility})
+
+      expect(result.exitCode).toBe(0)
+      expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+        dispatched: 0,
+        blocked: 1,
+        held: 0,
+      })
+      expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
+    },
+  )
+
+  it('holds the item, exits 1 and reports it when the live answer carries no usable visibility', async () => {
+    const {result, cwd} = await approvedRun('R_kgDOAGENT001', 'R_kgDOAGENT001', {visibility: 'unknown'})
+
+    expect(result.exitCode).toBe(1)
+    expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({held: 1, dispatched: 0})
+    expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
+  })
+
+  it('still reports a failed brief read, and exits 1, when another open goal has the same target in flight', async () => {
+    const {result, cwd} = await approvedRun(null, 'R_kgDOAGENT001', {inFlight: true})
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stderr.split('\n').findLast(line => line !== '')).toBe(HELD_MESSAGE)
+    expect(expectResult(result, join(cwd, 'result.json'), DISPATCH_COUNT_KEYS)).toMatchObject({
+      dispatched: 0,
+      held: 1,
+      deferred: 1,
+      blocked: 0,
+    })
+    expect(requests().filter(line => line.includes('/dispatches'))).toStrictEqual([])
+    const written = requests().filter(line => line.startsWith('PATCH /repos/fro-bot/.github/issues/comments/2 '))
+    expect(written.length).toBeGreaterThan(0)
+    expect(written.at(-1)).toContain('brief-read-failed')
+  })
 
   it('exits 0 with nothing on stderr when nothing is held', async () => {
     const {result} = await approvedRun('R_kgDOAGENT001')

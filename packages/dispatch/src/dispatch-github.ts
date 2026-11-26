@@ -11,13 +11,27 @@ import {
 } from './dispatch-model.ts'
 import {readLatestMarker, type OpenGoalIssue, type RepoRepository} from './dispatch-run.ts'
 
+/** What one live read of a repository says about it: the identity behind the name, and whether it is public now. */
+export interface LiveRepository {
+  readonly nodeId: string
+  /**
+   * The API's `visibility` as written (`public`, `private` or `internal`), or null when the answer has none, has one
+   * that is not a non-empty string, or says `public` while `private` is true: a guess is never a visibility.
+   */
+  readonly visibility: string | null
+}
+
 /**
- * The node ID of the repository that `target` names right now, through the target owner's client. A name can be
- * reused by another repository before the registry refreshes, so a domain item is dispatched only to the repository
- * its brief names. A client with no repository API, a failed read or an answer with no node ID fails with one fixed
- * message that names nothing of the failure.
+ * The repository that `target` names right now, through the target owner's client: its node ID and its visibility,
+ * from the same response. A name can be reused by another repository before the registry refreshes, and a visibility
+ * change does not change the node ID, so a domain item is dispatched only to the repository its brief names while
+ * that repository is public. A client with no repository API, a failed read or an answer with no node ID fails with
+ * one fixed message that names nothing of the failure.
  */
-export async function loadLiveNodeId(octokit: CrossRepoDispatchOctokitClient, target: DispatchTarget): Promise<string> {
+export async function loadLiveRepository(
+  octokit: CrossRepoDispatchOctokitClient,
+  target: DispatchTarget,
+): Promise<LiveRepository> {
   const failure = new Error('the repository cannot be read')
   if (octokit.rest.repos?.get === undefined) throw failure
   let data: unknown
@@ -26,9 +40,16 @@ export async function loadLiveNodeId(octokit: CrossRepoDispatchOctokitClient, ta
   } catch {
     throw failure
   }
-  const nodeId = data !== null && typeof data === 'object' ? (data as Record<string, unknown>).node_id : undefined
+  const answer = data !== null && typeof data === 'object' ? (data as Record<string, unknown>) : {}
+  const nodeId = answer.node_id
   if (typeof nodeId !== 'string' || nodeId === '') throw failure
-  return nodeId
+  const visibility =
+    typeof answer.visibility === 'string' && answer.visibility !== ''
+      ? answer.visibility === 'public' && answer.private === true
+        ? null
+        : answer.visibility
+      : null
+  return {nodeId, visibility}
 }
 
 /**

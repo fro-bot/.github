@@ -7,7 +7,7 @@ import type {
 } from './dispatch-model.ts'
 import {Buffer} from 'node:buffer'
 import {describe, expect, it, vi} from 'vitest'
-import {loadBriefFile, loadLiveNodeId} from './dispatch-github.ts'
+import {loadBriefFile, loadLiveRepository} from './dispatch-github.ts'
 import {buildMarkerComment, extractMarker} from './dispatch-marker.ts'
 import {HELD_MESSAGE, isGoalStateBody, REQUIRED_APPROVER} from './dispatch-model.ts'
 import {checkBriefIdentity, parseBriefDomain, parseBriefReference} from './dispatch-plan.ts'
@@ -104,8 +104,10 @@ async function dispatch(input: {
     },
     nonceSource: () => 'nonce-1',
     // A live repository that agrees with its registry row, unless a test says otherwise.
-    loadLiveNodeId: async target =>
-      input.registry.find(entry => entry.owner === target.owner && entry.name === target.name)?.node_id ?? '',
+    loadLiveRepository: async target => ({
+      nodeId: input.registry.find(entry => entry.owner === target.owner && entry.name === target.name)?.node_id ?? '',
+      visibility: 'public',
+    }),
     ...input.extra,
   })
   return {counts: result.counts, dispatched, comments: input.comments}
@@ -314,12 +316,15 @@ describe('an item may carry a gate reason', () => {
     items: [{id: 'item-1', target: {owner: 'a', name: 'b'}, promptHash: 'h', status: 'blocked', ...item}],
   })
 
-  it.each(['brief-reference-invalid', 'brief-content-invalid', 'brief-identity-mismatch', 'brief-identity-ambiguous'])(
-    'accepts %s',
-    reason => {
-      expect(isGoalStateBody(body({gateReason: reason}))).toBe(true)
-    },
-  )
+  it.each([
+    'brief-reference-invalid',
+    'brief-content-invalid',
+    'brief-identity-mismatch',
+    'brief-identity-ambiguous',
+    'target-not-public',
+  ])('accepts %s', reason => {
+    expect(isGoalStateBody(body({gateReason: reason}))).toBe(true)
+  })
 
   it('accepts a marker item written before the field existed', () => {
     expect(isGoalStateBody(body({}))).toBe(true)
@@ -575,30 +580,33 @@ function clientWith(getContent: (params: unknown) => Promise<unknown>): CrossRep
   return {rest: {...mockOctokit([]).rest, repos: {getContent: getContent as never}}}
 }
 
-describe("runDispatch: the target's live node ID, read before any intent is written", () => {
+describe("runDispatch: the target's live repository, read before any intent is written", () => {
   const nodeIds = [{nameWithOwner: 'fro-bot/dashboard', nodeId: 'R_dash'}]
   const goal = () => pendingGoal(DASHBOARD, BRIEF_LINE())
   const load = async () => briefFile(nodeIds)
+  const live =
+    (nodeId: string, visibility: string | null = 'public') =>
+    async () => ({nodeId, visibility})
 
-  it('reads it once for the target, after the identity check passes, and dispatches when it equals the brief', async () => {
-    const loadLiveNodeId = vi.fn(async (_target: DispatchTarget) => 'R_dash')
+  it("reads it once for the target, after the identity check passes, and dispatches when it is the brief's and public", async () => {
+    const loadLiveRepository = vi.fn(async (_target: DispatchTarget) => ({nodeId: 'R_dash', visibility: 'public'}))
 
     const result = await dispatch({
       comments: goal().comments,
       registry: [row(DASHBOARD, 'R_dash')],
-      extra: {loadBriefFile: load, loadLiveNodeId},
+      extra: {loadBriefFile: load, loadLiveRepository},
     })
 
     expect(result.counts).toMatchObject({dispatched: 1, held: 0, blocked: 0})
-    expect(loadLiveNodeId).toHaveBeenCalledTimes(1)
-    expect(loadLiveNodeId).toHaveBeenCalledWith(DASHBOARD)
+    expect(loadLiveRepository).toHaveBeenCalledTimes(1)
+    expect(loadLiveRepository).toHaveBeenCalledWith(DASHBOARD)
   })
 
   it('blocks for good and dispatches nothing when the repository behind the name differs from the brief, however fresh the registry row looks', async () => {
     const result = await dispatch({
       comments: goal().comments,
       registry: [row(DASHBOARD, 'R_dash')],
-      extra: {loadBriefFile: load, loadLiveNodeId: async () => 'R_reused_name'},
+      extra: {loadBriefFile: load, loadLiveRepository: live('R_reused_name')},
     })
 
     expect(result.dispatched).toStrictEqual([])
@@ -607,14 +615,59 @@ describe("runDispatch: the target's live node ID, read before any intent is writ
     expect(items(result.comments).map(item => item.status)).not.toContain('intent')
   })
 
-  it.each([
-    ['the lookup fails', async () => Promise.reject(new Error('502 secret detail'))],
-    ['the lookup answers nothing', async () => ''],
-  ])('holds the item, with no intent written, when %s', async (_name, loadLiveNodeId) => {
+  it("blocks on the node ID first: another repository's visibility never decides", async () => {
     const result = await dispatch({
       comments: goal().comments,
       registry: [row(DASHBOARD, 'R_dash')],
-      extra: {loadBriefFile: load, loadLiveNodeId},
+      extra: {loadBriefFile: load, loadLiveRepository: live('R_reused_name', 'private')},
+    })
+
+    expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'brief-identity-mismatch'})
+  })
+
+  it.each(['private', 'internal'])(
+    'blocks for good, with no intent and no dispatch, when the matching repository is now %s though its registry row says public',
+    async visibility => {
+      const result = await dispatch({
+        comments: goal().comments,
+        registry: [row(DASHBOARD, 'R_dash', {private: false})],
+        extra: {loadBriefFile: load, loadLiveRepository: live('R_dash', visibility)},
+      })
+
+      expect(result.dispatched).toStrictEqual([])
+      expect(result.counts).toMatchObject({dispatched: 0, blocked: 1, held: 0})
+      expect(items(result.comments)[0]).toMatchObject({status: 'blocked', gateReason: 'target-not-public'})
+      expect(items(result.comments).map(item => item.status)).not.toContain('intent')
+    },
+  )
+
+  it.each([
+    ['no visibility', null],
+    ['a visibility that is not one of the three', 'secret'],
+    ['an empty visibility', ''],
+    ['a visibility in another case', 'Public'],
+  ])('holds the item, with no intent and no dispatch, when the live answer has %s', async (_name, visibility) => {
+    const result = await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: load, loadLiveRepository: live('R_dash', visibility)},
+    })
+
+    expect(result.dispatched).toStrictEqual([])
+    expect(result.counts).toMatchObject({dispatched: 0, held: 1, blocked: 0})
+    expect(items(result.comments)[0]).toMatchObject({status: 'pending', hold: 'brief-read-failed'})
+    expect(items(result.comments)[0]).not.toHaveProperty('gateReason')
+    expect(items(result.comments).map(item => item.status)).not.toContain('intent')
+  })
+
+  it.each([
+    ['the lookup fails', async () => Promise.reject(new Error('502 secret detail'))],
+    ['the lookup answers no node ID', live('')],
+  ])('holds the item, with no intent written, when %s', async (_name, loadLiveRepository) => {
+    const result = await dispatch({
+      comments: goal().comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: load, loadLiveRepository},
     })
 
     expect(result.dispatched).toStrictEqual([])
@@ -627,7 +680,7 @@ describe("runDispatch: the target's live node ID, read before any intent is writ
     const result = await dispatch({
       comments: goal().comments,
       registry: [row(DASHBOARD, 'R_dash')],
-      extra: {loadBriefFile: load, loadLiveNodeId: undefined},
+      extra: {loadBriefFile: load, loadLiveRepository: undefined},
     })
 
     expect(result.dispatched).toStrictEqual([])
@@ -635,17 +688,17 @@ describe("runDispatch: the target's live node ID, read before any intent is writ
   })
 
   it('looks nothing up for an item the identity check already blocks, or one with no brief', async () => {
-    const loadLiveNodeId = vi.fn(async () => 'R_dash')
+    const loadLiveRepository = vi.fn(live('R_dash'))
     const plain = pendingGoal(DASHBOARD, 'Update the docs')
 
     await dispatch({
       comments: goal().comments,
       registry: [row(DASHBOARD, 'R_other')],
-      extra: {loadBriefFile: load, loadLiveNodeId},
+      extra: {loadBriefFile: load, loadLiveRepository},
     })
-    await dispatch({comments: plain.comments, registry: [row(DASHBOARD, 'R_other')], extra: {loadLiveNodeId}})
+    await dispatch({comments: plain.comments, registry: [row(DASHBOARD, 'R_other')], extra: {loadLiveRepository}})
 
-    expect(loadLiveNodeId).not.toHaveBeenCalled()
+    expect(loadLiveRepository).not.toHaveBeenCalled()
   })
 
   it('holds an item whose lookup fails but dispatches another of the same goal', async () => {
@@ -667,15 +720,49 @@ describe("runDispatch: the target's live node ID, read before any intent is writ
       registry: [row(DASHBOARD, 'R_dash'), row(agent, 'R_agent')],
       extra: {
         loadBriefFile: async () => briefFile([...nodeIds, {nameWithOwner: 'fro-bot/agent', nodeId: 'R_agent'}]),
-        loadLiveNodeId: async (target: DispatchTarget) => {
+        loadLiveRepository: async (target: DispatchTarget) => {
           if (target.name === 'dashboard') throw new Error('502')
-          return 'R_agent'
+          return {nodeId: 'R_agent', visibility: 'public'}
         },
       },
     })
 
     expect(result.dispatched.map(call => call.repo)).toStrictEqual(['agent'])
     expect(result.counts).toMatchObject({dispatched: 1, held: 1})
+  })
+})
+
+describe('runDispatch: a hold is counted whether or not the planner would have dispatched the item', () => {
+  const nodeIds = [{nameWithOwner: 'fro-bot/dashboard', nodeId: 'R_dash'}]
+  const inFlightElsewhere: GoalState = {
+    goal: 'other',
+    markerHash: '',
+    items: [{id: 'item-9', target: DASHBOARD, promptHash: 'x', status: 'dispatched'}],
+  }
+
+  it('counts the held item when another open goal has the same target in flight, so the run can say so', async () => {
+    const result = await dispatch({
+      comments: pendingGoal(DASHBOARD, BRIEF_LINE()).comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {
+        loadBriefFile: async () => Promise.reject(new Error('503')),
+        loadOtherOpenGoalMarkers: async () => [inFlightElsewhere],
+      },
+    })
+
+    expect(result.dispatched).toStrictEqual([])
+    expect(result.counts).toMatchObject({held: 1, deferred: 1, dispatched: 0})
+    expect(items(result.comments)[0]).toMatchObject({status: 'pending', hold: 'brief-read-failed'})
+  })
+
+  it('counts nothing as held for a deferred item whose reads all succeed', async () => {
+    const result = await dispatch({
+      comments: pendingGoal(DASHBOARD, BRIEF_LINE()).comments,
+      registry: [row(DASHBOARD, 'R_dash')],
+      extra: {loadBriefFile: async () => briefFile(nodeIds), loadOtherOpenGoalMarkers: async () => [inFlightElsewhere]},
+    })
+
+    expect(result.counts).toMatchObject({held: 0, deferred: 1, dispatched: 0})
   })
 })
 
@@ -760,26 +847,60 @@ describe('runTrack: an item held for a brief read', () => {
   })
 })
 
-describe('loadLiveNodeId', () => {
+describe('loadLiveRepository', () => {
   const clientWith = (get: (params: unknown) => Promise<unknown>): CrossRepoDispatchOctokitClient => ({
     rest: {...mockOctokit([]).rest, repos: {getContent: async () => ({data: {}}), get: get as never}},
   })
 
-  it('reads the repository through the target client and returns its node ID', async () => {
-    const get = vi.fn(async () => ({data: {node_id: 'R_dash'}}))
+  it('reads the repository through the target client and returns its node ID and visibility', async () => {
+    const get = vi.fn(async () => ({data: {node_id: 'R_dash', visibility: 'public', private: false}}))
 
-    expect(await loadLiveNodeId(clientWith(get), DASHBOARD)).toBe('R_dash')
+    expect(await loadLiveRepository(clientWith(get), DASHBOARD)).toStrictEqual({nodeId: 'R_dash', visibility: 'public'})
     expect(get).toHaveBeenCalledWith({owner: 'fro-bot', repo: 'dashboard'})
   })
 
+  it.each(['private', 'internal'])('returns %s as the API wrote it', async visibility => {
+    const answer = {data: {node_id: 'R_dash', visibility, private: true}}
+
+    expect(
+      await loadLiveRepository(
+        clientWith(async () => answer),
+        DASHBOARD,
+      ),
+    ).toStrictEqual({
+      nodeId: 'R_dash',
+      visibility,
+    })
+  })
+
   it.each([
-    ['no node ID', {data: {}}],
-    ['an empty node ID', {data: {node_id: ''}}],
-    ['a node ID that is not a string', {data: {node_id: 3}}],
+    ['no visibility', {data: {node_id: 'R_dash', private: false}}],
+    ['a visibility that is not a string', {data: {node_id: 'R_dash', visibility: 1}}],
+    ['an empty visibility', {data: {node_id: 'R_dash', visibility: ''}}],
+    [
+      'a public visibility that contradicts private: true',
+      {data: {node_id: 'R_dash', visibility: 'public', private: true}},
+    ],
+  ])('returns no visibility for %s, so the item is held and never trusted on a guess', async (_name, answer) => {
+    expect(
+      await loadLiveRepository(
+        clientWith(async () => answer),
+        DASHBOARD,
+      ),
+    ).toStrictEqual({
+      nodeId: 'R_dash',
+      visibility: null,
+    })
+  })
+
+  it.each([
+    ['no node ID', {data: {visibility: 'public'}}],
+    ['an empty node ID', {data: {node_id: '', visibility: 'public'}}],
+    ['a node ID that is not a string', {data: {node_id: 3, visibility: 'public'}}],
     ['no data', {}],
   ])('fails with the fixed message for %s', async (_name, answer) => {
     await expect(
-      loadLiveNodeId(
+      loadLiveRepository(
         clientWith(async () => answer),
         DASHBOARD,
       ),
@@ -788,7 +909,7 @@ describe('loadLiveNodeId', () => {
 
   it('fails with the fixed message when the read fails, naming nothing of the failure', async () => {
     await expect(
-      loadLiveNodeId(
+      loadLiveRepository(
         clientWith(async () => Promise.reject(new Error('secret token detail'))),
         DASHBOARD,
       ),
@@ -796,7 +917,9 @@ describe('loadLiveNodeId', () => {
   })
 
   it('fails when the client has no repository API', async () => {
-    await expect(loadLiveNodeId(mockOctokit([]), DASHBOARD)).rejects.toThrow(new Error('the repository cannot be read'))
+    await expect(loadLiveRepository(mockOctokit([]), DASHBOARD)).rejects.toThrow(
+      new Error('the repository cannot be read'),
+    )
   })
 })
 

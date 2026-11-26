@@ -126,10 +126,15 @@ export const HELD_MESSAGE = 'brief read failed; remove and reapply dispatch-appr
  * (`brief-reference-invalid`), the file at the pinned commit is no usable brief for the domain
  * (`brief-content-invalid`), the target is not the repository the program names, by name or by node ID
  * (`brief-identity-mismatch`), or its name or node ID resolves to more than one registry row
- * (`brief-identity-ambiguous`). A brief that cannot be read this run is none of these: it leaves the item pending.
+ * (`brief-identity-ambiguous`), or the repository is confirmed not public right now (`target-not-public`). A read that
+ * fails, or a visibility that is missing or unrecognized, is none of these: it leaves the item pending.
  */
 export type GateReason =
-  'brief-reference-invalid' | 'brief-content-invalid' | 'brief-identity-mismatch' | 'brief-identity-ambiguous'
+  | 'brief-reference-invalid'
+  | 'brief-content-invalid'
+  | 'brief-identity-mismatch'
+  | 'brief-identity-ambiguous'
+  | 'target-not-public'
 
 /**
  * Completion receipt posted by a worker to the coordination issue. `nonce`
@@ -263,6 +268,7 @@ const GATE_REASONS: ReadonlySet<GateReason> = new Set([
   'brief-content-invalid',
   'brief-identity-mismatch',
   'brief-identity-ambiguous',
+  'target-not-public',
 ])
 
 function isDispatchTarget(value: unknown): value is DispatchTarget {

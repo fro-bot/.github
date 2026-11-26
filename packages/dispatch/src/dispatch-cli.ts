@@ -9,7 +9,7 @@ import {
   findRunByCorrelationId,
   findRunConclusion,
   loadBriefFile,
-  loadLiveNodeId,
+  loadLiveRepository,
   loadOpenGoalIssues,
   loadOtherOpenGoalMarkers,
   parseTargetTokens,
@@ -97,7 +97,7 @@ export async function runDispatchCli(
     approveLabel,
     loadRegistry: loadRegistryFromDisk,
     loadBriefFile: async (briefRepo, commit) => loadBriefFile(octokit, briefRepo, commit),
-    loadLiveNodeId: async target => loadLiveNodeId(targetClientFor(target.owner), target),
+    loadLiveRepository: async target => loadLiveRepository(targetClientFor(target.owner), target),
     loadOtherOpenGoalMarkers: async () => loadOtherOpenGoalMarkers(octokit, repo, event.issue.number),
     findRunByCorrelationId: async (target, correlationId) =>
       findRunByCorrelationId(targetClientFor(target.owner))(target, correlationId),
