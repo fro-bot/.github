@@ -740,13 +740,17 @@ describe('the committed program-domains.json', () => {
   // Whether each listed repository is tracked, public and not archived is checked where the domain is used
   // (checkDomainReposInRegistry), not here: a registry change must never fail a pull request or a promotion.
 
-  it('lists the harness-tools domain with its three repositories', () => {
+  it('lists the harness-tools domain with its repositories', () => {
     const harness = selectDomain(committed, 'harness-tools')
 
     expect(harness.repos.map(repo => repo.nameWithOwner)).toEqual([
       'marcusrbrown/systematic',
       'fro-bot/space-bus',
       'fro-bot/dashboard',
+      'marcusrbrown/metacogs',
+      'marcusrbrown/opencode-copilot-delegate',
+      'marcusrbrown/dev-like',
+      'marcusrbrown/mothership',
     ])
   })
 
