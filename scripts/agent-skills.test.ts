@@ -275,6 +275,42 @@ describe('the cross-repo-program skill: a start from a program proposal', () => 
     )
   })
 
+  it('puts the proposal URL in the tracker issue body from creation, and the Project URL there as soon as the Project exists', () => {
+    expect(flat).toContain("carries the proposal's URL from the moment you create it")
+    expect(flat).toContain("record the Project's URL in the tracker issue body as soon as the Project exists")
+  })
+
+  it('searches for fro-bot program-tracker issues that hold the proposal URL, in every state and by exact body match, before creating anything', () => {
+    const search =
+      '`gh issue list --repo fro-bot/.github --label program-tracker --author fro-bot --state all --search "<proposal URL> in:body" --limit 100 --json url,number,state,body`'
+
+    expect(flat).toContain(
+      'Before you create anything, step 1 also searches for a leftover of an earlier start from this proposal',
+    )
+    expect(flat).toContain(search)
+    expect(flat).toContain('keeping only issues whose body itself contains the proposal URL')
+    expect(flat.indexOf(search)).toBeLessThan(flat.indexOf('On accept, start as above'))
+  })
+
+  it('resumes exactly one open match: its tracker and recorded Project are reused, only what is missing is created', () => {
+    expect(flat).toContain(
+      'with exactly one open match, resume it: reuse that tracker issue and the Project its body records, create only what is missing, and open the start pull request if none is open',
+    )
+    expect(flat).toContain('a resumed match is not reported as already covered')
+    expect(flat).toContain(
+      'if its start pull request already merged, the config covers the domain, so close the proposal as already covered',
+    )
+  })
+
+  it('creates nothing for a closed match, several matches, an unreadable recorded Project or a failed search, and tells the operator what to do', () => {
+    expect(flat).toContain(
+      'a closed match, more than one match, a recorded Project that cannot be read, or a failed search',
+    )
+    expect(flat).toContain(
+      "create nothing and comment on the proposal with the links and the operator's step (close or fix the leftovers, then reapply `program-approved`)",
+    )
+  })
+
   it('names no reply prefix, pickup or dispatch from Observe any more', () => {
     expect(flat).not.toContain('Program start accepted')
     expect(flat).not.toContain('Program start declined')
