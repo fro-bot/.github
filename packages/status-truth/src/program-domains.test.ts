@@ -754,13 +754,30 @@ describe('the committed program-domains.json', () => {
     ])
   })
 
-  it('gives the brief standards for the three areas and leaves no repository an exception it has not earned', () => {
-    const {brief} = selectDomain(committed, 'harness-tools')
+  it('gives the brief standards for the three areas and records only the exception systematic has earned', () => {
+    const {brief, repos} = selectDomain(committed, 'harness-tools')
 
     expect(brief.security.length).toBeGreaterThan(0)
     expect(brief.automation.length).toBeGreaterThan(0)
     expect(brief.developerExperience.length).toBeGreaterThan(0)
-    expect(brief.exceptions).toEqual([])
+    // The release-notes prompt dispatch stays comment-only by a documented contract; no other repository is excused.
+    expect(brief.exceptions.map(exception => exception.nameWithOwner)).toEqual(['marcusrbrown/systematic'])
+    for (const exception of brief.exceptions) {
+      expect(repos.map(repo => repo.nameWithOwner)).toContain(exception.nameWithOwner)
+      expect(exception.reason).toMatch(/comment-only/)
+      expect(exception.reason).toMatch(/dispatch-to-pull-request/)
+    }
+  })
+
+  it('words each standard so it can be checked against repository state, with no reference to this repository', () => {
+    const {brief} = selectDomain(committed, 'harness-tools')
+    const standards = [...brief.security, ...brief.automation, ...brief.developerExperience].join('\n')
+
+    expect(standards).toContain('FRO_BOT_MODEL')
+    expect(standards).toContain('.agents/skills/')
+    expect(standards).toContain('automerge')
+    expect(standards).toContain('commit SHA')
+    expect(standards).not.toMatch(/agent-model resolver|composite/i)
   })
 
   it('lists no repository in two domains', () => {

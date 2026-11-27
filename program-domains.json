@@ -15,19 +15,24 @@
         "security": [
           "Every job that runs on a pull request, an issue or a comment checks out with persist-credentials: false.",
           "Every agent step runs with isolate-agent.",
-          "The agent action is pinned to a release, not to a moving ref."
+          "The agent action is pinned to a release by commit SHA, with the version in a comment, not to a moving ref."
         ],
         "automation": [
-          "Agent steps set repo-skills so the agent loads the repository's own skills from the default branch, on the triggers this repository allows: schedule and workflow_dispatch always, and issues, comments and pull requests only from an owner, member or collaborator on a same-repository head.",
-          "Each job resolves its agent model once through the agent-model resolver, before its first agent step, and no agent step reads a model variable directly.",
+          "Where the repository has .agents/skills/, agent steps set repo-skills so the agent loads the repository's own skills from the default branch, on the triggers this repository allows: schedule and workflow_dispatch always, and issues, comments and pull requests only from an owner, member or collaborator on a same-repository head.",
+          "Each agent step's model comes from a repository variable chosen by the kind of work, falling back to FRO_BOT_MODEL.",
           "The agent reviews pull requests opened by the fro-bot user, which GitHub cannot request a review for.",
           "A prompt dispatched to the repository's agent is routed to a branch and a pull request, not kept comment-only and not run in a discarded working directory.",
-          "Renovate Approve applies only to a repository that uses Renovate automerge."
+          "Renovate Approve applies only where the repository's Renovate config enables automerge."
         ],
         "developerExperience": [
           "The repository has an AGENTS.md that states the rules its agent works under; the agent holds every ask in this brief against it and may decline or counter."
         ],
-        "exceptions": []
+        "exceptions": [
+          {
+            "nameWithOwner": "marcusrbrown/systematic",
+            "reason": "Its release-notes prompt dispatch stays comment-only by a documented contract; the dispatch-to-pull-request standard applies to every other dispatched prompt."
+          }
+        ]
       }
     }
   ]
