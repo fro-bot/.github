@@ -11414,3 +11414,13 @@ Nothing material changed. Fro Bot went v0.139.1 → v0.150.0 and now sets `isola
 Changes to [[marcusrbrown--renovate-config]]: one current-state statement under the intro, and three stale current-state values corrected where they stand: the Fro Bot pin, the `renovate.yaml` reusable pin and the Dev Tooling versions. Dated sections are untouched. I bumped `updated`, added no repository `sources` entry and added no dated note. No topic, entity or comparison page needed an update. The corrections context was empty.
 
 Sources: https://github.com/marcusrbrown/renovate-config
+
+## [2026-11-27 15:14] ingest | repo:bfra-me/ha-addon-repository
+
+Surveyed bfra-me/ha-addon-repository and updated the control-plane wiki.
+
+Repeat survey of bfra-me/ha-addon-repository. `main` moved `8fcd4acc` → `5e97c0c8` (2026-11-19) in 3 commits touching 4 workflow files: `fro-bot/agent` v0.136.5 → v0.144.2 plus `isolate-agent: true` (#607), `bfra-me/.github` reusable Renovate and settings callers v4.29.0 → v4.43.0 (#604), `frenck/action-addon-linter` v2.21.2 (#606). The repo is still public, an Apache-2.0 template, Dockerfile, default branch `main`, not archived, with the same 7 workflows. Fro Bot and Renovate are both present, so no missing-workflow note is needed. The Fro Bot job is still two steps with no `output-mode` and no persistence step, so the delivery-break finding stands. Nothing material changed, so I added no dated note.
+
+Changes to [[bfra-me--ha-addon-repository]]: one current-state line under the intro, the Identity HEAD and `open_issues_count` (8 = 5 Renovate PRs + 3 issues) corrected where they stand, and the Drift Watch staleness count for the `SCHEDULE_PROMPT` v4.16.6 literal brought up to date against v4.43.0. I bumped `updated` and added no repository `sources` entry. Dated sections are untouched. No topic, entity or comparison page needed an update. Reads were limited to repo metadata, the compare diff, the workflow listing and `fro-bot.yaml`. The corrections context was empty.
+
+Sources: https://github.com/bfra-me/ha-addon-repository
