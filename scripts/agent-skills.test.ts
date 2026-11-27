@@ -6,6 +6,13 @@ import {parse} from 'yaml'
 const repositoryRoot = resolve(import.meta.dirname, '..')
 const skillsDirectory = resolve(repositoryRoot, '.agents/skills')
 
+const cleanupSentence =
+  'If this PR is closed without merging, the tracker issue #<n> and Project <number> are to be removed: close the issue and delete the Project.'
+// GitHub links a closing keyword to the reference that follows it, with an optional colon between. The reference is
+// `#n`, `OWNER/REPO#n` or an issue URL.
+const closingKeywordBeforeReference =
+  /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?):?\s+(?:#|<n>|[\w.-]+\/[\w.-]+#|https:\/\/github\.com\/\S+\/issues\/)/i
+
 interface SkillFile {
   readonly directory: string
   readonly frontmatter: Record<string, unknown>
@@ -112,11 +119,6 @@ describe('the cross-repo-program skill', () => {
   it('keeps a GitHub closing keyword out of the start pull request body, with the exact cleanup sentence', () => {
     const {body} = readSkill('cross-repo-program')
     const text = body.replaceAll(/\s+/g, ' ')
-    const cleanupSentence =
-      'If this PR is closed without merging, the tracker issue #<n> and Project <number> are to be removed: close the issue and delete the Project.'
-    // GitHub links a closing keyword to the reference that follows it, with an optional colon between.
-    const closingKeywordBeforeReference =
-      /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?):?\s+(?:#|<n>|https:\/\/github\.com\/\S+\/issues\/)/i
 
     expect(text).toContain(cleanupSentence)
     expect(text).toContain('no closing keyword directly before an issue reference')
@@ -124,6 +126,16 @@ describe('the cross-repo-program skill', () => {
     expect(cleanupSentence).not.toMatch(closingKeywordBeforeReference)
     expect(text).not.toMatch(closingKeywordBeforeReference)
     expect(text).not.toContain('so they can be closed if the PR is rejected')
+  })
+
+  it('has a closing-keyword matcher that flags plain and qualified references and passes the cleanup sentence', () => {
+    expect('closes fro-bot/.github#4357').toMatch(closingKeywordBeforeReference)
+    expect('Resolved: fro-bot/.github#4357').toMatch(closingKeywordBeforeReference)
+    expect('close #4357').toMatch(closingKeywordBeforeReference)
+    expect('fixes #4357').toMatch(closingKeywordBeforeReference)
+    expect('closed https://github.com/fro-bot/.github/issues/4357').toMatch(closingKeywordBeforeReference)
+    expect(cleanupSentence).not.toMatch(closingKeywordBeforeReference)
+    expect(cleanupSentence.replace('#<n>', '#4357')).not.toMatch(closingKeywordBeforeReference)
   })
 
   it('says requests go in comments and a body edit is not read as a request', () => {
