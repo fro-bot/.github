@@ -39,6 +39,7 @@ import {
 import {
   goalReaders,
   memoizeReaders,
+  parseRevisionRequests,
   planAnswers,
   planGoals,
   type AnswerPlan,
@@ -134,6 +135,8 @@ export interface MarkerData {
 export interface DomainWake {
   /** The Part 0 repos that need their parity-follows comment. */
   transitions: number
+  /** The repos that need the revision comment of an operator request. */
+  revisions?: number
   /** The digest of this run's attention list. */
   digest: string
   /** The size of that list; zero never wakes. */
@@ -251,6 +254,8 @@ export interface DomainPreflight {
   unknown_parts: AnswerPlan['unknown_parts']
   /** The Part 0 repos whose Part 0 has merged and whose part issue lacks the parity-follows comment; the tracker does these first. */
   parity_transitions: AnswerPlan['parity_transitions']
+  /** The repos whose operator asked for a revised attempt and whose part issue lacks the revision comment; the tracker does these first. */
+  revision_transitions: AnswerPlan['revision_transitions']
   /** The text that follows the goal duty in the tracker prompt; empty when there is no part. It starts with a blank line. */
   answer_instructions: string
   /**
@@ -269,6 +274,8 @@ export interface TrackerComment {
   /** `id` is the author's numeric user ID; fixtures and old callers may omit it. */
   author: {login: string; id?: number}
   body: string
+  /** When the comment was created (ISO 8601). Read for an operator's revision request; a comment without it is no request. */
+  created_at?: string
 }
 
 const RELEASE_REPOS = {agent: 'fro-bot/agent', dashboard: 'fro-bot/dashboard'} as const
@@ -667,6 +674,7 @@ export function buildMarker(hash: string, lastMentionId: number, domainDigest?: 
  *   wake to open them. The count comes from the preflight's own list, so a run that stops partway is finished by
  *   the next one.
  * - Same hash with Part 0 repos of a domain program that need their parity-follows comment: wake to post it.
+ * - Same hash with repos whose operator asked for a revised attempt and that need its revision comment: wake to post it.
  * - Same hash with something in a domain program that needs attention (a stalled or unknown part, an error) whose
  *   digest differs from the last marker's: wake to report it. The same state on the next run is not a wake, so a part
  *   that stays stalled does not wake the tracker daily.
@@ -694,6 +702,7 @@ export function decideComment(
   const bootstrap = bootstrapRepos.length > 0 ? `; bootstrap pending (${bootstrapRepos.length})` : ''
   const goals = goalBatches > 0 ? `; goal batches pending (${goalBatches})` : ''
   const handOvers = domainWake?.transitions ?? 0
+  const revisions = domainWake?.revisions ?? 0
   const attention = domainWake?.attention ?? 0
   // A non-empty list wakes when its digest differs from the marker's. A list that has emptied wakes once, when the
   // marker still holds the digest of a non-empty one: the agent refreshes the Parts section and writes the empty digest,
@@ -705,6 +714,7 @@ export function decideComment(
       : previousMarker.domain_digest !== undefined && previousMarker.domain_digest !== domainWake.digest)
   const domain =
     (handOvers > 0 ? `; Part 0 hand-over pending (${handOvers})` : '') +
+    (revisions > 0 ? `; revision hand-over pending (${revisions})` : '') +
     (attentionChanged
       ? attention > 0
         ? `; domain attention changed (${attention})`
@@ -752,6 +762,15 @@ export function decideComment(
     return {
       should_comment: true,
       reason: `Part 0 hand-over — ${countOf(handOvers, 'part issue needs', 'part issues need')} its parity-follows comment${attentionChanged ? (attention > 0 ? `; domain attention changed (${attention})` : '; domain attention cleared') : ''}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (revisions > 0) {
+    return {
+      should_comment: true,
+      reason: `revision hand-over — ${countOf(revisions, 'part issue needs', 'part issues need')} its revision comment`,
       hash,
       snapshot,
     }
@@ -1013,7 +1032,7 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
       '--paginate',
       `repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
       '--jq',
-      '.[] | {id, login: (.user.login // ""), uid: (.user.id // 0), body: (.body // "")}',
+      '.[] | {id, login: (.user.login // ""), uid: (.user.id // 0), body: (.body // ""), created_at: (.created_at // "")}',
     ],
     {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
   )
@@ -1035,6 +1054,7 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
         id: parsed.id,
         author: userId === undefined ? {login: parsed.login} : {login: parsed.login, id: userId},
         body: parsed.body,
+        ...(typeof parsed.created_at === 'string' && parsed.created_at !== '' ? {created_at: parsed.created_at} : {}),
       }
     })
 }
@@ -1372,6 +1392,8 @@ interface DomainPlanInput {
   unreadableIssues: ReadonlySet<string>
   /** The Project items of confirmed repos whose identity read failed: their parts are unknown, and nothing is written for them. */
   unverified: readonly ProjectItem[]
+  /** The operator's `revise <owner/repo>` requests on the tracker issue. */
+  revisions: ReturnType<typeof parseRevisionRequests>
 }
 
 /**
@@ -1417,6 +1439,7 @@ function planDomain(
         held_parts: [],
         unknown_parts: [],
         parity_transitions: [],
+        revision_transitions: [],
         answer_instructions: '',
       }),
       ready: [],
@@ -1526,6 +1549,7 @@ function planDomain(
     part0Names,
     partIssues,
     projectItems: input.projectItems,
+    revisions: input.revisions,
   }
   // The goal plan and the answer plan read the same goals, comments, Part 0 references and part issues: once each.
   const readers = memoizeReaders(goalReaders(tracker.repo, env))
@@ -1878,6 +1902,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
             now,
             unreadableIssues,
             unverified,
+            revisions: parseRevisionRequests(comments, entry),
           },
           env,
         )
@@ -1912,6 +1937,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
       ? undefined
       : {
           transitions: planned.domain.parity_transitions.length,
+          revisions: planned.domain.revision_transitions.length,
           digest: planned.domain.attention_digest,
           attention: planned.domain.attention_count,
         }

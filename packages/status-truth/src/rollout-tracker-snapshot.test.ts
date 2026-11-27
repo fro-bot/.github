@@ -16,7 +16,7 @@ import {join, resolve} from 'node:path'
 import process from 'node:process'
 import {promisify} from 'node:util'
 import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
-import {buildResultMarker} from '@fro-bot/dispatch/dispatch-receipts'
+import {buildResultMarker, hashNonce} from '@fro-bot/dispatch/dispatch-receipts'
 import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
@@ -28,6 +28,7 @@ import {
   goalReposMarker,
   parityFollowsComment,
   parityFollowsMarker,
+  revisionComment,
 } from './rollout-tracker-goals.ts'
 import {
   buildMarker,
@@ -5897,6 +5898,204 @@ describe('a domain program: part issues with the brief', () => {
       })
     })
 
+    describe('a revised ask after a decline or a missing receipt', () => {
+      const OPERATOR = {login: 'marcusrbrown', id: 831617}
+      /** The tracker comment of an operator request, written an hour before the run unless `when` says otherwise. */
+      const asked = (
+        id: number,
+        body = 'revise fro-bot/dashboard',
+        author: TrackerComment['author'] = OPERATOR,
+        when = at(0, -3_600_000),
+      ) => ({id, author, body, created_at: when})
+      /** The first goal's item declined two hours before the run, with the authentic receipt comment that says so. */
+      const declinedFirst = (changes: Record<string, unknown> = {}): Partial<DomainRun> => {
+        const base = dashboardGoal({
+          status: 'blocked',
+          blockedReason: 'declined',
+          epoch: ms(1),
+          correlationId: 'corr',
+          nonceHash: hashNonce('a-nonce'),
+          ...changes,
+        })
+        return {
+          ...base,
+          goalComments: {
+            ...base.goalComments,
+            '50': [
+              ...(base.goalComments?.['50'] ?? []),
+              {
+                id: 4,
+                author: 'fro-bot',
+                created_at: at(0, -7_200_000),
+                body: buildResultMarker({correlationId: 'corr', nonce: 'a-nonce', status: 'declined', summary: 'no'}),
+              },
+            ],
+          },
+        }
+      }
+      const revisionAnchor = (when: string, commentId = 700) =>
+        commented(901, 'fro-bot', when, revisionComment('harness', dashboard.nodeId, commentId, TRACKER_URL))
+      const declinedActivity = (timeline: unknown[] = []) =>
+        quiet({[dashboard.nameWithOwner]: {labels: ['part-declined'], timeline}})
+      /** The revision goal (60) of comment 700, after the declined first goal (50): its checklist is posted and its item is in the Project. */
+      const withRevisionGoal = (
+        base: Partial<DomainRun>,
+        item: Record<string, unknown> | null,
+      ): Partial<DomainRun> => ({
+        ...base,
+        items: [...(base.items ?? []), goalItem(60)],
+        goalIssues: [...(base.goalIssues ?? []), goalIssueFor(`revision-${dashboard.nodeId}-700`, 60, [dashboard])],
+        goalComments: {
+          ...base.goalComments,
+          '60': [checklistFor([dashboard]), ...(item === null ? [] : [stateComment(60, [itemFor(dashboard, item)])])],
+        },
+      })
+      const batchNames = (result: {domain: DomainOutput}) => result.domain.goal_batches.map(batch => batch.batch)
+
+      it('lists the anchor comment to post and wakes the tracker for it, and no revision batch yet', () => {
+        const first = preflight(declinedFirst())
+
+        const result = preflight({
+          ...declinedFirst(),
+          activity: declinedActivity(),
+          comments: [comment(5, 'fro-bot', first.marker), asked(700)],
+        })
+
+        expect(result.domain.revision_transitions).toEqual([
+          {
+            repo: dashboard.nameWithOwner,
+            part_issue: 13,
+            comment_id: 700,
+            labels: ['part-declined'],
+            comment: revisionComment('harness', dashboard.nodeId, 700, TRACKER_URL),
+          },
+        ])
+        expect(batchNames(result)).toEqual([])
+        expect(result.should_comment).toBe(true)
+        expect(result.reason).toContain('revision hand-over — 1 part issue needs its revision comment')
+        expect(result.domain.answer_instructions).toContain('Revision hand-over.')
+      })
+
+      it('lists the revision batch once the anchor comment exists, then the new goal, and never a second one for the comment', () => {
+        const run = {
+          ...declinedFirst(),
+          comments: [asked(700)],
+          activity: declinedActivity([revisionAnchor(at(0, -1000))]),
+        }
+
+        const listed = preflight(run)
+        const opened = preflight({...withRevisionGoal(run, null), comments: [asked(700)]})
+        const dispatched = preflight({...withRevisionGoal(run, {epoch: ms(0)}), comments: [asked(700)]})
+
+        expect(listed.domain.revision_transitions).toEqual([])
+        expect(batchNames(listed)).toEqual([`revision-${dashboard.nodeId}-700`])
+        expect(listed.domain.goal_batches[0]?.checklist).toContain(
+          `Brief: program-domains.json@${COMMIT}#harness-tools`,
+        )
+        expect(batchNames(opened)).toEqual([])
+        expect(partOf(opened, dashboard)).toMatchObject({state: 'held', reason: 'not-dispatched', attempt: 'revision'})
+        expect(batchNames(dispatched)).toEqual([])
+        expect(dispatched.domain.revision_transitions).toEqual([])
+        expect(partOf(dispatched, dashboard)).toMatchObject({state: 'awaiting-answer', attempt: 'revision'})
+      })
+
+      it('ignores an accept left on the part issue from before the revision anchor', () => {
+        const run = {
+          ...withRevisionGoal(declinedFirst(), {epoch: ms(0)}),
+          activity: quiet({
+            [dashboard.nameWithOwner]: {
+              labels: ['part-accepted'],
+              timeline: [labeled('part-accepted', 'fro-bot', at(2)), revisionAnchor(at(0, -1000))],
+            },
+          }),
+        }
+
+        expect(partOf(preflight(run), dashboard)).toMatchObject({state: 'awaiting-answer', accepted_at: null})
+        expect(
+          partOf(
+            preflight({
+              ...run,
+              activity: quiet({
+                [dashboard.nameWithOwner]: {
+                  labels: ['part-accepted'],
+                  timeline: [revisionAnchor(at(0, -1000)), labeled('part-accepted', 'fro-bot', at(0, -500))],
+                },
+              }),
+            }),
+            dashboard,
+          ),
+        ).toMatchObject({state: 'accepted', attempt: 'revision'})
+      })
+
+      it.each([
+        ['a comment by another account', asked(700, 'revise fro-bot/dashboard', {login: 'octocat', id: 5})],
+        [
+          'a comment by an account that has only the operator login',
+          asked(700, 'revise fro-bot/dashboard', {login: 'marcusrbrown', id: 5}),
+        ],
+        ['a repo outside the domain', asked(700, 'revise someone/else')],
+        ['a repo named in another case', asked(700, 'revise Fro-Bot/dashboard')],
+        ['a line that is not exactly the form', asked(700, 'please revise fro-bot/dashboard')],
+      ])('ignores %s', (_name, request) => {
+        const result = preflight({
+          ...declinedFirst(),
+          comments: [request],
+          activity: declinedActivity([revisionAnchor(at(0, -1000))]),
+        })
+
+        expect(result.domain.revision_transitions).toEqual([])
+        expect(batchNames(result)).toEqual([])
+        expect(partOf(result, dashboard)).not.toHaveProperty('revision')
+      })
+
+      it('ignores a request written before the decline, and fires one written after it', () => {
+        const run = (request: ReturnType<typeof asked>) => ({
+          ...declinedFirst(),
+          comments: [request],
+          activity: declinedActivity([revisionAnchor(at(0, -1000))]),
+        })
+
+        const early = preflight(run(asked(700, undefined, undefined, at(0, -10_800_000))))
+        const late = preflight(run(asked(700)))
+
+        expect(early.domain.revision_transitions).toEqual([])
+        expect(batchNames(early)).toEqual([])
+        expect(partOf(early, dashboard)).toMatchObject({state: 'declined', revision: 'revision-not-eligible'})
+        expect(batchNames(late)).toEqual([`revision-${dashboard.nodeId}-700`])
+      })
+
+      it('ignores a request that carries no creation time', () => {
+        const bare = {id: 700, author: OPERATOR, body: 'revise fro-bot/dashboard'}
+
+        const result = preflight({...declinedFirst(), comments: [bare], activity: declinedActivity()})
+
+        expect(result.domain.revision_transitions).toEqual([])
+        expect(partOf(result, dashboard)).not.toHaveProperty('revision')
+      })
+
+      it('lists nothing and says so on the part when the latest attempt is completed', () => {
+        const result = preflight({
+          ...dashboardGoal({status: 'completed', epoch: ms(1)}),
+          comments: [asked(700)],
+          activity: quiet({[dashboard.nameWithOwner]: {timeline: [revisionAnchor(at(0, -1000))]}}),
+        })
+
+        expect(result.domain.revision_transitions).toEqual([])
+        expect(batchNames(result)).toEqual([])
+        expect(partOf(result, dashboard)).toMatchObject({state: 'completed', revision: 'revision-not-eligible'})
+      })
+
+      it('takes an item that never got a receipt', () => {
+        const result = preflight({
+          ...dashboardGoal({status: 'needs-attention', needsAttentionReason: 'no-receipt', epoch: ms(2)}),
+          comments: [asked(700)],
+          activity: quiet({[dashboard.nameWithOwner]: {timeline: [revisionAnchor(at(0, -1000))]}}),
+        })
+
+        expect(batchNames(result)).toEqual([`revision-${dashboard.nodeId}-700`])
+      })
+    })
+
     describe('a read that fails marks the part unknown and the run goes on', () => {
       it('marks the part, and goes on, when the tracked issue of a domain repo cannot be read through gh', () => {
         const dir = mkdtempSync(join(tmpdir(), 'rollout-tracker-issue-view-'))
@@ -6299,6 +6498,30 @@ describe('a domain program: part issues with the brief', () => {
             digest: 'b'.repeat(64),
             attention: 0,
           }).should_comment,
+        ).toBe(false)
+      })
+    })
+
+    describe('the wake for a revision hand-over', () => {
+      const snapshot = {items: [], external: {}}
+      const marker = {hash: 'h', last_mention_id: 0}
+      const wake = {transitions: 0, revisions: 2, digest: 'b'.repeat(64), attention: 0}
+
+      it('wakes on an unchanged hash, and says how many part issues need the revision comment', () => {
+        const decision = decideComment(snapshot, 'h', marker, [], [], 0, wake)
+
+        expect(decision.should_comment).toBe(true)
+        expect(decision.reason).toBe('revision hand-over — 2 part issues need its revision comment')
+      })
+
+      it('adds the hand-over to the reason when the hash changed, and wakes for none when there is none', () => {
+        expect(decideComment(snapshot, 'g', marker, [], [], 0, wake).reason).toContain(
+          '; revision hand-over pending (2)',
+        )
+        expect(decideComment(snapshot, 'h', marker, [], [], 0, {...wake, revisions: 0}).should_comment).toBe(false)
+        expect(
+          decideComment(snapshot, 'h', marker, [], [], 0, {transitions: 0, digest: wake.digest, attention: 0})
+            .should_comment,
         ).toBe(false)
       })
     })
