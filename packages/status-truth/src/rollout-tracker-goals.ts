@@ -15,6 +15,7 @@ import {
   MAX_PROMPT_LENGTH,
   RECEIPT_SLA_MS,
   type DispatchItem,
+  type ResultStatus,
 } from '@fro-bot/dispatch/dispatch-model'
 import {resolveReceipts} from '@fro-bot/dispatch/dispatch-receipts'
 import {isOperatorComment, type CommentLike, type ConfirmedRepo, type ProgramEntry} from './program-trackers.ts'
@@ -657,20 +658,27 @@ type RevisionVerdict =
 
 /**
  * When the repo's latest attempt ended without an answer that stands, in epoch milliseconds, or undefined when it did
- * not or the time cannot be told. A decline or a counter ended it when its receipt was written: the first comment that
- * dispatch's own gates (author, correlation, nonce) take for the item's terminal receipt, found by resolving each
- * comment alone. An item `needs-attention` has no recorded transition time, so it is the earliest moment it could have
- * been so: its dispatch epoch and the 24h receipt SLA. Anything else has not ended.
+ * not or the time cannot be told. The goal's own comments are read first, because the marker can lag a receipt that is
+ * already there (dispatch resolves a late receipt on its next track run): the earliest comment that dispatch's own
+ * gates (author, correlation, nonce) take for the item's terminal receipt, found by resolving each comment alone. A
+ * `success`, `noop` or `failed` receipt means the work was answered, so the attempt has not ended without an answer,
+ * whatever the marker says; a `declined` or `countered` one ended it when it was written, and an unknown time cannot be
+ * told. Only with no authentic receipt does the marker decide: an item `needs-attention` has no recorded transition
+ * time, so it is the earliest moment it could have been so, its dispatch epoch and the 24h receipt SLA; a `blocked`
+ * item with a reason but no receipt to time it cannot be told. Anything else has not ended.
  */
 function attemptEndedAt(item: DispatchItem, comments: readonly GoalComment[]): number | undefined {
-  if (item.status === 'needs-attention') return item.epoch === undefined ? undefined : item.epoch + RECEIPT_SLA_MS
-  if (item.status !== 'blocked' || item.blockedReason === undefined) return undefined
-  const receipt = comments.find(
-    comment =>
-      resolveReceipts([item], [{author: {login: comment.author}, body: comment.body}]).get(item.id)?.terminal ===
-      item.blockedReason,
-  )
-  return receipt?.at
+  const answerable =
+    item.status === 'needs-attention' || (item.status === 'blocked' && item.blockedReason !== undefined)
+  if (!answerable) return undefined
+  let terminal: ResultStatus | undefined
+  const receipt = comments.find(comment => {
+    terminal = resolveReceipts([item], [{author: {login: comment.author}, body: comment.body}]).get(item.id)?.terminal
+    return terminal !== undefined
+  })
+  if (receipt !== undefined) return terminal === 'declined' || terminal === 'countered' ? receipt.at : undefined
+  if (item.status === 'needs-attention' && item.epoch !== undefined) return item.epoch + RECEIPT_SLA_MS
+  return undefined
 }
 
 /**

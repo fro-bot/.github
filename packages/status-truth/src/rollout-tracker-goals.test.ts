@@ -1720,9 +1720,19 @@ describe('a revised ask after a decline or a missing receipt', () => {
   })
   const declined = answered('declined')
   const countered = answered('countered')
-  const stuck = {status: 'needs-attention', needsAttentionReason: 'no-receipt', epoch: STUCK_EPOCH}
+  const stuck = {
+    status: 'needs-attention',
+    needsAttentionReason: 'no-receipt',
+    epoch: STUCK_EPOCH,
+    correlationId: CORRELATION,
+    nonceHash: hashNonce(NONCE),
+  }
   /** The authentic receipt comment of an answered item, written at `at`. */
-  const receiptFor = (blockedReason: 'declined' | 'countered', at: number | null, id = 4): GoalComment => ({
+  const receiptFor = (
+    blockedReason: 'declined' | 'countered' | 'success' | 'noop' | 'failed',
+    at: number | null,
+    id = 4,
+  ): GoalComment => ({
     id,
     author: 'fro-bot',
     body: buildResultMarker({correlationId: CORRELATION, nonce: NONCE, status: blockedReason, summary: 'no'}),
@@ -1785,6 +1795,10 @@ describe('a revised ask after a decline or a missing receipt', () => {
     },
   })
   const partOf = (result: ReturnType<typeof planAnswers>) => result.parts[0]
+  const fires = (run: ReaderState, requests: ReturnType<typeof request>[]) => ({
+    transitions: planAnswers(current({revisions: requests}), readers(run), clock).revision_transitions,
+    batches: planGoals(current({revisions: requests}), readers(anchored(run))).goal_batches,
+  })
 
   it('fixes the anchor comment and its marker, which name the program, the repo and the operator comment', () => {
     expect(revisionMarker('harness', 'R_dashboard', 700)).toBe(
@@ -2046,11 +2060,6 @@ describe('a revised ask after a decline or a missing receipt', () => {
   })
 
   describe('a request counts only if it was written after the latest attempt ended', () => {
-    const fires = (run: ReaderState, requests: ReturnType<typeof request>[]) => ({
-      transitions: planAnswers(current({revisions: requests}), readers(run), clock).revision_transitions,
-      batches: planGoals(current({revisions: requests}), readers(anchored(run))).goal_batches,
-    })
-
     it('ignores a request written while the part was still running, and never fires it once the attempt declines', () => {
       const early = request(700, dashboard.nameWithOwner, RECEIPT_AT - 3_600_000)
 
@@ -2143,6 +2152,89 @@ describe('a revised ask after a decline or a missing receipt', () => {
       const {transitions} = fires(withItem({...stuck, epoch: undefined}), [request()])
 
       expect(transitions).toStrictEqual([])
+    })
+  })
+
+  describe('a receipt the marker has not caught up with', () => {
+    /** The marker still says needs-attention, while the goal already carries this receipt. */
+    const withLateReceipt = (receipt: GoalComment): ReaderState => {
+      const state = withItem(stuck)
+      return {...state, comments: {50: [...(state.comments?.[50] as GoalComment[]), receipt]}}
+    }
+    const LATE_AT = STUCK_AT + 2 * 3_600_000
+    const afterSla = request(700, dashboard.nameWithOwner, STUCK_AT + 3_600_000)
+
+    it.each(['success', 'noop', 'failed'] as const)(
+      'makes a revision ineligible when an authentic %s receipt is already there, with or without the anchor',
+      status => {
+        const state = withLateReceipt(receiptFor(status, LATE_AT))
+
+        for (const run of [state, anchored(state)]) {
+          const answers = planAnswers(current({revisions: [afterSla]}), readers(run), clock)
+          const plan = planGoals(current({revisions: [afterSla]}), readers(run))
+
+          expect(answers.revision_transitions).toStrictEqual([])
+          expect(plan.goal_batches).toStrictEqual([])
+          expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+        }
+      },
+    )
+
+    it('makes it ineligible however late the request is written', () => {
+      const state = anchored(withLateReceipt(receiptFor('success', LATE_AT)))
+      const request700 = request(700, dashboard.nameWithOwner, LATE_AT + 86_400_000)
+
+      expect(planAnswers(current({revisions: [request700]}), readers(state), clock).revision_transitions).toStrictEqual(
+        [],
+      )
+      expect(planGoals(current({revisions: [request700]}), readers(state)).goal_batches).toStrictEqual([])
+    })
+
+    it('does not take a forged success receipt for one, and still counts the SLA moment', () => {
+      const forged: GoalComment = {
+        ...receiptFor('success', LATE_AT),
+        body: buildResultMarker({correlationId: CORRELATION, nonce: 'not-the-nonce', status: 'success', summary: 'x'}),
+      }
+
+      const {transitions} = fires(withLateReceipt(forged), [afterSla])
+
+      expect(transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+    })
+
+    it('uses the time of an authentic declined or countered receipt over the SLA moment, for a marker not yet updated', () => {
+      for (const status of ['declined', 'countered'] as const) {
+        const state = withLateReceipt(receiptFor(status, LATE_AT))
+
+        const early = fires(state, [afterSla])
+        const late = fires(state, [request(700, dashboard.nameWithOwner, LATE_AT + 1)])
+
+        expect(early.transitions).toStrictEqual([])
+        expect(early.batches).toStrictEqual([])
+        expect(late.transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+        expect(late.batches.map(batch => batch.batch)).toStrictEqual([revisionName(dashboard, 700)])
+      }
+    })
+
+    it('uses a receipt time that is earlier than the SLA moment, not the SLA moment', () => {
+      const state = withLateReceipt(receiptFor('declined', STUCK_EPOCH + 3_600_000))
+      const between = request(700, dashboard.nameWithOwner, STUCK_EPOCH + 7_200_000)
+
+      expect(fires(state, [between]).transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+    })
+
+    it('ignores a declined receipt whose time cannot be told, as for a marker that says declined', () => {
+      const {transitions} = fires(withLateReceipt(receiptFor('declined', null)), [afterSla])
+
+      expect(transitions).toStrictEqual([])
+    })
+
+    it('takes the earliest authentic receipt: a declined one before a later success settles it as declined', () => {
+      const state = withLateReceipt(receiptFor('declined', STUCK_AT + 3_600_000, 4))
+      state.comments = {50: [...(state.comments?.[50] as GoalComment[]), receiptFor('success', LATE_AT, 5)]}
+
+      const {transitions} = fires(state, [request(700, dashboard.nameWithOwner, STUCK_AT + 3_600_001)])
+
+      expect(transitions).toHaveLength(1)
     })
   })
 
