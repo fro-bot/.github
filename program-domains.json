@@ -19,7 +19,7 @@
         ],
         "automation": [
           "Where the repository has .agents/skills/, agent steps set repo-skills so the agent loads the repository's own skills from the default branch, on the triggers this repository allows: schedule and workflow_dispatch always, and issues, comments and pull requests only from an owner, member or collaborator on a same-repository head.",
-          "Each agent step's model comes from a repository variable chosen by the kind of work, falling back to FRO_BOT_MODEL.",
+          "Each agent step's model is selected by one expression whose tier conditions are mutually exclusive, and each tier falls back to FRO_BOT_MODEL inside its own condition, so an unset tier variable never passes the choice to another tier.",
           "The agent reviews pull requests opened by the fro-bot user, which GitHub cannot request a review for.",
           "A prompt dispatched to the repository's agent is routed to a branch and a pull request, not kept comment-only and not run in a discarded working directory.",
           "Renovate Approve applies only where the repository's Renovate config enables automerge."
