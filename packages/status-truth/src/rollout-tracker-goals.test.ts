@@ -57,7 +57,7 @@ interface ReaderState {
 
 const NO_ACTIVITY: PartActivity = {createdAt: Date.parse('2026-10-01T00:00:00Z'), labels: [], labeled: [], comments: []}
 /** A part issue whose parity-follows comment exists, written by this account. */
-const anchored = (author = 'fro-bot', program = 'harness'): PartActivity => ({
+const anchoredActivity = (author = 'fro-bot', program = 'harness'): PartActivity => ({
   ...NO_ACTIVITY,
   comments: [
     {
@@ -279,7 +279,7 @@ describe('the seam with dispatch: the checklist comment as dispatch reads it', (
         input(),
         readers({
           part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'},
-          activity: {[systematic.nameWithOwner]: anchored()},
+          activity: {[systematic.nameWithOwner]: anchoredActivity()},
         }),
       ),
     )[1]
@@ -639,10 +639,14 @@ describe("resuming a goal from what was created, not from today's inputs", () =>
       70: [],
     }
 
-    const ready = planGoals(input({...advanced, projectItems: items}), readers({goals: [created(), parity], comments}))
+    const withAnchor = {[systematic.nameWithOwner]: anchoredActivity()}
+    const ready = planGoals(
+      input({...advanced, projectItems: items}),
+      readers({goals: [created(), parity], comments, activity: withAnchor}),
+    )
     const missing = planGoals(
       input({...advanced, projectItems: items, partIssues: new Map([[spaceBus.nameWithOwner.toLowerCase(), 12]])}),
-      readers({goals: [created(), parity], comments}),
+      readers({goals: [created(), parity], comments, activity: withAnchor}),
     )
 
     const parityBatch = batchesOf(ready).find(batch => batch.batch === parityName(systematic))
@@ -653,7 +657,7 @@ describe("resuming a goal from what was created, not from today's inputs", () =>
 
 describe('a parity batch', () => {
   const mergedPart0 = {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'}
-  const anchor = {[systematic.nameWithOwner]: anchored()}
+  const anchor = {[systematic.nameWithOwner]: anchoredActivity()}
 
   it('is listed for a Part 0 repo whose Part 0 pull request merged and whose parity-follows comment exists, as its own batch and goal', () => {
     const reader = readers({part0: mergedPart0, activity: anchor})
@@ -683,8 +687,8 @@ describe('a parity batch', () => {
 
   it.each([
     ['no comment at all', NO_ACTIVITY],
-    ['a comment by another account', anchored('marcusrbrown')],
-    ['the marker of another program', anchored('fro-bot', 'other')],
+    ['a comment by another account', anchoredActivity('marcusrbrown')],
+    ['the marker of another program', anchoredActivity('fro-bot', 'other')],
   ])('is in no batch after Part 0 merged while the parity-follows comment is missing: %s', (_name, activity) => {
     const result = planGoals(input(), readers({part0: mergedPart0, activity: {[systematic.nameWithOwner]: activity}}))
 
@@ -695,7 +699,7 @@ describe('a parity batch', () => {
   it('takes the parity-follows comment of fro-bot[bot] too, the other identity the tracker may post as', () => {
     const result = planGoals(
       input(),
-      readers({part0: mergedPart0, activity: {[systematic.nameWithOwner]: anchored('fro-bot[bot]')}}),
+      readers({part0: mergedPart0, activity: {[systematic.nameWithOwner]: anchoredActivity('fro-bot[bot]')}}),
     )
 
     expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual(['initial', parityName(systematic)])
@@ -735,6 +739,38 @@ describe('a parity batch', () => {
     expect(result.goal_error).toBeNull()
     expect(result.part0_unreadable).toStrictEqual([systematic.nameWithOwner])
     expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual(['initial'])
+  })
+
+  it('does not repair the missing checklist of an existing parity goal without the parity-follows comment', () => {
+    const projectItems = [{content_repo: 'fro-bot/.github', content_number: 90}]
+    const goals = [goal(parityName(systematic), 90)]
+
+    const waiting = planGoals(input({projectItems}), readers({goals, comments: {90: []}}))
+    const ready = planGoals(input({projectItems}), readers({goals, comments: {90: []}, activity: anchor}))
+
+    const waitingBatch = batchesOf(waiting).find(batch => batch.batch === parityName(systematic))
+    const readyBatch = batchesOf(ready).find(batch => batch.batch === parityName(systematic))
+    expect(waitingBatch).toMatchObject({
+      goal_issue: 90,
+      checklist: '',
+      error: 'the parity-follows comment is missing, so its checklist waits',
+    })
+    expect(readyBatch).toMatchObject({goal_issue: 90, error: null})
+    expect(readyBatch?.checklist).toContain(systematic.nameWithOwner)
+  })
+
+  it('holds back an existing parity goal, by name, when its part issue cannot be read for the repair', () => {
+    const result = planGoals(
+      input(),
+      readers({
+        goals: [goal(parityName(systematic), 90)],
+        comments: {90: []},
+        activity: {[systematic.nameWithOwner]: 'fail'},
+      }),
+    )
+
+    expect(result.part0_unreadable).toStrictEqual([systematic.nameWithOwner])
+    expect(batchesOf(result).map(batch => batch.batch)).not.toContain(parityName(systematic))
   })
 
   it('does not ask about Part 0 again for a repo whose keyed goal already exists', () => {
@@ -906,11 +942,30 @@ describe('a read that fails', () => {
     expect(result.goal_instructions).toContain('open no goal issue')
   })
 
-  it('stops the goal duty, and lists nothing, when the comments of a reused goal cannot be read', () => {
+  it('stops only that batch, with its reason and nothing to write, when the comments of a reused goal cannot be read', () => {
     const result = planGoals(input(), readers({goals: [goal('initial', 50)], comments: {50: 'fail'}}))
 
-    expect(result.goal_error).toBe('goal comments cannot be read')
-    expect(batchesOf(result)).toStrictEqual([])
+    expect(result.goal_error).toBeNull()
+    expect(batchesOf(result).map(batch => [batch.batch, batch.error, batch.checklist])).toStrictEqual([
+      ['initial', 'goal comments cannot be read', ''],
+    ])
+  })
+
+  it('lists the other batches normally while one batch cannot be read', () => {
+    const result = planGoals(
+      input({projectItems: [{content_repo: 'fro-bot/.github', content_number: 70}]}),
+      readers({
+        goals: [goal('initial', 50), goalFor(parityName(systematic), 70, [systematic])],
+        comments: {50: 'fail', 70: []},
+        part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'},
+        activity: {[systematic.nameWithOwner]: anchoredActivity()},
+      }),
+    )
+
+    expect(batchesOf(result).map(batch => [batch.batch, batch.error])).toStrictEqual([
+      ['initial', 'goal comments cannot be read'],
+      [parityName(systematic), null],
+    ])
   })
 
   it('names nothing of the failure', () => {

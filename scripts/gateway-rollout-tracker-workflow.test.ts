@@ -577,51 +577,11 @@ describe('gateway-rollout-tracker.yaml: the domain answer duty', () => {
     expect(runSnapshot(result({domain: {bootstrap_instructions: 'x'}})).outputs.domain_answers).toBe('')
   })
 
-  it('hands a cleared attention state to a step of its own, and writes nothing when there is none', () => {
-    const update = {comment_id: 77, body: 'Parts\n<!-- gateway-rollout-tracker:{"hash":"h"} -->\n'}
-
-    const run = runSnapshot(result({domain: {marker_update: update}}))
-    const none = runSnapshot(result({domain: {marker_update: null}}))
-
-    expect(run.outputs.marker_update_id).toBe('77')
-    expect(run.outputs.marker_update_body).toBe(update.body.trimEnd())
-    expect(none.outputs.marker_update_id).toBe('')
-    expect(runSnapshot(result()).outputs.marker_update_id).toBe('')
-    expect(preflight?.steps?.map(step => step.name)).toContain('Record a cleared attention state')
-  })
-
-  describe('the step that records a cleared attention state', () => {
-    const recorder = (preflight?.steps ?? []).find(step => step.name === 'Record a cleared attention state')
-    const body = String(recorder?.run ?? '')
-
-    it('runs only when the preflight has an update, with the PAT and the values through env', () => {
-      expect(recorder?.if).toBe("steps.snapshot.outputs.marker_update_id != ''")
-      expect(recorder?.env?.GH_TOKEN).toBe(expr('secrets.FRO_BOT_PAT'))
-      expect(recorder?.env?.COMMENT_ID).toBe(expr('steps.snapshot.outputs.marker_update_id'))
-      expect(recorder?.env?.COMMENT_BODY).toBe(expr('steps.snapshot.outputs.marker_update_body'))
-      expect(recorder?.env?.TRACKER_REPO).toBe(expr('steps.snapshot.outputs.tracker_repo'))
-      expect(body).not.toContain(expressionStart)
-    })
-
-    it('edits that one comment in place and nothing else', () => {
-      const run = runStepWithStubs(body, {
-        stubTools: ['gh'],
-        env: {COMMENT_ID: '77', COMMENT_BODY: 'text <!-- m -->', TRACKER_REPO: 'fro-bot/.github'},
-      })
-
-      expect(run.status).toBe(0)
-      expect(run.trace).toEqual(['gh api -X PATCH repos/fro-bot/.github/issues/comments/77 -f body=text <!-- m -->'])
-    })
-
-    it('refuses an id that is not a number', () => {
-      const run = runStepWithStubs(body, {
-        stubTools: ['gh'],
-        env: {COMMENT_ID: '7; rm', COMMENT_BODY: 'x', TRACKER_REPO: 'fro-bot/.github'},
-      })
-
-      expect(run.status).not.toBe(0)
-      expect(run.trace).toEqual([])
-    })
+  it('adds no step and no output of its own to the preflight job: the answer duty is one output and one interpolation', () => {
+    expect(script).not.toContain('marker_update')
+    expect(Object.keys(preflight?.outputs ?? {})).not.toContain('marker_update_id')
+    expect(preflight?.steps?.map(step => step.name)).not.toContain('Record a cleared attention state')
+    expect(preflight?.steps?.some(step => step['continue-on-error'] !== undefined)).toBe(false)
   })
 
   it('places the instructions flush after the goal instructions, once, with no static answer text of its own', () => {

@@ -4106,6 +4106,8 @@ describe('a domain program: part issues with the brief', () => {
     now?: string
     /** By repo: `{created_at, labels, timeline}` of the part issue; a repo not listed is a failed read. Every repo is quiet unless set. */
     activity?: Record<string, unknown>
+    /** The part issue fixture as raw text, for a fixture that is not an object. */
+    partIssuesText?: string
     /** The goal issue read as raw text, for a read that fails. */
     goalIssuesText?: string
     /** A directory whose `gh` answers `issue view`: the tracked issues are then read live, not from the fixture. */
@@ -4135,7 +4137,7 @@ describe('a domain program: part issues with the brief', () => {
       ROLLOUT_TRACKER_BRIEF_COMMIT: params.commit === null ? undefined : (params.commit ?? COMMIT),
       ROLLOUT_TRACKER_BRIEF_REPO: params.briefRepo === null ? undefined : (params.briefRepo ?? 'fro-bot/.github'),
       ROLLOUT_TRACKER_MAIN_HEAD: params.mainHead === null ? undefined : (params.mainHead ?? COMMIT),
-      ROLLOUT_TRACKER_PART_ISSUES_JSON: JSON.stringify(params.partIssues ?? {}),
+      ROLLOUT_TRACKER_PART_ISSUES_JSON: params.partIssuesText ?? JSON.stringify(params.partIssues ?? {}),
       ROLLOUT_TRACKER_EXISTING_ISSUES_JSON: JSON.stringify(
         params.existing ?? Object.fromEntries(allRows.map(repo => [repo.nameWithOwner, []])),
       ),
@@ -4869,27 +4871,29 @@ describe('a domain program: part issues with the brief', () => {
       expect(bootstrapped(result)).toHaveLength(3)
     })
 
-    it('stops that program with a fixed error when an issue cannot be read, and files nothing', () => {
+    it('marks only that part unknown when its issue cannot be read, and files nothing for it', () => {
       const card = partIssueCard(systematic, 7)
 
       const result = preflight({items: [card.item], partIssues: {}})
 
-      expect(result.domain).toMatchObject({
-        part_issue_error: 'part issues cannot be read',
-        part_issues: [],
-        brief_error: null,
-      })
-      expect(result.bootstrap_repos).toEqual([])
-      expect(result.reason).toContain('; domain part issue error: part issues cannot be read')
-      expect(result.domain.bootstrap_instructions).toContain('(part issues cannot be read)')
+      expect(result.domain).toMatchObject({part_issue_error: null, brief_error: null})
+      expect(result.domain.unknown_parts).toEqual([
+        {repo: systematic.nameWithOwner, part_issue: 7, reason: 'part-issue-unreadable'},
+      ])
+      expect(result.bootstrap_repos).toEqual([spaceBus, dashboard])
+      expect(result.domain.part_issues.map(entry => entry.repo)).toEqual([
+        spaceBus.nameWithOwner,
+        dashboard.nameWithOwner,
+      ])
     })
 
-    it('stops that program when an issue answers something that is not an issue', () => {
+    it('marks only that part unknown when an issue answers something that is not an issue', () => {
       const card = partIssueCard(systematic, 7)
 
       const result = preflight({items: [card.item], partIssues: {[card.key]: {body: 5}}})
 
-      expect(result.domain.part_issue_error).toBe('part issues cannot be read')
+      expect(result.domain.part_issue_error).toBeNull()
+      expect(result.domain.unknown_parts.map(part => part.repo)).toEqual([systematic.nameWithOwner])
     })
 
     it('leaves #3512 on its own rule: any Project item of a repo counts, and no issue is read', () => {
@@ -5980,7 +5984,12 @@ describe('a domain program: part issues with the brief', () => {
 
         expect(same.should_comment).toBe(false)
         expect(recovered.domain.unknown_parts).toEqual([])
-        expect(recovered.should_comment).toBe(false)
+        expect(recovered.should_comment).toBe(true)
+        expect(recovered.reason).toContain('domain attention cleared')
+        expect(
+          preflight({...dashboardGoal({epoch: ms(1)}), comments: [comment(5, 'fro-bot', recovered.marker)]})
+            .should_comment,
+        ).toBe(false)
       })
 
       const settledBase = (): Partial<DomainRun> => dashboardGoal({epoch: ms(1)})
@@ -6111,21 +6120,24 @@ describe('a domain program: part issues with the brief', () => {
       it.each([
         ['a brief that cannot be used', {commit: null}],
         ['a registry that cannot be read', {registry: 'not a registry'}],
-        ['a part issue that cannot be read', {partIssues: {}}],
         ['goals that cannot be read', {goalIssuesText: 'not json'}],
-      ] as const)('carries the hash through %s, wakes only for the digest, and not on recovery', (_name, params) => {
-        const first = preflight(settled())
+      ] as const)(
+        'carries the hash through %s and wakes only for the digest, then once more when it clears',
+        (_name, params) => {
+          const first = preflight(settled())
 
-        const stopped = preflight({...settled(), ...params, comments: [comment(5, 'fro-bot', first.marker)]})
-        const recovered = preflight({...settled(), comments: [comment(6, 'fro-bot', stopped.marker)]})
+          const stopped = preflight({...settled(), ...params, comments: [comment(5, 'fro-bot', first.marker)]})
+          const recovered = preflight({...settled(), comments: [comment(6, 'fro-bot', stopped.marker)]})
 
-        expect(stopped.hash).toBe(first.hash)
-        expect(extractPreviousMarker(stopped.marker)?.hash).toBe(first.hash)
-        expect(stopped.reason).not.toContain('gating transition')
-        expect(stopped.should_comment).toBe(true)
-        expect(recovered.hash).toBe(first.hash)
-        expect(recovered.should_comment).toBe(false)
-      })
+          expect(stopped.hash).toBe(first.hash)
+          expect(extractPreviousMarker(stopped.marker)?.hash).toBe(first.hash)
+          expect(stopped.reason).not.toContain('gating transition')
+          expect(stopped.should_comment).toBe(true)
+          expect(recovered.hash).toBe(first.hash)
+          expect(recovered.reason).not.toContain('gating transition')
+          expect(recovered.reason).toContain('domain attention cleared')
+        },
+      )
 
       it('still takes a real answer change from a run that is not stopped', () => {
         const first = preflight(dashboardGoal({epoch: ms(1)}))
@@ -6144,91 +6156,286 @@ describe('a domain program: part issues with the brief', () => {
       })
     })
 
-    describe('a cleared attention list is recorded in the marker, without a wake', () => {
+    describe('a cleared attention list wakes the tracker once', () => {
       const stalled = (): Partial<DomainRun> => dashboardGoal({epoch: ms(4)})
       const calm = (): Partial<DomainRun> => dashboardGoal({epoch: ms(1)})
 
-      it('wakes for the stall, records the clear without waking, and wakes when the same stall returns', () => {
+      it('wakes for the stall, wakes once when it clears, stays quiet after, and wakes when the stall returns', () => {
         const first = preflight(stalled())
         const cleared = preflight({...calm(), comments: [comment(5, 'fro-bot', first.marker)]})
+        const quietAfter = preflight({...calm(), comments: [comment(5, 'fro-bot', cleared.marker)]})
+        const returned = preflight({...stalled(), comments: [comment(5, 'fro-bot', cleared.marker)]})
 
         expect(first.should_comment).toBe(true)
-        expect(cleared.should_comment).toBe(false)
         expect(cleared.domain.attention_count).toBe(0)
-        expect(cleared.domain.marker_update).toEqual({comment_id: 5, body: cleared.marker})
-        expect(extractPreviousMarker(cleared.marker)).toEqual({
-          hash: first.hash,
-          last_mention_id: 0,
-          domain_digest: cleared.domain.attention_digest,
-        })
-
-        const written = comment(5, 'fro-bot', cleared.domain.marker_update?.body ?? '')
-        const quietAfter = preflight({...calm(), comments: [written]})
-        const returned = preflight({...stalled(), comments: [written]})
-
-        expect(quietAfter.domain.marker_update).toBeNull()
+        expect(cleared.should_comment).toBe(true)
+        expect(cleared.hash).toBe(first.hash)
+        expect(cleared.reason).toBe('domain attention cleared \u2014 nothing stalled, unknown or errored now')
+        expect(extractPreviousMarker(cleared.marker)?.domain_digest).toBe(cleared.domain.attention_digest)
         expect(quietAfter.should_comment).toBe(false)
         expect(returned.should_comment).toBe(true)
-        expect(returned.reason).toBe('domain attention changed — 1 stalled, unknown or errored item')
+        expect(returned.reason).toBe('domain attention changed \u2014 1 stalled, unknown or errored item')
       })
 
-      it('replaces only the marker in the comment it edits', () => {
-        const first = preflight(stalled())
-        const body = `@fro-bot Parts: stalled one.\n${first.marker}\n`
+      it('tells the agent to refresh the Parts section on every run, so a part no longer stalled does not read as stalled', () => {
+        const cleared = preflight({...calm(), comments: [comment(5, 'fro-bot', preflight(stalled()).marker)]})
 
-        const cleared = preflight({...calm(), comments: [comment(5, 'fro-bot', body)]})
-
-        expect(cleared.domain.marker_update).toEqual({
-          comment_id: 5,
-          body: `@fro-bot Parts: stalled one.\n${cleared.marker}\n`,
-        })
+        expect(cleared.domain.answer_instructions).toContain(
+          'Rewrite the \"Parts\" section from this list on every run, even when nothing else changed: a part that is no longer stalled must not read as stalled.',
+        )
       })
 
-      it('records nothing when nothing cleared: the digest is the same, the marker has none, the list is not empty, or there is no marker comment', () => {
+      it('does not wake for a clear when the marker has no digest to compare, or the digest was already empty', () => {
         const first = preflight(calm())
         const old = buildMarker(first.hash, first.last_mention_id)
 
-        const same = preflight({...calm(), comments: [comment(5, 'fro-bot', first.marker)]})
         const noDigest = preflight({...calm(), comments: [comment(5, 'fro-bot', old)]})
-        const stillStalled = preflight({...stalled(), comments: [comment(5, 'fro-bot', preflight(stalled()).marker)]})
+        const same = preflight({...calm(), comments: [comment(5, 'fro-bot', first.marker)]})
 
-        expect(same.domain.marker_update).toBeNull()
-        expect(noDigest.domain.marker_update).toBeNull()
-        expect(stillStalled.domain.marker_update).toBeNull()
-        expect(first.domain.marker_update).toBeNull()
+        expect(noDigest.should_comment).toBe(false)
+        expect(same.should_comment).toBe(false)
       })
 
-      it('records nothing for a stale run, which knows nothing of the state', () => {
-        const first = preflight(stalled())
-
-        const stale = preflight({...calm(), mainHead: 'c'.repeat(40), comments: [comment(5, 'fro-bot', first.marker)]})
-
-        expect(stale.domain.marker_update).toBeNull()
-      })
-
-      it('records nothing when the run wakes anyway: the agent writes the marker then', () => {
-        const first = preflight(stalled())
-
-        const woke = preflight({
+      it('wakes once when an error clears, and does not wake for a stale run in between', () => {
+        const erroring = preflight({...calm(), registry: 'not a registry'})
+        const stale = preflight({
           ...calm(),
-          comments: [comment(5, 'fro-bot', first.marker), comment(6, 'marcusrbrown', '@fro-bot hello')],
+          mainHead: 'c'.repeat(40),
+          comments: [comment(5, 'fro-bot', erroring.marker)],
         })
+        const recovered = preflight({...calm(), comments: [comment(5, 'fro-bot', stale.marker)]})
+        const quietAfter = preflight({...calm(), comments: [comment(5, 'fro-bot', recovered.marker)]})
 
-        expect(woke.should_comment).toBe(true)
-        expect(woke.domain.marker_update).toBeNull()
+        expect(stale.should_comment).toBe(false)
+        expect(recovered.should_comment).toBe(true)
+        expect(recovered.reason).toContain('domain attention cleared')
+        expect(quietAfter.should_comment).toBe(false)
       })
 
-      it('prints no marker update for a program with no domain', () => {
-        const plain = bootstrapConfig([systematic])
-        const run = runCliRaw({
-          ...fixtureEnv({items: [], issues: [], comments: []}),
-          ROLLOUT_TRACKER_CONFIG: plain,
-          ROLLOUT_TRACKER_PROGRAM: 'plugins',
-          ROLLOUT_TRACKER_DEFAULT_CONFIG: readFileSync(plain, 'utf8'),
-          ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({[systematic.nameWithOwner]: 'public'}),
+      it('prints nothing to edit a marker with, for any program', () => {
+        const result = preflight({...calm(), comments: [comment(5, 'fro-bot', preflight(stalled()).marker)]})
+
+        expect(JSON.stringify(result)).not.toContain('marker_update')
+      })
+
+      it('is not a rule for a program with no domain: decideComment takes no digest for it', () => {
+        const snapshot = {items: [], external: {}}
+        const marker = {hash: 'h', last_mention_id: 0, domain_digest: 'a'.repeat(64)}
+
+        expect(decideComment(snapshot, 'h', marker, []).should_comment).toBe(false)
+        expect(
+          decideComment(snapshot, 'h', marker, [], [], 0, {transitions: 0, digest: 'b'.repeat(64), attention: 0})
+            .should_comment,
+        ).toBe(true)
+        expect(
+          decideComment(snapshot, 'h', {hash: 'h', last_mention_id: 0}, [], [], 0, {
+            transitions: 0,
+            digest: 'b'.repeat(64),
+            attention: 0,
+          }).should_comment,
+        ).toBe(false)
+      })
+    })
+
+    describe('a read that fails stays local to its part or its batch', () => {
+      const dashboardFails = (extra: Partial<DomainRun> = {}): Partial<DomainRun> => {
+        const cards = partIssues()
+        const issues = {...cards.partIssues}
+        delete issues[`${dashboard.nameWithOwner.toLowerCase()}#13`]
+        return {...cards, partIssues: issues, ...extra}
+      }
+      const noPart0 = (): string => domainConfig({part0: []})
+      const twoGoal = (changes: Record<string, unknown> = {}): Partial<DomainRun> => {
+        const base = dashboardFails()
+        return {
+          ...base,
+          configPath: noPart0(),
+          items: [...(base.items ?? []), goalItem(50)],
+          goalIssues: [goalIssueFor('initial', 50, [systematic, spaceBus])],
+          goalComments: {
+            '50': [
+              checklistFor([systematic, spaceBus]),
+              stateComment(50, [itemFor(systematic, changes), itemFor(spaceBus)]),
+            ],
+          },
+        }
+      }
+
+      it('marks only the part whose identity read fails, keeps the healthy rows and files no second part issue', () => {
+        const result = preflight(twoGoal({epoch: ms(1)}))
+
+        expect(result.domain.part_issue_error).toBeNull()
+        expect(partOf(result, dashboard)).toMatchObject({
+          state: 'unknown',
+          reason: 'part-issue-unreadable',
+          part_issue: 13,
+        })
+        expect(partOf(result, systematic)).toMatchObject({state: 'awaiting-answer'})
+        expect(partOf(result, spaceBus)).toMatchObject({state: 'awaiting-answer'})
+        expect(result.bootstrap_repos).toEqual([])
+        expect(result.domain.part_issues).toEqual([])
+        expect(result.domain.unknown_parts).toEqual([
+          {repo: dashboard.nameWithOwner, part_issue: 13, reason: 'part-issue-unreadable'},
+        ])
+      })
+
+      it('lets a healthy part answer move the hash and wake the tracker while another identity read keeps failing', () => {
+        const first = preflight(twoGoal({epoch: ms(1)}))
+
+        const answered = preflight({
+          ...twoGoal({status: 'blocked', blockedReason: 'declined', epoch: ms(1)}),
+          comments: [comment(5, 'fro-bot', first.marker)],
         })
 
-        expect(run.stdout).not.toContain('marker_update')
+        expect(answered.hash).not.toBe(first.hash)
+        expect(answered.should_comment).toBe(true)
+        expect(answered.reason).toContain('gating transition detected')
+        expect(answered.snapshot.answers).toEqual([{repo: systematic.nameWithOwner, answer: 'declined'}])
+      })
+
+      it('does not write a goal, a checklist or a part issue for the part it could not verify', () => {
+        const result = preflight(dashboardFails())
+
+        expect(result.domain.goal_batches).toEqual([])
+        expect(result.bootstrap_repos.map(repo => repo.nameWithOwner)).toEqual([])
+      })
+
+      it('still stops the whole bootstrap when the part issue fixture itself is not an object', () => {
+        const broken = runDomain({...partIssues(), partIssuesText: '[]'})
+
+        expect(broken.status).toBe(0)
+        expect((JSON.parse(broken.stdout) as PreflightResult).domain?.part_issue_error).toBe(
+          'part issues cannot be read',
+        )
+      })
+
+      const parityWithBrokenInitial = (changes: Record<string, unknown>): Partial<DomainRun> => {
+        const base = withParityGoal(dashboardGoal({epoch: ms(1)}), changes)
+        const comments = {...base.goalComments}
+        delete comments['50']
+        return {
+          ...base,
+          goalComments: comments,
+          part0: part0Done,
+          activity: quiet({[systematic.nameWithOwner]: {timeline: [anchorComment(at(5))]}}),
+        }
+      }
+
+      it('marks only the batch whose goal comments cannot be read, and lists it as stopped without stopping the goals', () => {
+        const result = preflight(parityWithBrokenInitial({epoch: ms(1)}))
+
+        expect(result.domain.goal_error).toBeNull()
+        expect(result.domain.goal_batches).toHaveLength(1)
+        expect(result.domain.goal_batches[0]).toMatchObject({
+          batch: 'initial',
+          error: 'goal comments cannot be read',
+          checklist: '',
+        })
+        expect(partOf(result, dashboard)).toMatchObject({state: 'unknown', reason: 'goals-unreadable'})
+        expect(partOf(result, systematic)).toMatchObject({state: 'awaiting-answer'})
+      })
+
+      it('wakes for a new answer in a healthy batch while another batch keeps failing, and not for the failure twice', () => {
+        const first = preflight(parityWithBrokenInitial({epoch: ms(1)}))
+        const sameAgain = preflight({
+          ...parityWithBrokenInitial({epoch: ms(1)}),
+          comments: [comment(5, 'fro-bot', first.marker)],
+        })
+        const answered = preflight({
+          ...parityWithBrokenInitial({status: 'blocked', blockedReason: 'declined', epoch: ms(1)}),
+          comments: [comment(5, 'fro-bot', first.marker)],
+        })
+
+        expect(sameAgain.should_comment).toBe(false)
+        expect(answered.hash).not.toBe(first.hash)
+        expect(answered.should_comment).toBe(true)
+        expect(partOf(answered, systematic)).toMatchObject({state: 'declined'})
+      })
+    })
+
+    describe('a parity goal with no checklist waits for the parity-follows comment', () => {
+      const existing = (): Partial<DomainRun> => {
+        const base = dashboardGoal({epoch: ms(1)})
+        return {
+          ...base,
+          items: [...(base.items ?? []), goalItem(51)],
+          goalIssues: [...(base.goalIssues ?? []), goalIssueFor(`parity-${systematic.nodeId}`, 51, [systematic])],
+          goalComments: {...base.goalComments, '51': []},
+          part0: part0Done,
+        }
+      }
+
+      it('lists the batch as waiting, with no checklist, when the anchor is missing', () => {
+        const result = preflight(existing())
+
+        expect(result.domain.goal_batches).toHaveLength(1)
+        expect(result.domain.goal_batches[0]).toMatchObject({
+          batch: `parity-${systematic.nodeId}`,
+          goal_issue: 51,
+          has_checklist: false,
+          checklist: '',
+          error: 'the parity-follows comment is missing, so its checklist waits',
+        })
+        expect(partOf(result, systematic)).toMatchObject({state: 'held', reason: 'parity-anchor-missing'})
+        expect(result.domain.parity_transitions).toHaveLength(1)
+      })
+
+      it('writes the checklist once the comment exists, reusing the goal', () => {
+        const result = preflight({
+          ...existing(),
+          activity: quiet({[systematic.nameWithOwner]: {timeline: [anchorComment(at(3))]}}),
+        })
+
+        expect(result.domain.goal_batches[0]).toMatchObject({goal_issue: 51, error: null})
+        expect(result.domain.goal_batches[0]?.checklist).toContain(systematic.nameWithOwner)
+      })
+    })
+
+    describe('a closed goal stops the clocks of its unfinished items', () => {
+      const closedGoal = (changes: Record<string, unknown>): Partial<DomainRun> => {
+        const base = dashboardGoal(changes)
+        return {...base, goalIssues: [{...goalIssueFor('initial', 50, [dashboard]), state: 'closed'}]}
+      }
+
+      it('shows an item with no terminal receipt as closed, never stalled, and out of the digest', () => {
+        const calmRun = preflight(dashboardGoal({epoch: ms(1)}))
+        const closed = preflight(closedGoal({epoch: ms(20)}))
+
+        expect(partOf(closed, dashboard)).toMatchObject({state: 'closed', stalled: null, age_days: null})
+        expect(closed.domain.stalled_parts).toEqual([])
+        expect(closed.domain.attention_count).toBe(0)
+        expect(closed.domain.attention_digest).toBe(calmRun.domain.attention_digest)
+      })
+
+      it('shows an accepted item on a closed goal as closed too, not as an overdue outcome', () => {
+        const closed = preflight({
+          ...closedGoal({epoch: ms(40)}),
+          activity: quiet({[dashboard.nameWithOwner]: {timeline: [labeled('part-accepted', 'fro-bot', at(30))]}}),
+        })
+
+        expect(partOf(closed, dashboard)).toMatchObject({state: 'closed', stalled: null})
+      })
+
+      it.each([['completed'], ['failed']])('keeps a recorded %s outcome on a closed goal', status => {
+        const closed = preflight(closedGoal({status, epoch: ms(20)}))
+
+        expect(partOf(closed, dashboard)?.state).toBe(status)
+      })
+
+      it.each([['declined'], ['countered']])(
+        'keeps a recorded %s receipt on a closed goal, distinct from closed',
+        reason => {
+          const closed = preflight(closedGoal({status: 'blocked', blockedReason: reason, epoch: ms(20)}))
+
+          expect(partOf(closed, dashboard)?.state).toBe(reason)
+        },
+      )
+
+      it('does not count a closed item among the answers of the hash, and tells the agent what closed means', () => {
+        const closed = preflight(closedGoal({epoch: ms(20)}))
+
+        expect(closed.snapshot.answers).toEqual([])
+        expect(closed.domain.answer_instructions).toContain('A `closed` part')
       })
     })
 
@@ -6359,7 +6566,7 @@ describe('a domain program: part issues with the brief', () => {
       expect((JSON.parse(result.stdout) as PreflightResult).bootstrap_repos).toEqual([spaceBus, dashboard])
     })
 
-    it('stops that program, not the run, when the issue read fails', () => {
+    it('marks that part unknown, not the program or the run, when its issue read fails', () => {
       const card = partIssueCard(systematic, 7)
       const result = runCliWithFakeGh(
         base({
@@ -6370,7 +6577,12 @@ describe('a domain program: part issues with the brief', () => {
       )
 
       expect(result.status).toBe(0)
-      expect((JSON.parse(result.stdout) as PreflightResult).domain?.part_issue_error).toBe('part issues cannot be read')
+      const domain = (JSON.parse(result.stdout) as PreflightResult).domain
+      expect(domain?.part_issue_error).toBeNull()
+      expect(domain?.unknown_parts).toEqual([
+        {repo: systematic.nameWithOwner, part_issue: 7, reason: 'part-issue-unreadable'},
+      ])
+      expect(domain?.part_issues.map(entry => entry.repo)).toEqual([spaceBus.nameWithOwner, dashboard.nameWithOwner])
     })
 
     describe('the search for an existing part issue', () => {

@@ -28,7 +28,7 @@ import {
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
-import {planMarkerUpdate, withAttention} from './rollout-tracker-attention.ts'
+import {withAttention} from './rollout-tracker-attention.ts'
 import {
   goalReaders,
   memoizeReaders,
@@ -254,11 +254,6 @@ export interface DomainPreflight {
   attention_digest: string
   /** How many things the digest covers; zero means there is nothing to wake for. */
   attention_count: number
-  /**
-   * The edit that records a cleared attention state in the marker comment, for a run that does not wake the tracker:
-   * the comment's ID and its whole body with only the marker replaced. Null when there is nothing to record.
-   */
-  marker_update: {comment_id: number; body: string} | null
 }
 
 export interface TrackerComment {
@@ -693,10 +688,21 @@ export function decideComment(
   const goals = goalBatches > 0 ? `; goal batches pending (${goalBatches})` : ''
   const handOvers = domainWake?.transitions ?? 0
   const attention = domainWake?.attention ?? 0
-  const attentionChanged = attention > 0 && domainWake?.digest !== previousMarker.domain_digest
+  // A non-empty list wakes when its digest differs from the marker's. A list that has emptied wakes once, when the
+  // marker still holds the digest of a non-empty one: the agent refreshes the Parts section and writes the empty digest,
+  // so the next run is quiet and the same stall returning differs from it. A marker with no digest never wakes a clear.
+  const attentionChanged =
+    domainWake !== undefined &&
+    (attention > 0
+      ? domainWake.digest !== previousMarker.domain_digest
+      : previousMarker.domain_digest !== undefined && previousMarker.domain_digest !== domainWake.digest)
   const domain =
     (handOvers > 0 ? `; Part 0 hand-over pending (${handOvers})` : '') +
-    (attentionChanged ? `; domain attention changed (${attention})` : '')
+    (attentionChanged
+      ? attention > 0
+        ? `; domain attention changed (${attention})`
+        : '; domain attention cleared'
+      : '')
 
   if (hash !== previousMarker.hash) {
     return {
@@ -738,7 +744,7 @@ export function decideComment(
   if (handOvers > 0) {
     return {
       should_comment: true,
-      reason: `Part 0 hand-over — ${countOf(handOvers, 'part issue needs', 'part issues need')} its parity-follows comment${attentionChanged ? `; domain attention changed (${attention})` : ''}`,
+      reason: `Part 0 hand-over — ${countOf(handOvers, 'part issue needs', 'part issues need')} its parity-follows comment${attentionChanged ? (attention > 0 ? `; domain attention changed (${attention})` : '; domain attention cleared') : ''}`,
       hash,
       snapshot,
     }
@@ -747,7 +753,10 @@ export function decideComment(
   if (attentionChanged) {
     return {
       should_comment: true,
-      reason: `domain attention changed — ${attention} stalled, unknown or errored ${attention === 1 ? 'item' : 'items'}`,
+      reason:
+        attention > 0
+          ? `domain attention changed — ${attention} stalled, unknown or errored ${attention === 1 ? 'item' : 'items'}`
+          : 'domain attention cleared — nothing stalled, unknown or errored now',
       hash,
       snapshot,
     }
@@ -1240,9 +1249,14 @@ function readItemIssue(repo: string, number: number, fixture: Map<string, unknow
 /**
  * The Project items that are this program's part issues: an issue (not a pull request) in a confirmed repo,
  * written by Fro Bot, whose body carries that repo's marker for this program. Any other item of the repo,
- * such as a dependency card, is not a part issue and does not count as a bootstrap. Any failed read throws.
+ * such as a dependency card, is not a part issue and does not count as a bootstrap. An item whose identity read
+ * fails is neither: it is `unverified`, and only its own part is unknown. A fixture that is not an object throws.
  */
-function readPartIssueItems(entry: ProgramEntry, items: readonly ProjectItem[], env: Env): ProjectItem[] {
+function readPartIssueItems(
+  entry: ProgramEntry,
+  items: readonly ProjectItem[],
+  env: Env,
+): {verified: ProjectItem[]; unverified: ProjectItem[]} {
   const confirmed = new Map((entry.repos ?? []).map(repo => [repo.nameWithOwner.toLowerCase(), repo]))
   let fixture: Map<string, unknown> | undefined
   if (env.ROLLOUT_TRACKER_PART_ISSUES_JSON !== undefined) {
@@ -1250,16 +1264,25 @@ function readPartIssueItems(entry: ProgramEntry, items: readonly ProjectItem[], 
     if (!isRecord(parsed)) throw new TypeError(PART_ISSUES_UNREADABLE)
     fixture = new Map(Object.entries(parsed).map(([key, value]) => [key.toLowerCase(), value]))
   }
-  return items.filter(item => {
+  const verified: ProjectItem[] = []
+  const unverified: ProjectItem[] = []
+  for (const item of items) {
     const repo = confirmed.get(item.content_repo.toLowerCase())
-    if (repo === undefined) return false
-    const issue = readItemIssue(item.content_repo, item.content_number, fixture)
-    return (
-      !issue.pull_request &&
-      FROBOT_COMMENT_AUTHORS.has(issue.author) &&
-      issue.body.includes(partIssueMarker(entry.key, repo.nodeId))
-    )
-  })
+    if (repo === undefined) continue
+    try {
+      const issue = readItemIssue(item.content_repo, item.content_number, fixture)
+      if (
+        !issue.pull_request &&
+        FROBOT_COMMENT_AUTHORS.has(issue.author) &&
+        issue.body.includes(partIssueMarker(entry.key, repo.nodeId))
+      ) {
+        verified.push(item)
+      }
+    } catch {
+      unverified.push(item)
+    }
+  }
+  return {verified, unverified}
 }
 
 const LOOKUP_FAILED = 'part issue lookup failed'
@@ -1340,7 +1363,6 @@ type DomainBase = Omit<
   | keyof AnswerPlan
   | 'attention_digest'
   | 'attention_count'
-  | 'marker_update'
 >
 
 function bootstrapInstructions(domain: DomainBase, program: string): string {
@@ -1385,6 +1407,8 @@ interface DomainPlanInput {
   now: number
   /** The parts (`repo#number`, lower case) whose issue could not be read when the run read the tracked issues. */
   unreadableIssues: ReadonlySet<string>
+  /** The Project items of confirmed repos whose identity read failed: their parts are unknown, and nothing is written for them. */
+  unverified: readonly ProjectItem[]
 }
 
 /**
@@ -1548,6 +1572,7 @@ function planDomain(
     readers,
     {now: input.now, answerWindowMs: ANSWER_WINDOW_MS, outcomeWindowMs: OUTCOME_WINDOW_MS},
     input.unreadableIssues,
+    input.unverified,
   )
   return {
     domain: withAttention({
@@ -1857,15 +1882,20 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   // the marker its body carries. Any other item of the repo (a dependency issue, a pull request) does not count.
   let partIssueError: string | null = null
   let present: readonly ProjectItem[] = items
+  let unverified: readonly ProjectItem[] = []
   if (entry.domain !== undefined) {
     try {
-      present = readPartIssueItems(entry, items, env)
+      ;({verified: present, unverified} = readPartIssueItems(entry, items, env))
     } catch {
       partIssueError = PART_ISSUES_UNREADABLE
       present = []
     }
   }
-  let missing = confirmedReposMissing(entry, present, publicRepos)
+  // A repo whose Project item could not be read is not bootstrapped again: filing there could duplicate its part issue.
+  const unverifiedRepos = new Set(unverified.map(item => item.content_repo.toLowerCase()))
+  let missing = confirmedReposMissing(entry, present, publicRepos).filter(
+    repo => !unverifiedRepos.has(repo.nameWithOwner.toLowerCase()),
+  )
   if (missing.length > 0) {
     try {
       missing = reposConfirmedOnDefaultBranch(
@@ -1898,6 +1928,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
             projectItems: items,
             now,
             unreadableIssues,
+            unverified,
           },
           env,
         )
@@ -1914,10 +1945,12 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   // run that recovers compares like with like. With no marker to carry, the computed hash stands.
   const stopped =
     planned !== undefined &&
-    (planned.domain.brief_error !== null ||
-      planned.domain.registry_error !== null ||
-      planned.domain.part_issue_error !== null ||
-      planned.domain.goal_error !== null)
+    [
+      planned.domain.brief_error,
+      planned.domain.registry_error,
+      planned.domain.part_issue_error,
+      planned.domain.goal_error,
+    ].some(message => message !== null)
   const hash = stopped && previousMarker !== null ? previousMarker.hash : hashSnapshot(snapshot)
   const bootstrapRepos = planned?.ready ?? partitioned.ready
   const bootstrapBlocked = planned?.blocked ?? partitioned.blocked
@@ -1938,26 +1971,12 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const decided = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos, goalBatches, domainWake)
   const decision =
     planned === undefined ? decided : {...decided, reason: `${decided.reason}${domainReasonSuffix(planned.domain)}`}
-  const marker = buildMarker(hash, lastMentionId, domainDigest)
-  const markerComment = findLatestMarkerComment(comments)
-  const markerUpdate =
-    planned === undefined
-      ? null
-      : planMarkerUpdate({
-          shouldComment: decision.should_comment,
-          stale,
-          attention: planned.domain.attention_count,
-          digest: planned.domain.attention_digest,
-          previous: previousMarker,
-          markerComment,
-          marker,
-        })
   const result: PreflightResult = {
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
-    marker,
-    marker_comment_id: markerComment?.id ?? null,
+    marker: buildMarker(hash, lastMentionId, domainDigest),
+    marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
     bootstrap_repos: bootstrapRepos,
     bootstrap_blocked: bootstrapBlocked,
     public_items: items
@@ -1976,7 +1995,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
       operator_login: entry.operator.login,
       evidence: entry.evidence,
     },
-    ...(planned === undefined ? {} : {domain: {...planned.domain, marker_update: markerUpdate}}),
+    ...(planned === undefined ? {} : {domain: planned.domain}),
   }
 
   io.stdout(`${JSON.stringify(result)}\n`)
