@@ -2,6 +2,7 @@ import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
+import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
 import {MAX_ITEMS_PER_GOAL, MAX_PROMPT_LENGTH} from '@fro-bot/dispatch/dispatch-model'
 import {isPromptSafe, parseBriefReference} from '@fro-bot/dispatch/dispatch-plan'
 import {extractItemPrompts, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
@@ -11,12 +12,17 @@ import {
   goalMarker,
   goalReaders,
   goalReposMarker,
+  memoizeReaders,
+  parityFollowsComment,
+  parityFollowsMarker,
+  planAnswers,
   planGoals,
   type GoalBatch,
   type GoalComment,
   type GoalIssue,
   type GoalPlanInput,
   type GoalReaders,
+  type PartActivity,
 } from './rollout-tracker-goals.ts'
 
 const COMMIT = 'a'.repeat(40)
@@ -45,7 +51,23 @@ interface ReaderState {
   comments?: Record<number, readonly GoalComment[] | 'fail'>
   /** The merged Part 0 pull request URL by repo; a repo not listed has none, and `'fail'` fails the read. */
   part0?: Record<string, string | 'fail'>
+  /** The activity of each repo's part issue; a repo not listed has none (no comment, no label), and `'fail'` fails the read. */
+  activity?: Record<string, PartActivity | 'fail'>
 }
+
+const NO_ACTIVITY: PartActivity = {createdAt: Date.parse('2026-10-01T00:00:00Z'), labels: [], labeled: [], comments: []}
+/** A part issue whose parity-follows comment exists, written by this account. */
+const anchoredActivity = (author = 'fro-bot', program = 'harness'): PartActivity => ({
+  ...NO_ACTIVITY,
+  comments: [
+    {
+      id: 900,
+      author,
+      at: Date.parse('2026-11-24T00:00:00Z'),
+      body: parityFollowsComment(program, 'https://github.com/marcusrbrown/systematic/pull/7'),
+    },
+  ],
+})
 
 function readers(state: ReaderState = {}): GoalReaders & {reads: string[]} {
   const reads: string[] = []
@@ -67,6 +89,12 @@ function readers(state: ReaderState = {}): GoalReaders & {reads: string[]} {
       const merged = state.part0?.[repo]
       if (merged === 'fail') throw new Error('boom')
       return merged ?? null
+    },
+    partActivity: (repo, partIssue) => {
+      reads.push(`activity ${repo}#${partIssue}`)
+      const activity = state.activity?.[repo]
+      if (activity === 'fail') throw new Error('boom')
+      return activity ?? NO_ACTIVITY
     },
   }
 }
@@ -249,7 +277,10 @@ describe('the seam with dispatch: the checklist comment as dispatch reads it', (
     const batch = batchesOf(
       planGoals(
         input(),
-        readers({part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'}}),
+        readers({
+          part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'},
+          activity: {[systematic.nameWithOwner]: anchoredActivity()},
+        }),
       ),
     )[1]
 
@@ -608,10 +639,14 @@ describe("resuming a goal from what was created, not from today's inputs", () =>
       70: [],
     }
 
-    const ready = planGoals(input({...advanced, projectItems: items}), readers({goals: [created(), parity], comments}))
+    const withAnchor = {[systematic.nameWithOwner]: anchoredActivity()}
+    const ready = planGoals(
+      input({...advanced, projectItems: items}),
+      readers({goals: [created(), parity], comments, activity: withAnchor}),
+    )
     const missing = planGoals(
       input({...advanced, projectItems: items, partIssues: new Map([[spaceBus.nameWithOwner.toLowerCase(), 12]])}),
-      readers({goals: [created(), parity], comments}),
+      readers({goals: [created(), parity], comments, activity: withAnchor}),
     )
 
     const parityBatch = batchesOf(ready).find(batch => batch.batch === parityName(systematic))
@@ -622,9 +657,10 @@ describe("resuming a goal from what was created, not from today's inputs", () =>
 
 describe('a parity batch', () => {
   const mergedPart0 = {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'}
+  const anchor = {[systematic.nameWithOwner]: anchoredActivity()}
 
-  it('is listed for a Part 0 repo whose Part 0 pull request merged, as its own batch and goal', () => {
-    const reader = readers({part0: mergedPart0})
+  it('is listed for a Part 0 repo whose Part 0 pull request merged and whose parity-follows comment exists, as its own batch and goal', () => {
+    const reader = readers({part0: mergedPart0, activity: anchor})
 
     const result = planGoals(input(), reader)
 
@@ -641,12 +677,43 @@ describe('a parity batch', () => {
   })
 
   it('says in the ask that Part 0 has merged', () => {
-    const batch = batchesOf(planGoals(input(), readers({part0: mergedPart0}))).find(
+    const batch = batchesOf(planGoals(input(), readers({part0: mergedPart0, activity: anchor}))).find(
       candidate => candidate.batch === parityName(systematic),
     )
 
     expect(batch?.checklist).toContain('Part 0 has merged in this repository')
     expect(batch?.body).toContain('https://github.com/marcusrbrown/systematic/pull/7')
+  })
+
+  it.each([
+    ['no comment at all', NO_ACTIVITY],
+    ['a comment by another account', anchoredActivity('marcusrbrown')],
+    ['the marker of another program', anchoredActivity('fro-bot', 'other')],
+  ])('is in no batch after Part 0 merged while the parity-follows comment is missing: %s', (_name, activity) => {
+    const result = planGoals(input(), readers({part0: mergedPart0, activity: {[systematic.nameWithOwner]: activity}}))
+
+    expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual(['initial'])
+    expect(result.part0_unreadable).toStrictEqual([])
+  })
+
+  it('takes the parity-follows comment of fro-bot[bot] too, the other identity the tracker may post as', () => {
+    const result = planGoals(
+      input(),
+      readers({part0: mergedPart0, activity: {[systematic.nameWithOwner]: anchoredActivity('fro-bot[bot]')}}),
+    )
+
+    expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual(['initial', parityName(systematic)])
+  })
+
+  it('holds a repo back, by name, when its part issue cannot be read', () => {
+    const result = planGoals(input(), readers({part0: mergedPart0, activity: {[systematic.nameWithOwner]: 'fail'}}))
+
+    expect(result.part0_unreadable).toStrictEqual([systematic.nameWithOwner])
+    expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual(['initial'])
+  })
+
+  it('names the marker as a fixed line', () => {
+    expect(parityFollowsMarker('harness')).toBe('<!-- fro-bot-program-parity-follows program=harness -->')
   })
 
   it('is in no batch while Part 0 has not merged, whatever the first batch does', () => {
@@ -672,6 +739,38 @@ describe('a parity batch', () => {
     expect(result.goal_error).toBeNull()
     expect(result.part0_unreadable).toStrictEqual([systematic.nameWithOwner])
     expect(batchesOf(result).map(batch => batch.batch)).toStrictEqual(['initial'])
+  })
+
+  it('does not repair the missing checklist of an existing parity goal without the parity-follows comment', () => {
+    const projectItems = [{content_repo: 'fro-bot/.github', content_number: 90}]
+    const goals = [goal(parityName(systematic), 90)]
+
+    const waiting = planGoals(input({projectItems}), readers({goals, comments: {90: []}}))
+    const ready = planGoals(input({projectItems}), readers({goals, comments: {90: []}, activity: anchor}))
+
+    const waitingBatch = batchesOf(waiting).find(batch => batch.batch === parityName(systematic))
+    const readyBatch = batchesOf(ready).find(batch => batch.batch === parityName(systematic))
+    expect(waitingBatch).toMatchObject({
+      goal_issue: 90,
+      checklist: '',
+      error: 'the parity-follows comment is missing, so its checklist waits',
+    })
+    expect(readyBatch).toMatchObject({goal_issue: 90, error: null})
+    expect(readyBatch?.checklist).toContain(systematic.nameWithOwner)
+  })
+
+  it('holds back an existing parity goal, by name, when its part issue cannot be read for the repair', () => {
+    const result = planGoals(
+      input(),
+      readers({
+        goals: [goal(parityName(systematic), 90)],
+        comments: {90: []},
+        activity: {[systematic.nameWithOwner]: 'fail'},
+      }),
+    )
+
+    expect(result.part0_unreadable).toStrictEqual([systematic.nameWithOwner])
+    expect(batchesOf(result).map(batch => batch.batch)).not.toContain(parityName(systematic))
   })
 
   it('does not ask about Part 0 again for a repo whose keyed goal already exists', () => {
@@ -843,11 +942,64 @@ describe('a read that fails', () => {
     expect(result.goal_instructions).toContain('open no goal issue')
   })
 
-  it('stops the goal duty, and lists nothing, when the comments of a reused goal cannot be read', () => {
+  it('stops only that batch, with its reason and nothing to write, when the comments of a reused goal cannot be read', () => {
     const result = planGoals(input(), readers({goals: [goal('initial', 50)], comments: {50: 'fail'}}))
 
-    expect(result.goal_error).toBe('goal comments cannot be read')
-    expect(batchesOf(result)).toStrictEqual([])
+    expect(result.goal_error).toBeNull()
+    expect(batchesOf(result).map(batch => [batch.batch, batch.error, batch.checklist])).toStrictEqual([
+      ['initial', 'goal comments cannot be read', ''],
+    ])
+  })
+
+  describe('a recorded member that is no longer in the current public set', () => {
+    const recorded = (comments: 'fail' | readonly GoalComment[]) =>
+      planGoals(
+        input({
+          eligible: [systematic, dashboard],
+          projectItems: [{content_repo: 'fro-bot/.github', content_number: 50}],
+        }),
+        readers({goals: [goalFor('initial', 50, [dashboard, spaceBus])], comments: {50: comments}}),
+      )
+
+    it.each([
+      ['unreadable goal comments', 'fail' as const],
+      ['a goal with no checklist yet', [] as readonly GoalComment[]],
+    ])('is named nowhere in the batch, and no checklist is repaired, with %s', (_name, comments) => {
+      const result = recorded(comments)
+
+      expect(JSON.stringify(result)).not.toContain(spaceBus.nameWithOwner)
+      expect(batchesOf(result)).toHaveLength(1)
+      expect(batchesOf(result)[0]).toMatchObject({goal_issue: 50, checklist: '', has_checklist: false})
+      expect(batchesOf(result)[0]?.error).toBe(
+        comments === 'fail'
+          ? 'goal comments cannot be read'
+          : 'a member of the goal is not ready, so its checklist waits',
+      )
+      expect(batchesOf(result)[0]?.repos).toStrictEqual([dashboard.nameWithOwner])
+    })
+
+    it('still matches the recorded checklist by its full membership, and lists nothing once it is complete', () => {
+      const result = recorded([checklistComment(1, [lineFor(dashboard), lineFor(spaceBus)])])
+
+      expect(batchesOf(result)).toStrictEqual([])
+    })
+  })
+
+  it('lists the other batches normally while one batch cannot be read', () => {
+    const result = planGoals(
+      input({projectItems: [{content_repo: 'fro-bot/.github', content_number: 70}]}),
+      readers({
+        goals: [goal('initial', 50), goalFor(parityName(systematic), 70, [systematic])],
+        comments: {50: 'fail', 70: []},
+        part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'},
+        activity: {[systematic.nameWithOwner]: anchoredActivity()},
+      }),
+    )
+
+    expect(batchesOf(result).map(batch => [batch.batch, batch.error])).toStrictEqual([
+      ['initial', 'goal comments cannot be read'],
+      [parityName(systematic), null],
+    ])
   })
 
   it('names nothing of the failure', () => {
@@ -1067,6 +1219,166 @@ describe('goalReaders from fixtures', () => {
   })
 })
 
+describe('memoizeReaders', () => {
+  it('asks each question once, a failure included, and ignores the case of a repo name', () => {
+    const base = readers({
+      goals: 'fail',
+      part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'},
+    })
+    const memo = memoizeReaders(base)
+
+    expect(() => memo.goalIssues()).toThrow()
+    expect(() => memo.goalIssues()).toThrow()
+    expect(memo.mergedPart0('marcusrbrown/systematic', 11)).toBe('https://github.com/marcusrbrown/systematic/pull/7')
+    expect(memo.mergedPart0('marcusrbrown/Systematic', 11)).toBe('https://github.com/marcusrbrown/systematic/pull/7')
+    expect(memo.partActivity(spaceBus.nameWithOwner, 12)).toStrictEqual(NO_ACTIVITY)
+    expect(memo.partActivity(spaceBus.nameWithOwner, 12)).toStrictEqual(NO_ACTIVITY)
+    expect(base.reads).toStrictEqual([
+      'goals',
+      'part0 marcusrbrown/systematic#11',
+      `activity ${spaceBus.nameWithOwner}#12`,
+    ])
+  })
+})
+
+describe('planAnswers: the anchor is strict', () => {
+  const NOW = Date.parse('2026-11-25T12:00:00Z')
+  const clock = {now: NOW, answerWindowMs: 3 * 86_400_000, outcomeWindowMs: 14 * 86_400_000}
+  const state = buildMarkerComment({
+    goal: 'fro-bot/.github#50',
+    items: [
+      {
+        id: 'item',
+        target: {owner: 'fro-bot', name: 'dashboard'},
+        promptHash: 'abcdabcdabcdabcd',
+        status: 'dispatched',
+        epoch: NOW - 1000,
+      },
+    ],
+    markerHash: '',
+  })
+  const plan = (at: number) =>
+    planAnswers(
+      input({eligible: [dashboard]}),
+      readers({
+        goals: [goal('initial', 50)],
+        comments: {50: [{id: 2, author: 'fro-bot', body: state}]},
+        activity: {
+          [dashboard.nameWithOwner]: {
+            ...NO_ACTIVITY,
+            labels: ['part-accepted'],
+            labeled: [{label: 'part-accepted', actor: 'fro-bot', at}],
+          },
+        },
+      }),
+      clock,
+    ).parts[0]
+
+  it('does not count an accept at the instant of the anchor, and counts one a millisecond later', () => {
+    expect(plan(NO_ACTIVITY.createdAt)?.state).toBe('awaiting-answer')
+    expect(plan(NO_ACTIVITY.createdAt + 1)?.state).toBe('accepted')
+  })
+
+  it('plans nothing for a repo with no part issue, and says nothing in the prompt', () => {
+    const result = planAnswers(input({eligible: [dashboard], partIssues: new Map()}), readers(), clock)
+
+    expect(result.parts).toStrictEqual([])
+    expect(result.answer_instructions).toContain('No parts.')
+    expect(result.answer_instructions).toContain('Rewrite the "Parts" section')
+    expect(result.answer_instructions).not.toContain(dashboard.nameWithOwner)
+  })
+
+  it('resolves the owning batch before it reads goal comments: an unreadable goal that excludes the repo is not asked', () => {
+    const joinGoal = goalFor(`join-${dashboard.nodeId}`, 51, [dashboard])
+    const reader = readers({
+      goals: [goalFor('initial', 50, [systematic, spaceBus]), joinGoal],
+      comments: {51: []},
+    })
+
+    const result = planAnswers(input({eligible: [dashboard]}), reader, clock)
+
+    expect(result.parts[0]).toMatchObject({repo: dashboard.nameWithOwner, state: 'held', reason: 'not-dispatched'})
+    expect(reader.reads).not.toContain('comments 50')
+    expect(reader.reads).toContain('comments 51')
+  })
+
+  it('still asks an initial goal that records no members, as before', () => {
+    const reader = readers({
+      goals: [goal('initial', 50, {body: `A goal.\n${goalMarker('harness', 'initial')}\n`})],
+      comments: {50: []},
+    })
+
+    planAnswers(input({eligible: [dashboard]}), reader, clock)
+
+    expect(reader.reads).toContain('comments 50')
+  })
+})
+
+describe('partActivity from fixtures', () => {
+  const timeline = (entries: readonly unknown[]) =>
+    JSON.stringify({
+      'marcusrbrown/Systematic': {
+        created_at: '2026-10-01T00:00:00Z',
+        labels: ['part-accepted', 'x'],
+        timeline: entries,
+      },
+    })
+  const read = (text: string | undefined) => goalReaders('fro-bot/.github', {ROLLOUT_TRACKER_PART_ACTIVITY_JSON: text})
+
+  it('reads the creation time, the labels, the labeled events and the comments, names compared ignoring case', () => {
+    const activity = read(
+      timeline([
+        {
+          event: 'labeled',
+          id: 0,
+          login: 'fro-bot',
+          label: 'part-accepted',
+          created_at: '2026-11-01T00:00:00Z',
+          body: '',
+        },
+        {event: 'commented', id: 5, login: 'marcusrbrown', label: '', created_at: '2026-11-02T00:00:00Z', body: 'hi'},
+      ]),
+    ).partActivity('marcusrbrown/systematic', 11)
+
+    expect(activity).toStrictEqual({
+      createdAt: Date.parse('2026-10-01T00:00:00Z'),
+      labels: ['part-accepted', 'x'],
+      labeled: [{label: 'part-accepted', actor: 'fro-bot', at: Date.parse('2026-11-01T00:00:00Z')}],
+      comments: [{id: 5, author: 'marcusrbrown', at: Date.parse('2026-11-02T00:00:00Z'), body: 'hi'}],
+    })
+  })
+
+  it.each([
+    ['not JSON', 'nope'],
+    [
+      'a repo it lacks',
+      JSON.stringify({'fro-bot/other': {created_at: '2026-10-01T00:00:00Z', labels: [], timeline: []}}),
+    ],
+    [
+      'a creation time that is not a time',
+      JSON.stringify({'marcusrbrown/systematic': {created_at: 'soon', labels: [], timeline: []}}),
+    ],
+    [
+      'labels that are not a list',
+      JSON.stringify({'marcusrbrown/systematic': {created_at: '2026-10-01T00:00:00Z', labels: 'x', timeline: []}}),
+    ],
+    [
+      'an event that is neither labeled nor commented',
+      timeline([{event: 'closed', id: 0, login: 'a', label: '', created_at: '2026-11-01T00:00:00Z', body: ''}]),
+    ],
+    [
+      'an event time that is not a time',
+      timeline([{event: 'labeled', id: 0, login: 'a', label: 'x', created_at: 'soon', body: ''}]),
+    ],
+    [
+      'a comment with no id',
+      timeline([{event: 'commented', login: 'a', label: '', created_at: '2026-11-01T00:00:00Z', body: ''}]),
+    ],
+  ])('fails the read for %s', (_name, text) => {
+    expect(() => read(text).partActivity('marcusrbrown/systematic', 11)).toThrow()
+  })
+})
+
 describe('goalReaders through gh', () => {
   let directory = ''
 
@@ -1086,6 +1398,8 @@ describe('goalReaders through gh', () => {
         'case "$*" in',
         '  "api --paginate repos/fro-bot/.github/issues?state=all&creator=fro-bot&labels=cross-repo-goal&per_page=100 --jq "*) cat "$FAKE_GOALS" ;;',
         '  "api --paginate repos/fro-bot/.github/issues/50/comments?per_page=100 --jq "*) cat "$FAKE_COMMENTS" ;;',
+        '  "api --paginate repos/marcusrbrown/systematic/issues/11/timeline?per_page=100 --jq "*labeled*) cat "$FAKE_TIMELINE" ;;',
+        '  "api repos/marcusrbrown/systematic/issues/11 --jq "*) cat "$FAKE_ISSUE" ;;',
         '  "api --paginate repos/marcusrbrown/systematic/issues/11/timeline?per_page=100 --jq "*) cat "$FAKE_PART0" ;;',
         '  *) echo unexpected >&2; exit 1 ;;',
         'esac',
@@ -1097,6 +1411,8 @@ describe('goalReaders through gh', () => {
       ['goals', 'FAKE_GOALS'],
       ['comments', 'FAKE_COMMENTS'],
       ['part0', 'FAKE_PART0'],
+      ['timeline', 'FAKE_TIMELINE'],
+      ['issue', 'FAKE_ISSUE'],
     ] as const) {
       files[name] = join(directory, `${name}.ndjson`)
       writeFileSync(files[name], '')
@@ -1192,5 +1508,48 @@ describe('goalReaders through gh', () => {
     vi.stubEnv('FAKE_PART0', join(directory, 'missing.ndjson'))
 
     expect(() => readers().mergedPart0('marcusrbrown/systematic', 11)).toThrow()
+  })
+
+  const event = (changes: Record<string, unknown>) =>
+    JSON.stringify({
+      event: 'labeled',
+      id: 0,
+      login: 'fro-bot',
+      label: 'part-accepted',
+      created_at: '2026-11-01T00:00:00Z',
+      body: '',
+      ...changes,
+    })
+
+  it('reads the creation time and labels of a part issue, then its labeled and commented events across every page', () => {
+    const gh = stubGh()
+    gh.set('issue', `${JSON.stringify({created_at: '2026-10-01T00:00:00Z', labels: ['part-accepted']})}\n`)
+    gh.set(
+      'timeline',
+      `${event({})}\n${event({event: 'commented', id: 9, login: 'fro-bot', label: '', body: 'why'})}\n`,
+    )
+
+    const activity = readers().partActivity('marcusrbrown/systematic', 11)
+
+    expect(activity.labels).toStrictEqual(['part-accepted'])
+    expect(activity.labeled.map(entry => entry.actor)).toStrictEqual(['fro-bot'])
+    expect(activity.comments).toStrictEqual([
+      {id: 9, author: 'fro-bot', at: Date.parse('2026-11-01T00:00:00Z'), body: 'why'},
+    ])
+    expect(gh.log()).toStrictEqual([
+      'api repos/marcusrbrown/systematic/issues/11 --jq {created_at, labels: [.labels[].name]}',
+      'api --paginate repos/marcusrbrown/systematic/issues/11/timeline?per_page=100 --jq .[] | select(.event == "labeled" or .event == "commented") | {event, id: (.id // 0), login: (.actor.login // .user.login // ""), label: (.label.name // ""), created_at, body: ((.body // "") | .[0:4000])}',
+    ])
+  })
+
+  it('fails the read on a cut-off timeline record, and when gh fails', () => {
+    const gh = stubGh()
+    gh.set('issue', JSON.stringify({created_at: '2026-10-01T00:00:00Z', labels: []}))
+    gh.set('timeline', event({}).slice(0, 25))
+
+    expect(() => readers().partActivity('marcusrbrown/systematic', 11)).toThrow()
+
+    vi.stubEnv('FAKE_ISSUE', join(directory, 'missing.json'))
+    expect(() => readers().partActivity('marcusrbrown/systematic', 11)).toThrow()
   })
 })

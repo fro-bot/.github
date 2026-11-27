@@ -28,7 +28,23 @@ import {
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
-import {goalReaders, planGoals, type GoalBatch} from './rollout-tracker-goals.ts'
+import {
+  bootstrapInstructions,
+  countOf,
+  domainReasonSuffix,
+  LOOKUP_FAILED,
+  STALE_RUN,
+  withAttention,
+} from './rollout-tracker-attention.ts'
+import {
+  goalReaders,
+  memoizeReaders,
+  planAnswers,
+  planGoals,
+  type AnswerPlan,
+  type GoalBatch,
+  type PartStatus,
+} from './rollout-tracker-goals.ts'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -91,6 +107,11 @@ export type NoExternalSignals = Record<string, never>
 export interface RolloutSnapshot {
   items: SnapshotItem[]
   external: ExternalSignals | NoExternalSignals
+  /**
+   * The answers of a domain program's parts that a receipt or an authentic accept settled, by repo. Present only for a
+   * program with a `domain`, so the snapshot, and its hash, of a program without one is what it was before.
+   */
+  answers?: {repo: string; answer: string}[]
 }
 
 /**
@@ -102,6 +123,21 @@ export interface MarkerData {
   hash: string
   /** The highest operator `@fro-bot` comment ID the tracker has answered; null when absent or invalid. */
   last_mention_id: number | null
+  /**
+   * The digest of what needed attention in a domain program's last run: its stalled and unknown parts and its errors.
+   * Present only when the marker carries a valid one, so a program with no domain keeps the marker it always had.
+   */
+  domain_digest?: string
+}
+
+/** What a domain program adds to the wake: Part 0 hand-overs to do, and the digest of what needs attention. */
+export interface DomainWake {
+  /** The Part 0 repos that need their parity-follows comment. */
+  transitions: number
+  /** The digest of this run's attention list. */
+  digest: string
+  /** The size of that list; zero never wakes. */
+  attention: number
 }
 
 /** The decision output from decideComment. */
@@ -205,6 +241,26 @@ export interface DomainPreflight {
   part0_unreadable: string[]
   /** The text that follows the bootstrap duty in the tracker prompt; empty when there is no goal duty. It starts with a blank line. */
   goal_instructions: string
+  /** Where each repo's part stands, for the current attempt: its answer, its holds, its stall, its reason comment link. */
+  parts: PartStatus[]
+  /** The parts whose answer or outcome window ran out. A subset of `parts`, by repo, part issue and kind. */
+  stalled_parts: AnswerPlan['stalled_parts']
+  /** The parts that wait on someone else: no dispatch yet, Part 0 unmerged, a held brief read or a blocked dispatch. Never stalled. */
+  held_parts: AnswerPlan['held_parts']
+  /** The parts that could not be read this run. */
+  unknown_parts: AnswerPlan['unknown_parts']
+  /** The Part 0 repos whose Part 0 has merged and whose part issue lacks the parity-follows comment; the tracker does these first. */
+  parity_transitions: AnswerPlan['parity_transitions']
+  /** The text that follows the goal duty in the tracker prompt; empty when there is no part. It starts with a blank line. */
+  answer_instructions: string
+  /**
+   * The digest of what needs attention: the stalled and unknown parts, the errors, the errored goal batches, the
+   * unreadable Part 0 repos, the deferred repos and the count of ineligible ones. It is stored in the tracker marker, so
+   * the tracker wakes when it changes and never daily on the same state.
+   */
+  attention_digest: string
+  /** How many things the digest covers; zero means there is nothing to wake for. */
+  attention_count: number
 }
 
 export interface TrackerComment {
@@ -242,6 +298,12 @@ export const MARKER_PREFIX = 'gateway-rollout-tracker:'
  * Kept symmetric with `frobotAuthors()` in `packages/core/src/wiki-authority.ts`.
  */
 export const FROBOT_COMMENT_AUTHORS: ReadonlySet<string> = new Set(['fro-bot', 'fro-bot[bot]'])
+
+/** How long a repository's agent has to answer a part, from the item's dispatch epoch: three days. */
+export const ANSWER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
+
+/** How long an accepted part has to reach an outcome, from the accept: fourteen days. */
+export const OUTCOME_WINDOW_MS = 14 * 24 * 60 * 60 * 1000
 
 // ─── Core functions (exported for tests) ─────────────────────────────────────
 
@@ -333,6 +395,7 @@ export function buildSnapshot(
   items: ProjectItem[],
   issues: IssueState[],
   external: ExternalSignals | NoExternalSignals,
+  answers?: RolloutSnapshot['answers'],
 ): RolloutSnapshot {
   // Build a lookup map: "repo#number" → IssueState
   const issueMap = new Map<string, IssueState>()
@@ -364,7 +427,7 @@ export function buildSnapshot(
     return a.content_number - b.content_number
   })
 
-  return {items: snapshotItems, external}
+  return {items: snapshotItems, external, ...(answers === undefined ? {} : {answers})}
 }
 
 /**
@@ -405,6 +468,9 @@ function toGatingEvidence(snapshot: RolloutSnapshot): RolloutSnapshot {
           contract_version: external.contract_version,
         }
       : {},
+    ...(snapshot.answers === undefined
+      ? {}
+      : {answers: snapshot.answers.map(entry => ({repo: entry.repo, answer: entry.answer}))}),
   }
 }
 
@@ -465,12 +531,14 @@ export function extractPreviousMarker(body: string): MarkerData | null {
       return null
     }
     const lastMentionId = parsed.last_mention_id
+    const digest = parsed.domain_digest
     return {
       hash: parsed.hash,
       last_mention_id:
         typeof lastMentionId === 'number' && Number.isSafeInteger(lastMentionId) && lastMentionId >= 0
           ? lastMentionId
           : null,
+      ...(typeof digest === 'string' && /^[\da-f]{64}$/.test(digest) ? {domain_digest: digest} : {}),
     }
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error)
@@ -574,8 +642,12 @@ export function scanOperatorMentions(
  * escaped inside the JSON so text containing `-->` can neither close the HTML comment early nor
  * break the parse; JSON.parse restores them.
  */
-export function buildMarker(hash: string, lastMentionId: number): string {
-  const json = JSON.stringify({hash, last_mention_id: lastMentionId})
+export function buildMarker(hash: string, lastMentionId: number, domainDigest?: string): string {
+  const json = JSON.stringify({
+    hash,
+    last_mention_id: lastMentionId,
+    ...(domainDigest === undefined ? {} : {domain_digest: domainDigest}),
+  })
     .replaceAll('<', String.raw`\u003c`)
     .replaceAll('>', String.raw`\u003e`)
     .replaceAll('&', String.raw`\u0026`)
@@ -594,6 +666,10 @@ export function buildMarker(hash: string, lastMentionId: number): string {
  * - Same hash with goal batches of a domain program that still need a goal, its checklist or its Project item:
  *   wake to open them. The count comes from the preflight's own list, so a run that stops partway is finished by
  *   the next one.
+ * - Same hash with Part 0 repos of a domain program that need their parity-follows comment: wake to post it.
+ * - Same hash with something in a domain program that needs attention (a stalled or unknown part, an error) whose
+ *   digest differs from the last marker's: wake to report it. The same state on the next run is not a wake, so a part
+ *   that stays stalled does not wake the tracker daily.
  * - Same hash, nothing pending: no gating transition, skip.
  */
 export function decideComment(
@@ -603,6 +679,7 @@ export function decideComment(
   pendingMentionIds: readonly number[],
   bootstrapRepos: readonly ConfirmedRepo[] = [],
   goalBatches = 0,
+  domainWake?: DomainWake,
 ): CommentDecision {
   if (previousMarker === null) {
     return {
@@ -616,11 +693,28 @@ export function decideComment(
   const mentions = pendingMentionIds.length > 0 ? `; operator mention pending (${pendingMentionIds.length})` : ''
   const bootstrap = bootstrapRepos.length > 0 ? `; bootstrap pending (${bootstrapRepos.length})` : ''
   const goals = goalBatches > 0 ? `; goal batches pending (${goalBatches})` : ''
+  const handOvers = domainWake?.transitions ?? 0
+  const attention = domainWake?.attention ?? 0
+  // A non-empty list wakes when its digest differs from the marker's. A list that has emptied wakes once, when the
+  // marker still holds the digest of a non-empty one: the agent refreshes the Parts section and writes the empty digest,
+  // so the next run is quiet and the same stall returning differs from it. A marker with no digest never wakes a clear.
+  const attentionChanged =
+    domainWake !== undefined &&
+    (attention > 0
+      ? domainWake.digest !== previousMarker.domain_digest
+      : previousMarker.domain_digest !== undefined && previousMarker.domain_digest !== domainWake.digest)
+  const domain =
+    (handOvers > 0 ? `; Part 0 hand-over pending (${handOvers})` : '') +
+    (attentionChanged
+      ? attention > 0
+        ? `; domain attention changed (${attention})`
+        : '; domain attention cleared'
+      : '')
 
   if (hash !== previousMarker.hash) {
     return {
       should_comment: true,
-      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}${bootstrap}${goals}`,
+      reason: `gating transition detected — hash changed from ${previousMarker.hash.slice(0, 8)} to ${hash.slice(0, 8)}${mentions}${bootstrap}${goals}${domain}`,
       hash,
       snapshot,
     }
@@ -629,7 +723,7 @@ export function decideComment(
   if (pendingMentionIds.length > 0) {
     return {
       should_comment: true,
-      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID${bootstrap}${goals}`,
+      reason: `operator mention pending (${pendingMentionIds.length}) — @fro-bot comment above the last answered mention ID${bootstrap}${goals}${domain}`,
       hash,
       snapshot,
     }
@@ -639,7 +733,7 @@ export function decideComment(
     const noun = bootstrapRepos.length === 1 ? 'repo has' : 'repos have'
     return {
       should_comment: true,
-      reason: `bootstrap — ${bootstrapRepos.length} confirmed ${noun} no Project item yet${goals}`,
+      reason: `bootstrap — ${bootstrapRepos.length} confirmed ${noun} no Project item yet${goals}${domain}`,
       hash,
       snapshot,
     }
@@ -648,7 +742,28 @@ export function decideComment(
   if (goalBatches > 0) {
     return {
       should_comment: true,
-      reason: `goal batches — ${countOf(goalBatches, 'batch needs', 'batches need')} a goal issue, its checklist or its Project item`,
+      reason: `goal batches — ${countOf(goalBatches, 'batch needs', 'batches need')} a goal issue, its checklist or its Project item${domain}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (handOvers > 0) {
+    return {
+      should_comment: true,
+      reason: `Part 0 hand-over — ${countOf(handOvers, 'part issue needs', 'part issues need')} its parity-follows comment${attentionChanged ? (attention > 0 ? `; domain attention changed (${attention})` : '; domain attention cleared') : ''}`,
+      hash,
+      snapshot,
+    }
+  }
+
+  if (attentionChanged) {
+    return {
+      should_comment: true,
+      reason:
+        attention > 0
+          ? `domain attention changed — ${attention} stalled, unknown or errored ${attention === 1 ? 'item' : 'items'}`
+          : 'domain attention cleared — nothing stalled, unknown or errored now',
       hash,
       snapshot,
     }
@@ -1096,7 +1211,6 @@ function readMainHead(briefRepo: string, env: Env): string {
   }).trim()
 }
 
-const STALE_RUN = 'stale-run'
 const PART_ISSUES_UNREADABLE = 'part issues cannot be read'
 
 /** The issue (or pull request) behind one Project item: whether it is a pull request, who wrote it and its body. */
@@ -1141,9 +1255,14 @@ function readItemIssue(repo: string, number: number, fixture: Map<string, unknow
 /**
  * The Project items that are this program's part issues: an issue (not a pull request) in a confirmed repo,
  * written by Fro Bot, whose body carries that repo's marker for this program. Any other item of the repo,
- * such as a dependency card, is not a part issue and does not count as a bootstrap. Any failed read throws.
+ * such as a dependency card, is not a part issue and does not count as a bootstrap. An item whose identity read
+ * fails is neither: it is `unverified`, and only its own part is unknown. A fixture that is not an object throws.
  */
-function readPartIssueItems(entry: ProgramEntry, items: readonly ProjectItem[], env: Env): ProjectItem[] {
+function readPartIssueItems(
+  entry: ProgramEntry,
+  items: readonly ProjectItem[],
+  env: Env,
+): {verified: ProjectItem[]; unverified: ProjectItem[]} {
   const confirmed = new Map((entry.repos ?? []).map(repo => [repo.nameWithOwner.toLowerCase(), repo]))
   let fixture: Map<string, unknown> | undefined
   if (env.ROLLOUT_TRACKER_PART_ISSUES_JSON !== undefined) {
@@ -1151,19 +1270,26 @@ function readPartIssueItems(entry: ProgramEntry, items: readonly ProjectItem[], 
     if (!isRecord(parsed)) throw new TypeError(PART_ISSUES_UNREADABLE)
     fixture = new Map(Object.entries(parsed).map(([key, value]) => [key.toLowerCase(), value]))
   }
-  return items.filter(item => {
+  const verified: ProjectItem[] = []
+  const unverified: ProjectItem[] = []
+  for (const item of items) {
     const repo = confirmed.get(item.content_repo.toLowerCase())
-    if (repo === undefined) return false
-    const issue = readItemIssue(item.content_repo, item.content_number, fixture)
-    return (
-      !issue.pull_request &&
-      FROBOT_COMMENT_AUTHORS.has(issue.author) &&
-      issue.body.includes(partIssueMarker(entry.key, repo.nodeId))
-    )
-  })
+    if (repo === undefined) continue
+    try {
+      const issue = readItemIssue(item.content_repo, item.content_number, fixture)
+      if (
+        !issue.pull_request &&
+        FROBOT_COMMENT_AUTHORS.has(issue.author) &&
+        issue.body.includes(partIssueMarker(entry.key, repo.nodeId))
+      ) {
+        verified.push(item)
+      }
+    } catch {
+      unverified.push(item)
+    }
+  }
+  return {verified, unverified}
 }
-
-const LOOKUP_FAILED = 'part issue lookup failed'
 
 /**
  * Every issue of the repo created by `fro-bot`, in every state and across every page, as `gh api --paginate`
@@ -1226,43 +1352,6 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error'
 }
 
-function countOf(count: number, one: string, many: string): string {
-  return count === 1 ? `1 ${one}` : `${count} ${many}`
-}
-
-/** The instructions that replace the generic bootstrap issue in the tracker prompt. They start with a blank line. */
-type DomainBase = Omit<
-  DomainPreflight,
-  'bootstrap_instructions' | 'goal_batches' | 'goal_error' | 'part0_unreadable' | 'goal_instructions'
->
-
-function bootstrapInstructions(domain: DomainBase, program: string): string {
-  const intro = '\n\nDomain program. '
-  if (domain.brief_error === STALE_RUN) {
-    return `${intro}This run is not at the head of main (${STALE_RUN}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and say in your tracker comment only that the run was stale; a fresh run files.`
-  }
-  if (domain.brief_error !== null) {
-    return `${intro}The program's brief cannot be used (${domain.brief_error}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and tell the operator in your tracker comment that the brief cannot be used, with that message.`
-  }
-  if (domain.registry_error !== null) {
-    return `${intro}Which repos may take a part cannot be checked (${domain.registry_error}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and tell the operator in your tracker comment that the check failed, with that message.`
-  }
-  if (domain.part_issue_error !== null) {
-    return `${intro}Which repos already have their part issue cannot be checked (${domain.part_issue_error}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and tell the operator in your tracker comment that the check failed, with that message.`
-  }
-  const skipped = domain.ineligible_repos.length
-  const notice =
-    skipped === 0
-      ? ''
-      : ` ${countOf(skipped, 'listed repo is not eligible and gets', 'listed repos are not eligible and get')} no part issue. Do not name ${skipped === 1 ? 'it' : 'them'} or say why.`
-  const deferred = domain.deferred_repos.length
-  const deferredNotice =
-    deferred === 0
-      ? ''
-      : ` ${countOf(deferred, 'listed repo could not be checked for an existing part issue', 'listed repos could not be checked for an existing part issue')} (${LOOKUP_FAILED}) and ${deferred === 1 ? 'gets' : 'get'} nothing this run: file nothing for ${deferred === 1 ? 'it' : 'them'} and say so in your tracker comment.`
-  return `${intro}The program ${program} runs in the domain ${domain.key}; its brief is pinned to commit ${domain.brief_commit} of program-domains.json. In this program the Bootstrap duty files the part issue given here, not an issue you write yourself. For each repo you file in, use that repo's title and body from this JSON array (repo, title and body; empty when no repo needs one) exactly, character for character, and add nothing. The body links the tracker issue, which is how the search for an existing issue finds it on a re-run. A repo with no entry here gets no issue; skip it silently.\n${JSON.stringify(domain.part_issues)}\nThe preflight has already searched the repo for this program's part issue, in every state, so do not search yourself. An entry whose \`existing\` is a number already has its part issue: add that issue to the Project and file nothing new. Every other entry has none: file it. Ignore the rules above that skip a repo with a Project item and that search for an issue that links the tracker issue: in this program only the marker identifies a part issue, and an unrelated issue or pull request of the repo never counts.${notice}${deferredNotice}`
-}
-
 /** What `planDomain` needs besides the program: where its tracker is and what the run has already found out. */
 interface DomainPlanInput {
   tracker: {repo: string; number: number}
@@ -1274,6 +1363,12 @@ interface DomainPlanInput {
   /** The Project items that are this program's part issues, and every Project item the run read. */
   present: readonly ProjectItem[]
   projectItems: readonly ProjectItem[]
+  /** The preflight's clock, in epoch milliseconds. */
+  now: number
+  /** The parts (`repo#number`, lower case) whose issue could not be read when the run read the tracked issues. */
+  unreadableIssues: ReadonlySet<string>
+  /** The Project items of confirmed repos whose identity read failed: their parts are unknown, and nothing is written for them. */
+  unverified: readonly ProjectItem[]
 }
 
 /**
@@ -1307,14 +1402,20 @@ function planDomain(
       ...changes,
     }
     return {
-      domain: {
+      domain: withAttention({
         ...base,
         bootstrap_instructions: bootstrapInstructions(base, entry.key),
         goal_batches: [],
         goal_error: null,
         part0_unreadable: [],
         goal_instructions: '',
-      },
+        parts: [],
+        stalled_parts: [],
+        held_parts: [],
+        unknown_parts: [],
+        parity_transitions: [],
+        answer_instructions: '',
+      }),
       ready: [],
       blocked: [],
     }
@@ -1413,38 +1514,36 @@ function planDomain(
     const name = item.content_repo.toLowerCase()
     partIssues.set(name, Math.min(item.content_number, partIssues.get(name) ?? item.content_number))
   }
-  const goals = planGoals(
-    {
-      program: entry.key,
-      domain: domainKey,
-      tracker,
-      brief: {commit: brief.commit, url: briefUrl},
-      eligible: programRepos.filter(repo => isEligible(repo) && publicRepos.has(repo.nameWithOwner.toLowerCase())),
-      part0Names,
-      partIssues,
-      projectItems: input.projectItems,
-    },
-    goalReaders(tracker.repo, env),
+  const goalInput = {
+    program: entry.key,
+    domain: domainKey,
+    tracker,
+    brief: {commit: brief.commit, url: briefUrl},
+    eligible: programRepos.filter(repo => isEligible(repo) && publicRepos.has(repo.nameWithOwner.toLowerCase())),
+    part0Names,
+    partIssues,
+    projectItems: input.projectItems,
+  }
+  // The goal plan and the answer plan read the same goals, comments, Part 0 references and part issues: once each.
+  const readers = memoizeReaders(goalReaders(tracker.repo, env))
+  const goals = planGoals(goalInput, readers)
+  const answers = planAnswers(
+    goalInput,
+    readers,
+    {now: input.now, answerWindowMs: ANSWER_WINDOW_MS, outcomeWindowMs: OUTCOME_WINDOW_MS},
+    input.unreadableIssues,
+    input.unverified,
   )
   return {
-    domain: {...base, bootstrap_instructions: bootstrapInstructions(base, entry.key), ...goals},
+    domain: withAttention({
+      ...base,
+      bootstrap_instructions: bootstrapInstructions(base, entry.key),
+      ...goals,
+      ...answers,
+    }),
     ready,
     blocked: lists.blocked.filter(repo => isEligible(repo)),
   }
-}
-
-/** The words a domain adds to the wake reason: a stopped bootstrap, or a count of repos that get no part issue. */
-function domainReasonSuffix(domain: DomainPreflight): string {
-  if (domain.brief_error !== null) return `; domain brief error: ${domain.brief_error}`
-  if (domain.registry_error !== null) return `; domain registry error: ${domain.registry_error}`
-  if (domain.part_issue_error !== null) return `; domain part issue error: ${domain.part_issue_error}`
-  const count = domain.ineligible_repos.length
-  const deferred = domain.deferred_repos.length
-  return (
-    (count === 0 ? '' : `; ${countOf(count, 'listed repo is', 'listed repos are')} not eligible for a part issue`) +
-    (deferred === 0 ? '' : `; ${countOf(deferred, 'listed repo is', 'listed repos are')} deferred (${LOOKUP_FAILED})`) +
-    (domain.goal_error === null ? '' : `; domain goal error: ${domain.goal_error}`)
-  )
 }
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────
@@ -1501,6 +1600,9 @@ export interface SnapshotIo {
  *                                   Project item of a confirmed repo
  *   ROLLOUT_TRACKER_EXISTING_ISSUES_JSON — {"owner/repo": [{number, state, pull_request, author, body}]}: every
  *                                   issue Fro Bot created in a repo it may file in, in any state
+ *   ROLLOUT_TRACKER_NOW         — the clock of the answer and outcome windows, as a time; the real time when unset
+ *   ROLLOUT_TRACKER_PART_ACTIVITY_JSON — {"owner/repo": {created_at, labels, timeline}}: each part issue's creation,
+ *                                   labels, and `labeled` and `commented` events (see goalReaders)
  *
  * A body fixture supplies no comment list, so it reports no pending mentions.
  */
@@ -1539,8 +1641,16 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     rawTriggerEvent === 'created' || rawTriggerEvent === 'edited' ? rawTriggerEvent : ''
   const trigger = triggerId === null ? null : {id: triggerId, event: triggerEvent}
 
+  // The clock of the answer and outcome windows. Only a test sets it.
+  const now = env.ROLLOUT_TRACKER_NOW === undefined ? Date.now() : Date.parse(env.ROLLOUT_TRACKER_NOW)
+  if (Number.isNaN(now)) {
+    io.stderr('rollout-tracker-snapshot: FATAL — ROLLOUT_TRACKER_NOW must be a time\n')
+    return 1
+  }
+
   let items: ProjectItem[]
   let issues: IssueState[]
+  const unreadableIssues = new Set<string>()
 
   // Allow fixture injection for tests / dry-run
   if (env.ROLLOUT_TRACKER_ITEMS_JSON === undefined) {
@@ -1620,6 +1730,11 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     items = filterSupportedProjectItems(items)
     const trackedIssues = deriveTrackedIssueRefs(items)
     issues = []
+    // A domain program goes on when the issue of one of its repos cannot be read: that part is unknown, and the
+    // snapshot has no state for the issue. Any other failed read, and every failed read of another program, fails the run.
+    const partRepos = new Set(
+      entry.domain === undefined ? [] : (entry.repos ?? []).map(repo => repo.nameWithOwner.toLowerCase()),
+    )
     for (const ref of trackedIssues) {
       const [repo, numStr] = ref.split('#')
       if (repo === undefined || numStr === undefined) continue
@@ -1645,6 +1760,13 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
           labels: parsed.labels.map(l => l.name),
         })
       } catch {
+        if (partRepos.has(repo.toLowerCase())) {
+          unreadableIssues.add(`${repo.toLowerCase()}#${numStr}`)
+          io.stderr(
+            'rollout-tracker-snapshot: a tracked issue of a domain repo could not be read; its part is unknown\n',
+          )
+          continue
+        }
         io.stderr(
           'rollout-tracker-snapshot: FATAL — failed to fetch a tracked issue; refusing to treat access failure as no-drift; exiting 1\n',
         )
@@ -1698,8 +1820,6 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     return 1
   }
 
-  const snapshot = buildSnapshot(items, issues, external)
-  const hash = hashSnapshot(snapshot)
   const previousMarker = extractPreviousMarker(latestCommentBody)
   const {pendingIds, lastMentionId} = scanOperatorMentions(comments, previousMarker, entry, trigger)
   // A run can be built from an old revision (a re-run of a partial bootstrap), so the authority to file
@@ -1708,15 +1828,20 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   // the marker its body carries. Any other item of the repo (a dependency issue, a pull request) does not count.
   let partIssueError: string | null = null
   let present: readonly ProjectItem[] = items
+  let unverified: readonly ProjectItem[] = []
   if (entry.domain !== undefined) {
     try {
-      present = readPartIssueItems(entry, items, env)
+      ;({verified: present, unverified} = readPartIssueItems(entry, items, env))
     } catch {
       partIssueError = PART_ISSUES_UNREADABLE
       present = []
     }
   }
-  let missing = confirmedReposMissing(entry, present, publicRepos)
+  // A repo whose Project item could not be read is not bootstrapped again: filing there could duplicate its part issue.
+  const unverifiedRepos = new Set(unverified.map(item => item.content_repo.toLowerCase()))
+  let missing = confirmedReposMissing(entry, present, publicRepos).filter(
+    repo => !unverifiedRepos.has(repo.nameWithOwner.toLowerCase()),
+  )
   if (missing.length > 0) {
     try {
       missing = reposConfirmedOnDefaultBranch(
@@ -1747,20 +1872,56 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
             partIssueError,
             present,
             projectItems: items,
+            now,
+            unreadableIssues,
+            unverified,
           },
           env,
         )
+  // A domain program's evidence adds what its parts' receipts and authentic accepts settled; any other program's
+  // snapshot, and so its hash, is what it was before answers existed.
+  const settled: ReadonlySet<string> = new Set(['accepted', 'declined', 'countered', 'completed', 'failed'])
+  const answers = planned?.domain.parts
+    .filter(part => settled.has(part.state))
+    .map(part => ({repo: part.repo, answer: part.state}))
+    .toSorted((left, right) => left.repo.localeCompare(right.repo))
+  const snapshot = buildSnapshot(items, issues, external, answers)
+  // A domain run that is stopped (the brief, the registry, the part issues or the goals cannot be read) knows no
+  // answers, so its snapshot would drop them and move the hash: it carries the last hash through instead, and the
+  // run that recovers compares like with like. With no marker to carry, the computed hash stands.
+  const stopped =
+    planned !== undefined &&
+    [
+      planned.domain.brief_error,
+      planned.domain.registry_error,
+      planned.domain.part_issue_error,
+      planned.domain.goal_error,
+    ].some(message => message !== null)
+  const hash = stopped && previousMarker !== null ? previousMarker.hash : hashSnapshot(snapshot)
   const bootstrapRepos = planned?.ready ?? partitioned.ready
   const bootstrapBlocked = planned?.blocked ?? partitioned.blocked
   const goalBatches = planned?.domain.goal_batches.filter(batch => batch.error === null).length ?? 0
-  const decided = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos, goalBatches)
+  // A stale run reads no brief, so it knows nothing of the domain's state: it neither wakes for the digest nor
+  // overwrites the last one, which the marker it writes carries through.
+  const stale = planned?.domain.brief_error === STALE_RUN
+  const domainWake =
+    planned === undefined || stale
+      ? undefined
+      : {
+          transitions: planned.domain.parity_transitions.length,
+          digest: planned.domain.attention_digest,
+          attention: planned.domain.attention_count,
+        }
+  const domainDigest =
+    planned === undefined ? undefined : stale ? previousMarker?.domain_digest : planned.domain.attention_digest
+  const decided = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos, goalBatches, domainWake)
   const decision =
     planned === undefined ? decided : {...decided, reason: `${decided.reason}${domainReasonSuffix(planned.domain)}`}
   const result: PreflightResult = {
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
-    marker: buildMarker(hash, lastMentionId),
+    marker: buildMarker(hash, lastMentionId, domainDigest),
     marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
     bootstrap_repos: bootstrapRepos,
     bootstrap_blocked: bootstrapBlocked,
