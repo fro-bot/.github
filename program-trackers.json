@@ -6,6 +6,23 @@
       "project": {"owner": "fro-bot", "number": 1, "gateField": "gateway Unit Gate"},
       "operator": {"id": 831617, "login": "marcusrbrown"},
       "evidence": "gateway"
+    },
+    {
+      "key": "harness-parity",
+      "issue": "fro-bot/.github#4357",
+      "project": {"owner": "fro-bot", "number": 2, "gateField": "harness-parity Gate"},
+      "operator": {"id": 831617, "login": "marcusrbrown"},
+      "evidence": "none",
+      "domain": "harness-tools",
+      "repos": [
+        {"nameWithOwner": "marcusrbrown/systematic", "nodeId": "R_kgDORAJegA"},
+        {"nameWithOwner": "fro-bot/space-bus", "nodeId": "R_kgDOTMGFnQ"},
+        {"nameWithOwner": "fro-bot/dashboard", "nodeId": "R_kgDOS6ys-g"},
+        {"nameWithOwner": "marcusrbrown/metacogs", "nodeId": "R_kgDOVUNN9g"},
+        {"nameWithOwner": "marcusrbrown/opencode-copilot-delegate", "nodeId": "R_kgDOSKIp0Q"},
+        {"nameWithOwner": "marcusrbrown/dev-like", "nodeId": "R_kgDOTVrJ0w"},
+        {"nameWithOwner": "marcusrbrown/mothership", "nodeId": "R_kgDOTOX0_A"}
+      ]
     }
   ]
 }

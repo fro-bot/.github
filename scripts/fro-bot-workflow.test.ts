@@ -1327,7 +1327,8 @@ describe('fro-bot.yaml content-trigger job: issues-branch trust and checkout cre
         github.event.issue.pull_request == null &&
         (github.event_name == 'issue_comment' || github.event_name == 'issues') &&
         (
-          (github.event.issue.number == 3512 && github.event.sender.id == 831617)
+          (github.event.issue.number == 3512 && github.event.sender.id == 831617) ||
+          (github.event.issue.number == 4357 && github.event.sender.id == 831617)
         )
       ) && (
         github.event.pull_request == null ||
