@@ -2,8 +2,17 @@
 type: topic
 title: GitHub Actions CI
 created: 2026-04-18
-updated: 2026-11-25
+updated: 2026-11-26
 sources:
+  - url: https://github.com/fro-bot/agent/blob/4747184bebcff2887592a2bc7cd20fa71d5c1f5f/.github/workflows/connect.yaml
+    sha: 4747184bebcff2887592a2bc7cd20fa71d5c1f5f
+    accessed: 2026-11-26
+  - url: https://github.com/fro-bot/.github/blob/21a24047c705cad2c7546fabfd9625f6ec7544dd/.github/workflows/fro-bot.yaml
+    sha: 21a24047c705cad2c7546fabfd9625f6ec7544dd
+    accessed: 2026-11-26
+  - url: https://github.com/marcusrbrown/gpt/blob/eee873f0293bc91e23de94b7c7816aa56656a4b3/.github/workflows/fro-bot.yaml
+    sha: eee873f0293bc91e23de94b7c7816aa56656a4b3
+    accessed: 2026-11-26
   - url: https://github.com/bfra-me/.github/blob/7b018e2acb89fa2f0ff81d2f6160f7cd26b22ae5/.github/workflows/fro-bot.yaml
     sha: 7b018e2acb89fa2f0ff81d2f6160f7cd26b22ae5
     accessed: 2026-11-25
@@ -452,6 +461,18 @@ related:
 ---
 
 # GitHub Actions CI
+
+## A cross-owner reusable workflow gets its secrets one by one (2026-11-26)
+
+[[fro-bot--agent]] added `connect.yaml` (#2317) at `4747184b`: a daily `schedule` plus `workflow_dispatch` caller of `marcusrbrown/systematic/.github/workflows/connect.yaml`, SHA-pinned to v3.38.2. The file sets `permissions: {}` at the top and gives the calling job `contents: read` and `issues: write` as the ceiling for the called workflow's jobs. It passes `OPENCODE_AUTH_JSON` and `OPENCODE_CONFIG` by name, and its comment gives the reason: `secrets: inherit` does not cross owners. Here the caller is in `fro-bot` and the callee in `marcusrbrown`. When a caller in one owner adopts a reusable workflow from another, check the `secrets:` block before you read a missing credential as a callee bug. I read the workflow file only. I did not observe a run.
+
+Sources: [fro-bot/agent@4747184b `connect.yaml`](https://github.com/fro-bot/agent/blob/4747184bebcff2887592a2bc7cd20fa71d5c1f5f/.github/workflows/connect.yaml).
+
+## Fro Bot run tracing is opt-in per caller secret (2026-11-26)
+
+Between 2026-11-25 and 2026-11-26 the same change, "ci: send Fro Bot run traces to the collector", landed in this control plane ([[fro-bot--agent]] callers in `fro-bot/.github` at `21a24047`) and across most surveyed repositories, for example [[marcusrbrown--gpt]] at `eee873f0`. Each `fro-bot/agent` step gains two inputs: `trace-endpoint`, an owner-scoped collector URL on `traces.fro.bot` (`/fro-bot/v1/traces` here, `/marcusrbrown/v1/traces` in the personal repos), and `trace-headers`, a bearer header built from the `FRO_BOT_TRACE_TOKEN` secret. In `fro-bot/.github` the reusable `fro-bot.yaml` declares that secret as an optional `workflow_call` input whose description says tracing is off when it is not passed. Per that description, a caller that does not forward the secret runs untraced rather than failing, so a missing trace for a run is a wiring question, not evidence the run did not happen. I did not observe collector behavior directly.
+
+Sources: [fro-bot/.github@21a24047](https://github.com/fro-bot/.github/commit/21a24047c705cad2c7546fabfd9625f6ec7544dd), [marcusrbrown/gpt@eee873f0](https://github.com/marcusrbrown/gpt/commit/eee873f0293bc91e23de94b7c7816aa56656a4b3).
 
 ## A prompt rule needs a deterministic backstop job (2026-11-24)
 

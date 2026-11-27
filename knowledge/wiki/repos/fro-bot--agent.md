@@ -2,7 +2,7 @@
 type: repo
 title: fro-bot/agent
 created: 2026-05-07
-updated: 2026-11-18
+updated: 2026-11-26
 node_id: R_kgDOQyTMEw
 sources:
   - url: https://github.com/fro-bot/agent
@@ -153,6 +153,8 @@ related:
 # fro-bot/agent
 
 GitHub Action harness for [OpenCode](https://opencode.ai/) with **persistent session state** across CI runs. This is the core runtime and gateway that powers Fro Bot's PR review, issue triage, scheduled maintenance, and wiki-update capabilities across all managed repositories.
+
+Current state (2026-11-26, `main` at `4747184b`, latest release v0.149.2): public, MIT, TypeScript, default branch `main`, not archived. Root `packageManager` is `bun@1.4.5` across six workspace manifests. There are 12 workflows: the 11 recorded on 2026-11-12 plus `connect.yaml` (#2317), a daily Systematic `ce:connect` sweep called cross-owner from `marcusrbrown/systematic`. `fro-bot.yaml` and `renovate.yaml` are unchanged. The README now withholds `github-token` and restricts MCP to static local servers on every trigger except `schedule` and `workflow_dispatch`, documents `opencode/big-pickle` as the default `model`, and adds optional `trace-endpoint`/`trace-headers` inputs.
 
 **Limited re-check (2026-09-26, 06:08 UTC).** The five most recent `main` workflow runs
 observed through `gh run list` all reference `72f11fa`, including a Renovate run
@@ -690,10 +692,10 @@ Entry points (`src/main.ts`, `src/post.ts`) are thin delegates to `src/harness/r
 | `enable-omo-slim`    | `false`      | **New v0.49.0 (#722).** Opt-in to OMO Slim (`oh-my-opencode-slim`) orchestration. **Mutually exclusive with `enable-omo`.** |
 | `omo-slim-preset`    | `openai`     | **New v0.49.0.** OMO Slim provider preset (only when `enable-omo-slim`)            |
 | `omo-providers`      | (empty)      | Default oMo providers (empty = free OpenCode models) |
-| `model`              | —            | Model override (`provider/model` format)            |
+| `model`              | `opencode/big-pickle` | Model to run (`provider/model` format); `auth-json` alone does not change it |
 | `timeout`            | `1800000`    | Execution timeout in ms (0 = no limit)              |
 | `session-retention`  | `50`         | Sessions to retain before pruning                   |
-| `skip-cache`         | `false`      | Skip session cache restore                           |
+| `skip-cache`         | `false`      | Skip session cache restore and save                  |
 | `s3-backup`          | `false`      | Enable S3 write-through canonical backend           |
 | `s3-key-prefix`      | `fro-bot-state` | Prefix for all S3 keys                            |
 | `s3-expected-bucket-owner` | —      | AWS account ID guard against bucket-name squatting  |
