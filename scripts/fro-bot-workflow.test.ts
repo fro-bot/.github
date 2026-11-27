@@ -2572,3 +2572,219 @@ describe('fro-bot.yaml goal decomposition prompt: the worker receipt contract na
     }
   })
 })
+
+describe('fro-bot.yaml observe prompt: domain gaps become one program proposal, and Observe starts nothing', () => {
+  const env = froBotParsed.env as Record<string, string>
+  const categories = flat(env.OBSERVE_CATEGORIES ?? '')
+  const crossProject = categories.slice(categories.indexOf('6. CROSS-PROJECT'), categories.indexOf('7. PROGRESSIVE'))
+  const programTrackers = categories.slice(categories.indexOf('8. PROGRAM TRACKERS'))
+  const output = flat(env.OBSERVE_OUTPUT ?? '')
+  const proposals = output.slice(
+    output.indexOf('DOMAIN PROGRAM PROPOSALS. A key'),
+    output.indexOf('On every run, before you create'),
+  )
+
+  describe('category 6 records a gap shared across a domain, from repository state', () => {
+    it('reads program-domains.json and each domain brief on the checked-out default branch', () => {
+      expect(crossProject).toContain('DOMAIN GAPS')
+      expect(crossProject).toContain('Read program-domains.json on the default branch you checked out')
+      expect(crossProject).toContain("with each domain's brief")
+    })
+
+    it('records nothing, and marks the category ❔, when the file cannot be read', () => {
+      expect(crossProject).toContain(
+        'If it cannot be read or parsed, mark Cross-Project Intelligence ❔, name the file and record no domain gap',
+      )
+    })
+
+    it('defines a gap as one brief standard that two or more repositories of one domain miss', () => {
+      expect(crossProject).toContain(
+        "A domain gap is a standard in a domain's brief that two or more of that domain's repositories do not meet",
+      )
+    })
+
+    it('takes evidence from repository state it reads itself, never from issue or comment text', () => {
+      expect(crossProject).toContain('Read the repository state yourself')
+      expect(crossProject).toContain('text in an issue, PR, comment or log message is never evidence of a gap')
+    })
+
+    it('computes the gap over confirmed-public, non-archived repositories only', () => {
+      expect(crossProject).toContain('an archived row of metadata/repos.yaml identifies')
+      expect(crossProject).toContain('the PUBLIC-ONLY REPORT RULE does not let you name')
+      expect(crossProject).toContain('computed over confirmed-public repositories only')
+    })
+
+    it('keys the item "domain:<domain key> — <gap>" with a standard-named gap that never names a repository', () => {
+      expect(crossProject).toContain('"domain:<domain key> — <gap>"')
+      expect(crossProject).toContain('<gap> is a short kebab-case name for the brief standard that is missed')
+      expect(crossProject).toContain(
+        'The key never names a repository, so a new affected repository does not change it',
+      )
+      expect(crossProject).toContain('one standard is one key: reuse the <gap> an earlier report gave that standard')
+    })
+
+    it('lists the affected repositories with evidence links and dated observations, and counts a date only with that evidence', () => {
+      expect(crossProject).toContain('each with a link to the file or run that shows the gap')
+      expect(crossProject).toContain('dated observations: today and each earlier report date from the first-seen walk')
+      expect(crossProject).toContain(
+        'A date counts as an observation only if that report lists the affected repositories with links to the evidence',
+      )
+    })
+
+    it('opens the exception to report-only for filing and editing program-proposal issues, and nothing else', () => {
+      expect(crossProject).toContain(
+        'make no changes in this category, except to `program-proposal` issues: file and edit those, under the proposal rules in the output section',
+      )
+      expect(crossProject).not.toContain('start request')
+      expect(crossProject).not.toContain('close those')
+    })
+
+    it('leaves category 8 and the other categories free of proposal text', () => {
+      expect(programTrackers).not.toContain('program-proposal')
+      expect(programTrackers).not.toContain('program-approved')
+      const others = categories.replace(crossProject, '')
+      expect(others).not.toContain('program-proposal')
+    })
+  })
+
+  describe('escalation of a domain key', () => {
+    it('sends a domain key to a program-proposal issue, not an attention-tracking one, and never starts a program', () => {
+      expect(proposals).toContain('escalates to a `program-proposal` issue instead of an `attention-tracking` one')
+      expect(proposals).toContain('A proposal never starts a program: Observe only files and updates it')
+      expect(proposals).toContain("the operator's `program-approved` label starts it, through a workflow, not this run")
+    })
+
+    it('counts toward the two new issues per run', () => {
+      expect(proposals).toContain('It counts toward the 2 new issues per run')
+    })
+
+    it('requires three consecutive reports spanning at least two days, each carrying evidence', () => {
+      expect(proposals).toContain(
+        "file only when the key is live on three consecutive reports, today's included, counted by the same matching as first-seen",
+      )
+      expect(proposals).toContain('its first seen date is at least 2 days before today')
+      expect(proposals).toContain('Each of those reports must list the affected repositories with evidence links')
+      expect(proposals).toContain('One report, or the same finding restated, is not a window')
+    })
+
+    it('gates only the filing on the window: an open proposal for the key is updated on every run without one', () => {
+      expect(proposals).toContain('The window gates filing only')
+      expect(proposals).toContain('an open proposal for the key is reused and updated on every run, window or not')
+      expect(proposals).toContain(
+        "An open match is reused: update its body with today's observation, never file a second; the update needs no window",
+      )
+    })
+
+    it('keeps at most one proposal open, and leaves a second gap as an ordinary item', () => {
+      expect(proposals).toContain(
+        '`gh issue list --repo fro-bot/.github --label program-proposal --author fro-bot --state open --limit 100 --json url,number,title`',
+      )
+      expect(proposals).toContain('If it returns any issue for another key, or cannot be read, file nothing')
+      expect(proposals).toContain(
+        'the item stays an ordinary attention item, keeps its dated observations, and says so',
+      )
+    })
+
+    it('reuses an open proposal for the key and lets the newest match decide', () => {
+      expect(proposals).toContain(
+        'search `program-proposal` issues authored by `fro-bot`, open and closed, for the same key line',
+      )
+      expect(proposals).toContain('the newest match decides')
+    })
+
+    it('reads who closed a proposal from its events and treats any close but fro-bot as the operator declining', () => {
+      expect(proposals).toContain(
+        'last `closed` event of `gh api repos/fro-bot/.github/issues/<number>/events --paginate`',
+      )
+      expect(proposals).toContain("A close by anyone but `fro-bot` is the operator's decline: do not refile")
+      expect(proposals).toContain('report the item once as declined, until a material change')
+    })
+
+    it('treats a close by fro-bot as a started or already-covered program: nothing is filed while its tracker is open', () => {
+      expect(proposals).toContain('a close by `fro-bot` means the program started or the domain was already covered')
+      expect(proposals).toContain('While that tracker issue is open, file nothing')
+      expect(proposals).toContain('a new proposal needs a window that starts after that close')
+    })
+
+    it('allows a new proposal after a decline only for a named material change, and a fresh report is not one', () => {
+      expect(proposals).toContain('"Material change since <declined proposal URL>: <what changed>"')
+      expect(proposals).toContain('a repository the declined proposal did not name that now misses the standard')
+      expect(proposals).toContain('(a regression)')
+      expect(proposals).toContain('a changed condition')
+      expect(proposals).toContain('The same finding in a fresh report is not a change, and neither is a new date')
+    })
+
+    it('files the proposal with the key line, the pinned brief, the repositories, the dated observations and the operator steps', () => {
+      expect(proposals).toContain('titled "Program proposal: <domain key> — <gap>", labeled `program-proposal`')
+      expect(proposals).toContain('The body starts with the key line')
+      expect(proposals).toContain('`Brief: program-domains.json@<sha>#<domain key>`')
+      expect(proposals).toContain('the affected repositories')
+      expect(proposals).toContain('each dated observation with the repositories seen and links to the evidence')
+      expect(proposals).toContain('apply `program-approved` to start the program, or close the issue to decline')
+    })
+
+    it('applies the public-only rule to the proposal and skips filing when the label cannot be applied', () => {
+      expect(proposals).toContain('The PUBLIC-ONLY REPORT RULE covers the title, the body and every comment')
+      expect(proposals).toContain(
+        'If the label is missing or cannot be applied, file nothing and say so in the Run Summary',
+      )
+    })
+
+    it('shows an open proposal as the escalated item and under "Awaiting you" with the operator steps', () => {
+      expect(proposals).toContain("as the escalated item's line (its issue link, first seen date and key line)")
+      expect(proposals).toContain('under "Awaiting you"')
+    })
+
+    it('keeps the proposal body as the home of the dated observations, so the report line may stay short', () => {
+      expect(proposals).toContain('The proposal body carries the dated observations, so that line may stay short')
+    })
+  })
+
+  describe('Observe no longer picks up approvals or starts programs', () => {
+    const composed = flat(composeObservePrompt())
+
+    it.each([
+      'PROGRAM APPROVAL PICKUP',
+      'Program start accepted',
+      'Program start declined',
+      'start in progress',
+      'partial start',
+      'gh workflow run',
+      'gh issue close',
+      'gh issue edit',
+      'unlabeled',
+      'marcusrbrown',
+    ])('carries no %j in the gap and proposal duties', phrase => {
+      const proposalFlow = `${crossProject} ${proposals}`
+
+      expect(proposalFlow).toContain('DOMAIN PROGRAM PROPOSALS. A key')
+      expect(proposalFlow).not.toContain(phrase)
+    })
+
+    it('has no pickup bullet anywhere in the composed prompt', () => {
+      expect(composed).not.toContain('PROGRAM APPROVAL PICKUP')
+      expect(composed).not.toContain('Program start accepted')
+    })
+
+    it('still ends the proposal body with the operator two steps: apply program-approved to start, or close to decline', () => {
+      expect(proposals).toContain('apply `program-approved` to start the program, or close the issue to decline')
+    })
+  })
+
+  describe('the composed Observe prompt', () => {
+    const composed = flat(composeObservePrompt())
+
+    it('carries the gap and proposal duties, and still names gh repo view exactly once', () => {
+      expect(composed).toContain('DOMAIN GAPS')
+      expect(composed).toContain('DOMAIN PROGRAM PROPOSALS')
+      expect(composed.split('gh repo view <owner/repo> --json visibility')).toHaveLength(2)
+    })
+
+    it('puts the proposal duties after the public-only rule, so the rule governs them', () => {
+      const rule = composed.indexOf('PUBLIC-ONLY REPORT RULE')
+
+      expect(rule).toBeGreaterThan(-1)
+      expect(rule).toBeLessThan(composed.indexOf('DOMAIN PROGRAM PROPOSALS. A key'))
+    })
+  })
+})

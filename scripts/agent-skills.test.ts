@@ -227,3 +227,102 @@ describe('the cross-repo-program skill: a domain program', () => {
     expect(flat).toContain('dispatch checks')
   })
 })
+
+describe('the cross-repo-program skill: a start from a program proposal', () => {
+  const {body} = readSkill('cross-repo-program')
+  const section = body.split(/^## /m).find(part => part.startsWith('Domain programs and their goals')) ?? ''
+  const flat = section.replaceAll(/\s+/g, ' ')
+
+  it('says the operator label starts it, through the program-approved workflow, and that the proposal is data', () => {
+    expect(flat).toContain('A start from a program proposal')
+    expect(flat).toContain('`.github/workflows/program-approved.yaml`')
+    expect(flat).toContain("the operator's `program-approved` label")
+    expect(flat).toContain('the proposal is data')
+    expect(flat).toContain('read the domain and its brief on `main` yourself')
+  })
+
+  it('re-checks the approval before it creates anything, and stops when it does not hold', () => {
+    expect(flat).toContain(
+      'Before you create anything, re-check that the proposal is open and still carries `program-approved`',
+    )
+    expect(flat).toContain(
+      'the newest `labeled` event for it was made by `marcusrbrown`, with no later `unlabeled` event',
+    )
+    expect(flat).toContain('If any of that fails, stop and create nothing')
+  })
+
+  it('accepts or declines with a reason before any repository work starts', () => {
+    expect(flat).toContain('accept or decline it with a reason before any repository work starts')
+  })
+
+  it('on accept puts the proposal URL in the start pull request body, then closes the proposal naming the tracker', () => {
+    expect(flat).toContain("put the proposal's URL in the start pull request body")
+    expect(flat).toContain('close the proposal with a comment that names the tracker issue')
+  })
+
+  it('closes a proposal as already covered, linking the tracker, when an existing program covers its domain', () => {
+    expect(flat).toContain('If an existing program already covers the domain')
+    expect(flat).toContain('close the proposal as already covered, with a comment that links that program')
+  })
+
+  it('on decline comments the reason and leaves the proposal open for the operator', () => {
+    expect(flat).toContain('on decline, comment the reason and leave the proposal open for the operator')
+  })
+
+  it('says a failed run leaves the proposal open and the operator reapplies the label', () => {
+    expect(flat).toContain(
+      'A failed run leaves the proposal open: the operator removes and reapplies `program-approved`',
+    )
+  })
+
+  it('puts the proposal URL in the tracker issue body from creation, and the Project URL there as soon as the Project exists', () => {
+    expect(flat).toContain("carries the proposal's URL from the moment you create it")
+    expect(flat).toContain("record the Project's URL in the tracker issue body as soon as the Project exists")
+  })
+
+  it('searches for fro-bot program-tracker issues that hold the proposal URL, in every state and by exact body match, before creating anything', () => {
+    const search =
+      '`gh issue list --repo fro-bot/.github --label program-tracker --author fro-bot --state all --search "<proposal URL> in:body" --limit 100 --json url,number,state,body`'
+
+    expect(flat).toContain(
+      'Before you create anything, step 1 also searches for a leftover of an earlier start from this proposal',
+    )
+    expect(flat).toContain(search)
+    expect(flat).toContain('keeping only issues whose body itself contains the proposal URL')
+    expect(flat.indexOf(search)).toBeLessThan(flat.indexOf('On accept, start as above'))
+  })
+
+  it('resumes exactly one open match: its tracker and recorded Project are reused, only what is missing is created', () => {
+    expect(flat).toContain(
+      'with exactly one open match, resume it: reuse that tracker issue and the Project its body records, create only what is missing, and open the start pull request if none is open',
+    )
+    expect(flat).toContain('a resumed match is not reported as already covered')
+    expect(flat).toContain(
+      'if its start pull request already merged, the config covers the domain, so close the proposal as already covered',
+    )
+  })
+
+  it('ignores closed matches beside exactly one open match, but stops when only closed matches exist', () => {
+    expect(flat).toContain('closed matches beside that one are ignored leftovers')
+    expect(flat).toContain(
+      'more than one open match, a recorded Project that cannot be read, a failed search, or closed matches with no open match',
+    )
+    expect(flat).not.toContain('a closed match, more than one match')
+  })
+
+  it('creates nothing on a stop, and gives the operator two explicit paths: resume or abandon', () => {
+    expect(flat).toContain("create nothing and comment on the proposal with the links and the operator's two paths")
+    expect(flat).toContain(
+      'resume: repair the canonical tracker (reopen it if closed, record its Project URL in its body), close any other leftover trackers, then reapply `program-approved`',
+    )
+    expect(flat).toContain('abandon: close the proposal')
+    expect(flat).not.toContain('close or fix the leftovers')
+  })
+
+  it('names no reply prefix, pickup or dispatch from Observe any more', () => {
+    expect(flat).not.toContain('Program start accepted')
+    expect(flat).not.toContain('Program start declined')
+    expect(flat).not.toContain('daily pass')
+    expect(flat).not.toContain('start in progress')
+  })
+})

@@ -30,7 +30,7 @@ The origin document covers the problem. In short: the specialists exist (24 of 3
 ## Scope Boundaries
 
 - No new trigger for answers: the tracker reads them on its daily run, which lands 5-9 hours late (`.agents/skills/cross-repo-program/SKILL.md`).
-- No new workflow for proposal approval: the next daily pass acts on the approval label.
+- One small workflow for proposal approval (`program-approved.yaml`): the operator's label dispatches the start request, so Observe never starts a program and no later daily pass is waited for.
 - No reach beyond the `fro-bot` and `marcusrbrown` owners; no automatic rerouting; no Space Bus coupling; no freshness leases (see origin: Scope Boundaries).
 
 ### Deferred to Separate Tasks
@@ -134,7 +134,7 @@ All four repositories pin agent v0.148.0 and run `isolate-agent` and `persist-cr
 - **Wake inputs without moving #3512:** answer labels enter the gating evidence only when a program has a `domain`, so #3512's golden hash is unchanged. Stalled, held and unknown parts are derived lists in the preflight output, like `bootstrap_repos`, and `decideComment` gains one domain-only wake condition: a non-empty stalled or unknown list whose contents differ from the last marker's. The marker records that list's digest, so a part stays stalled without waking every day.
 - **Per-part unknown:** a failed read of one part issue or its events marks that part unknown and continues, for domain programs only; #3512 keeps its fail-the-run behaviour and its decision logic.
 - **Marker parser import:** `packages/status-truth` imports the exported marker parser from `@fro-bot/dispatch`, adding the workspace dependency and lock entry; `dispatch` does not import `status-truth`, so no cycle. The root README dependency graph and the package descriptions in `.github/copilot-instructions.md` change with it.
-- **Proposals:** Observe's category 6 records domain-wide gaps as attention items keyed `domain:<name> — <gap>`; the existing three-report escalation files a `program-proposal` issue instead of an `attention-tracking` one, at most one open. An operator-closed proposal is declined; a new one needs a material change named in it. The operator approves with `program-approved`; the next daily pass (Observe holds `FRO_BOT_PAT`) starts the program through the skill and comments the tracker link.
+- **Proposals:** Observe's category 6 records domain-wide gaps as attention items keyed `domain:<name> — <gap>`; the existing three-report escalation files a `program-proposal` issue instead of an `attention-tracking` one, at most one open. An operator-closed proposal is declined; a new one needs a material change named in it. The operator approves with `program-approved`; `program-approved.yaml` (an `issues: labeled` workflow with no agent step) dispatches one start request, which the skill re-checks against the label's events before it creates anything, and closes the proposal naming the tracker (or as already covered). Observe only files and updates proposals.
 - **Part 0 on the same part issue:** each repository has one part issue. For a repository listed with Part 0, the issue's first ask is Part 0, which the operator raises with the repository's agent on that issue; its pull request is linked there. When the tracker sees that pull request merged, it removes any answer label from the issue, notes on it that the parity ask follows, and opens that repository's parity goal; the agent's parity accept is then always a fresh `labeled` event. One issue per repository keeps bootstrap's existing per-repository discovery.
 
 ## Open Questions
@@ -336,23 +336,24 @@ sequenceDiagram
 
 - [ ] **Unit 6: Observe proposes domain programs**
 
-**Goal:** Observe turns a recurring domain-wide gap into at most one open proposal, and starts the program the operator approves.
+**Goal:** Observe turns a recurring domain-wide gap into at most one open proposal, and the operator's approval label starts the program through a small workflow.
 
 **Requirements:** R8, R9, R10, R11
 
 **Dependencies:** Units 1, 5
 
 **Files:**
-- Modify: `.github/workflows/fro-bot.yaml` (`OBSERVE_CATEGORIES` category 6, `OBSERVE_OUTPUT` attention rules), `.github/settings.yml` (`program-proposal`, `program-approved` labels)
-- Test: `scripts/fro-bot-workflow.test.ts`, `scripts/settings-labels-effective-set.test.ts`
+- Create: `.github/workflows/program-approved.yaml`
+- Modify: `.github/workflows/fro-bot.yaml` (`OBSERVE_CATEGORIES` category 6, `OBSERVE_OUTPUT` attention rules), `.github/settings.yml` (`program-proposal`, `program-approved` labels), `.agents/skills/cross-repo-program/SKILL.md` (a start from a proposal), `packages/test-kit/src/workflow-expression.ts` (`.*.` object filter for the job condition test)
+- Test: `scripts/fro-bot-workflow.test.ts`, `scripts/settings-labels-effective-set.test.ts`, `scripts/program-approved-workflow.test.ts`, `scripts/agent-skills.test.ts`, `packages/test-kit/src/workflow-expression.test.ts`
 
 **Approach:**
 - Category 6 reads `program-domains.json` and records a gap shared by repositories of one domain as an attention item keyed `domain:<key> — <gap>`, with the usual first-seen walk.
 - On the existing three-report escalation, file a `program-proposal` issue in `fro-bot/.github` naming the domain, the gap, the repositories and the dated reports, unless one is already open. An operator-closed proposal for the key is declined; a new one requires a named material change (a new repository, a regression, a changed condition).
-- A `program-proposal` issue the operator labelled `program-approved` is started through the skill on the next daily pass, which comments the tracker link.
+- The operator's `program-approved` label on a `program-proposal` issue starts the program: `program-approved.yaml` runs on `issues: labeled`, its job condition requires the label name, the sender `marcusrbrown`, an open issue by `fro-bot` carrying `program-proposal`, and its one step reads only the key line (fixed-prefix parse, the domain-key rule, a domain `program-domains.json` lists on the default branch) before it runs `gh workflow run fro-bot.yaml` with a fixed request. Any failed check dispatches nothing. The skill's start step re-checks the approval, accepts or declines (R5), puts the proposal URL in the start PR body and closes the proposal naming the tracker, or closes it as already covered when a program covers the domain. A decline comments the reason and leaves the proposal open; a failed run leaves it open for the operator to reapply the label.
 
 **Test scenarios:**
-- Happy path: pins for the key form, the one-open rule, the decline rule, the material-change rule and the approval pickup.
+- Happy path: pins for the key form, the one-open rule, the decline rule and the material-change rule; the workflow's job condition and its step shell, run with a stubbed `gh`.
 - Edge case: a second gap while a proposal is open stays an attention item.
 - Error path: an approval label applied by someone other than the operator is ignored.
 
@@ -373,6 +374,7 @@ sequenceDiagram
 - Brief: repo skills, the agent-model resolver, `fro-bot`-user pull request review, dispatch-to-pull-request routing; Renovate Approve only where the repository uses Renovate automerge; exceptions recorded per repository.
 - Offer the program; Part 0 in systematic and space-bus; then parity dispatches.
 - Record per part: answer, pull request, outcome; whether an answer avoided rework; operator actions counted.
+- Observe at the pilot's first live start, accepted as known retry cases of a start from a proposal (Unit 6): (a) a run that creates the tracker issue and fails before the start pull request, where a retry's body search may miss the new tracker (search indexing lags) and create a second one; (b) a Project created but not yet recorded in the tracker body, which a retry treats as missing and recreates. The worst case of either is a duplicate tracker issue or Project to delete. Nothing dispatches before the start pull request merges and the operator applies `dispatch-approved`, so neither can send work to a repository. Record whether either happened.
 
 **Test expectation:** none -- live operational unit; evidence is the tracker, the pull requests and the run links recorded here.
 
@@ -393,6 +395,7 @@ sequenceDiagram
 | Systematic's issue path can't open a workflow-changing PR | R19 fallback: the operator authors Part 0 there |
 | Hash change wakes #3512 | Domain-only evidence; golden hash test |
 | Status-truth importing dispatch breaks the package graph | Declared dependency and lock entry, no reverse import; layout test in Unit 3 |
+| A retried start from a proposal creates a second tracker or Project (the tracker's body search misses a just-created issue, or the Project was not yet recorded in the body) | Accepted for the pilot; observed at Unit 7's first live start. Worst case is a duplicate to delete: nothing dispatches before the start pull request merges and `dispatch-approved` |
 
 ## Sources & References
 
