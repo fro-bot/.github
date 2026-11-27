@@ -13,8 +13,10 @@ import {
   FROBOT_COMMENT_AUTHORS,
   MAX_ITEMS_PER_GOAL,
   MAX_PROMPT_LENGTH,
+  RECEIPT_SLA_MS,
   type DispatchItem,
 } from '@fro-bot/dispatch/dispatch-model'
+import {resolveReceipts} from '@fro-bot/dispatch/dispatch-receipts'
 import {isOperatorComment, type CommentLike, type ConfirmedRepo, type ProgramEntry} from './program-trackers.ts'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -72,6 +74,8 @@ export interface GoalComment {
   readonly id: number
   readonly author: string
   readonly body: string
+  /** When the comment was created, in epoch milliseconds; absent when the read did not carry a usable time. */
+  readonly at?: number
 }
 
 /** Everything the plan reads. Each reader throws on a failed or partial read, and the plan turns that into a fixed message. */
@@ -125,6 +129,8 @@ export interface RevisionRequest {
   readonly commentId: number
   /** The repo exactly as the operator wrote it. */
   readonly repo: string
+  /** When the operator's comment was created, in epoch milliseconds. */
+  readonly at: number
 }
 
 const ITEMS_START = '<!-- fro-bot:cross-repo-items:start -->'
@@ -545,15 +551,19 @@ export function findParityAnchor(
  * The operator's requests for a revised ask: every line `revise <owner/repo>` of a comment the program's operator wrote
  * on the tracker issue, read with a fixed prefix and an exact, case-sensitive repo, never matched against the rest of
  * the comment. The operator is the one the mention relay already trusts (`isOperatorComment`). A repo named twice in one
- * comment is one request. Whether a request is honored is decided later, against the domain and the repo's latest attempt.
+ * comment is one request. A comment with no usable creation time is no request. Whether a request is honored is decided
+ * later, against the domain, the repo's latest attempt and the time that attempt ended.
  */
 export function parseRevisionRequests(
-  comments: readonly (CommentLike & {readonly id: number})[],
+  comments: readonly (CommentLike & {readonly id: number; readonly created_at?: string})[],
   entry: ProgramEntry,
 ): RevisionRequest[] {
   const requests: RevisionRequest[] = []
   for (const comment of comments) {
     if (!isOperatorComment(comment, entry)) continue
+    // A request counts only against the time the latest attempt ended, so a comment with no usable time counts for nothing.
+    const at = comment.created_at === undefined ? Number.NaN : Date.parse(comment.created_at)
+    if (Number.isNaN(at)) continue
     const seen = new Set<string>()
     for (const raw of comment.body.split('\n')) {
       const line = raw.endsWith('\r') ? raw.slice(0, -1) : raw
@@ -561,7 +571,7 @@ export function parseRevisionRequests(
       const repo = line.slice('revise '.length)
       if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || seen.has(repo)) continue
       seen.add(repo)
-      requests.push({commentId: comment.id, repo})
+      requests.push({commentId: comment.id, repo, at})
     }
   }
   return requests
@@ -646,10 +656,30 @@ type RevisionVerdict =
   | {readonly kind: 'anchor-missing'; readonly commentId: number; readonly labels: string[]}
 
 /**
+ * When the repo's latest attempt ended without an answer that stands, in epoch milliseconds, or undefined when it did
+ * not or the time cannot be told. A decline or a counter ended it when its receipt was written: the first comment that
+ * dispatch's own gates (author, correlation, nonce) take for the item's terminal receipt, found by resolving each
+ * comment alone. An item `needs-attention` has no recorded transition time, so it is the earliest moment it could have
+ * been so: its dispatch epoch and the 24h receipt SLA. Anything else has not ended.
+ */
+function attemptEndedAt(item: DispatchItem, comments: readonly GoalComment[]): number | undefined {
+  if (item.status === 'needs-attention') return item.epoch === undefined ? undefined : item.epoch + RECEIPT_SLA_MS
+  if (item.status !== 'blocked' || item.blockedReason === undefined) return undefined
+  const receipt = comments.find(
+    comment =>
+      resolveReceipts([item], [{author: {login: comment.author}, body: comment.body}]).get(item.id)?.terminal ===
+      item.blockedReason,
+  )
+  return receipt?.at
+}
+
+/**
  * A request is honored only when the repo's latest attempt (the newest goal's item) ended without an answer that
- * stands: a decline or a counter, which is `blocked` with a reason, or a missing receipt, which is `needs-attention`.
- * An item the gate blocked, one still running and one completed or failed do not qualify. Then the anchor comment
- * must exist before the batch is listed.
+ * stands, and the operator wrote the request after it ended: a decline or a counter, which is `blocked` with a reason,
+ * or a missing receipt, which is `needs-attention`. A request written earlier, while the part was still running, is
+ * never honored, now or after a later decline: it is ignored for good, and the operator posts it again. An item the
+ * gate blocked, one still running and one completed or failed do not qualify. Then the anchor comment must exist
+ * before the batch is listed.
  */
 function revisionVerdict(
   input: GoalPlanInput,
@@ -660,18 +690,17 @@ function revisionVerdict(
   const commentId = pendingRequest(input, goals, repo)
   if (commentId === null) return {kind: 'none'}
   const lowered = repo.nameWithOwner.toLowerCase()
-  let item: DispatchItem | undefined
+  let found: ReturnType<typeof findItem>
   let activity: PartActivity
   try {
-    item = findItem(input, readers, goals, repo, input.part0Names.has(lowered))?.item
+    found = findItem(input, readers, goals, repo, input.part0Names.has(lowered))
     activity = readers.partActivity(repo.nameWithOwner, input.partIssues.get(lowered) ?? 0)
   } catch {
     return {kind: 'unreadable'}
   }
-  const ended =
-    item !== undefined &&
-    ((item.status === 'blocked' && item.blockedReason !== undefined) || item.status === 'needs-attention')
-  if (!ended) return {kind: 'not-eligible'}
+  const requestedAt = (input.revisions ?? []).find(request => request.commentId === commentId)?.at
+  const endedAt = found?.item === undefined ? undefined : attemptEndedAt(found.item, found.comments)
+  if (endedAt === undefined || requestedAt === undefined || requestedAt <= endedAt) return {kind: 'not-eligible'}
   if (findRevisionAnchor(activity, input.program, repo.nodeId, commentId) !== undefined)
     return {kind: 'ready', commentId}
   return {kind: 'anchor-missing', commentId, labels: ANSWER_LABELS.filter(label => activity.labels.includes(label))}
@@ -795,7 +824,7 @@ function findItem(
   goals: readonly GoalIssue[],
   repo: ConfirmedRepo,
   parity: boolean,
-): {item: DispatchItem | undefined; closed: boolean} | undefined {
+): {item: DispatchItem | undefined; closed: boolean; comments: readonly GoalComment[]} | undefined {
   const wanted = parity ? [`parity-${repo.nodeId}`] : ['initial', `join-${repo.nodeId}`]
   const batchFor = (goal: GoalIssue): string => batchOf(goal.body, input.program) ?? ''
   const candidates = goals
@@ -829,7 +858,7 @@ function findItem(
       candidate =>
         `${candidate.target.owner}/${candidate.target.name}`.toLowerCase() === repo.nameWithOwner.toLowerCase(),
     )
-    if (item !== undefined || revision) return {item, closed: goal.state === 'closed'}
+    if (item !== undefined || revision) return {item, closed: goal.state === 'closed', comments}
   }
   if (unreadable) throw new Error(GOAL_COMMENTS_UNREADABLE)
   return undefined
@@ -914,7 +943,7 @@ function partStatus(
     anchorAt = anchor.at
   }
 
-  let found: {item: DispatchItem | undefined; closed: boolean} | undefined
+  let found: ReturnType<typeof findItem>
   try {
     found = findItem(input, readers, goals, repo, parity)
   } catch {
@@ -1137,7 +1166,8 @@ function parseGoalComment(value: unknown): GoalComment {
   ) {
     throw new TypeError(GOAL_COMMENTS_UNREADABLE)
   }
-  return {id: value.id, author, body: value.body}
+  const at = typeof value.created_at === 'string' ? Date.parse(value.created_at) : Number.NaN
+  return {id: value.id, author, body: value.body, ...(Number.isNaN(at) ? {} : {at})}
 }
 
 function ndjson(output: string): unknown[] {
@@ -1163,7 +1193,7 @@ function readComments(repo: string, issue: number): GoalComment[] {
       '--paginate',
       `repos/${repo}/issues/${issue}/comments?per_page=100`,
       '--jq',
-      '.[] | {id, author: (.user.login // ""), body: (.body // "")}',
+      '.[] | {id, author: (.user.login // ""), body: (.body // ""), created_at: (.created_at // "")}',
     ]),
   ).map(record => parseGoalComment(record))
 }

@@ -16,7 +16,7 @@ import {join, resolve} from 'node:path'
 import process from 'node:process'
 import {promisify} from 'node:util'
 import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
-import {buildResultMarker} from '@fro-bot/dispatch/dispatch-receipts'
+import {buildResultMarker, hashNonce} from '@fro-bot/dispatch/dispatch-receipts'
 import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
@@ -5900,13 +5900,39 @@ describe('a domain program: part issues with the brief', () => {
 
     describe('a revised ask after a decline or a missing receipt', () => {
       const OPERATOR = {login: 'marcusrbrown', id: 831617}
-      const asked = (id: number, body = 'revise fro-bot/dashboard', author: TrackerComment['author'] = OPERATOR) => ({
-        id,
-        author,
-        body,
-      })
-      const declinedFirst = (changes: Record<string, unknown> = {}): Partial<DomainRun> =>
-        dashboardGoal({status: 'blocked', blockedReason: 'declined', epoch: ms(1), ...changes})
+      /** The tracker comment of an operator request, written an hour before the run unless `when` says otherwise. */
+      const asked = (
+        id: number,
+        body = 'revise fro-bot/dashboard',
+        author: TrackerComment['author'] = OPERATOR,
+        when = at(0, -3_600_000),
+      ) => ({id, author, body, created_at: when})
+      /** The first goal's item declined two hours before the run, with the authentic receipt comment that says so. */
+      const declinedFirst = (changes: Record<string, unknown> = {}): Partial<DomainRun> => {
+        const base = dashboardGoal({
+          status: 'blocked',
+          blockedReason: 'declined',
+          epoch: ms(1),
+          correlationId: 'corr',
+          nonceHash: hashNonce('a-nonce'),
+          ...changes,
+        })
+        return {
+          ...base,
+          goalComments: {
+            ...base.goalComments,
+            '50': [
+              ...(base.goalComments?.['50'] ?? []),
+              {
+                id: 4,
+                author: 'fro-bot',
+                created_at: at(0, -7_200_000),
+                body: buildResultMarker({correlationId: 'corr', nonce: 'a-nonce', status: 'declined', summary: 'no'}),
+              },
+            ],
+          },
+        }
+      }
       const revisionAnchor = (when: string, commentId = 700) =>
         commented(901, 'fro-bot', when, revisionComment('harness', dashboard.nodeId, commentId, TRACKER_URL))
       const declinedActivity = (timeline: unknown[] = []) =>
@@ -6019,6 +6045,31 @@ describe('a domain program: part issues with the brief', () => {
 
         expect(result.domain.revision_transitions).toEqual([])
         expect(batchNames(result)).toEqual([])
+        expect(partOf(result, dashboard)).not.toHaveProperty('revision')
+      })
+
+      it('ignores a request written before the decline, and fires one written after it', () => {
+        const run = (request: ReturnType<typeof asked>) => ({
+          ...declinedFirst(),
+          comments: [request],
+          activity: declinedActivity([revisionAnchor(at(0, -1000))]),
+        })
+
+        const early = preflight(run(asked(700, undefined, undefined, at(0, -10_800_000))))
+        const late = preflight(run(asked(700)))
+
+        expect(early.domain.revision_transitions).toEqual([])
+        expect(batchNames(early)).toEqual([])
+        expect(partOf(early, dashboard)).toMatchObject({state: 'declined', revision: 'revision-not-eligible'})
+        expect(batchNames(late)).toEqual([`revision-${dashboard.nodeId}-700`])
+      })
+
+      it('ignores a request that carries no creation time', () => {
+        const bare = {id: 700, author: OPERATOR, body: 'revise fro-bot/dashboard'}
+
+        const result = preflight({...declinedFirst(), comments: [bare], activity: declinedActivity()})
+
+        expect(result.domain.revision_transitions).toEqual([])
         expect(partOf(result, dashboard)).not.toHaveProperty('revision')
       })
 

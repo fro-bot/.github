@@ -5,7 +5,7 @@ import process from 'node:process'
 import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
 import {MAX_ITEMS_PER_GOAL, MAX_PROMPT_LENGTH} from '@fro-bot/dispatch/dispatch-model'
 import {isPromptSafe, parseBriefReference} from '@fro-bot/dispatch/dispatch-plan'
-import {extractItemPrompts, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
+import {buildResultMarker, extractItemPrompts, hashNonce, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parseProgramTrackers, selectProgram} from './program-trackers.ts'
 import {
@@ -1484,11 +1484,18 @@ describe('goalReaders through gh', () => {
 
   it('reads the comments of a goal across every page', () => {
     const gh = stubGh()
-    gh.set('comments', `${JSON.stringify({id: 1, author: 'fro-bot', body: 'x'})}\n`)
+    const lines = [
+      {id: 1, author: 'fro-bot', body: 'x', created_at: '2026-11-27T08:00:00Z'},
+      {id: 2, author: 'fro-bot', body: 'y', created_at: ''},
+    ]
+    gh.set('comments', `${lines.map(line => JSON.stringify(line)).join('\n')}\n`)
 
-    expect(readers().goalComments(50)).toStrictEqual([{id: 1, author: 'fro-bot', body: 'x'}])
+    expect(readers().goalComments(50)).toStrictEqual([
+      {id: 1, author: 'fro-bot', body: 'x', at: Date.parse('2026-11-27T08:00:00Z')},
+      {id: 2, author: 'fro-bot', body: 'y'},
+    ])
     expect(gh.log()).toStrictEqual([
-      'api --paginate repos/fro-bot/.github/issues/50/comments?per_page=100 --jq .[] | {id, author: (.user.login // ""), body: (.body // "")}',
+      'api --paginate repos/fro-bot/.github/issues/50/comments?per_page=100 --jq .[] | {id, author: (.user.login // ""), body: (.body // ""), created_at: (.created_at // "")}',
     ])
   })
 
@@ -1590,7 +1597,14 @@ describe('parseRevisionRequests', () => {
     'harness',
   )
   const operator = {login: 'marcusrbrown', id: 831617}
-  const said = (id: number, body: string, author: {login: string; id?: number} = operator) => ({id, author, body})
+  const WHEN = '2026-11-27T08:30:00Z'
+  const said = (
+    id: number,
+    body: string,
+    author: {login: string; id?: number} = operator,
+    createdAt: string | null = WHEN,
+  ) => ({id, author, body, ...(createdAt === null ? {} : {created_at: createdAt})})
+  const at = Date.parse(WHEN)
 
   it('reads one request from each `revise <owner/repo>` line of an operator comment, one repo per line', () => {
     const requests = parseRevisionRequests(
@@ -1599,15 +1613,15 @@ describe('parseRevisionRequests', () => {
     )
 
     expect(requests).toStrictEqual([
-      {commentId: 7, repo: 'fro-bot/dashboard'},
-      {commentId: 7, repo: 'marcusrbrown/systematic'},
+      {commentId: 7, repo: 'fro-bot/dashboard', at},
+      {commentId: 7, repo: 'marcusrbrown/systematic', at},
     ])
   })
 
   it('reads a line that ends in a carriage return and one repo named twice in a comment once', () => {
     expect(
       parseRevisionRequests([said(7, 'revise fro-bot/dashboard\r\nrevise fro-bot/dashboard\r\n')], entry),
-    ).toStrictEqual([{commentId: 7, repo: 'fro-bot/dashboard'}])
+    ).toStrictEqual([{commentId: 7, repo: 'fro-bot/dashboard', at}])
   })
 
   it('needs no mention of the bot', () => {
@@ -1640,7 +1654,20 @@ describe('parseRevisionRequests', () => {
       entry,
     )
 
-    expect(requests).toStrictEqual([{commentId: 3, repo: 'fro-bot/dashboard'}])
+    expect(requests).toStrictEqual([{commentId: 3, repo: 'fro-bot/dashboard', at}])
+  })
+
+  it('reads the time the comment was created, and ignores a comment with no usable time', () => {
+    const requests = parseRevisionRequests(
+      [
+        said(1, 'revise fro-bot/dashboard', operator, null),
+        said(2, 'revise fro-bot/dashboard', operator, 'not a time'),
+        said(3, 'revise fro-bot/dashboard', operator, '2026-11-27T09:15:00Z'),
+      ],
+      entry,
+    )
+
+    expect(requests).toStrictEqual([{commentId: 3, repo: 'fro-bot/dashboard', at: Date.parse('2026-11-27T09:15:00Z')}])
   })
 })
 
@@ -1651,9 +1678,19 @@ describe('a revised ask after a decline or a missing receipt', () => {
   const inProject = (...numbers: number[]) =>
     numbers.map(number => ({content_repo: 'fro-bot/.github', content_number: number}))
   const TRACKER_URL = 'https://github.com/fro-bot/.github/issues/5000'
+  const RECEIPT_AT = Date.parse('2026-11-27T08:00:00Z')
+  const REQUEST_AT = Date.parse('2026-11-27T08:30:00Z')
   const ANCHOR_AT = Date.parse('2026-11-27T09:00:00Z')
+  /** The revision attempt's own receipt, and a request written after it. */
+  const REVISION_RECEIPT_AT = Date.parse('2026-11-27T10:00:00Z')
+  const LATER_REQUEST_AT = Date.parse('2026-11-27T10:30:00Z')
+  /** An item dispatched here is `needs-attention` from this moment at the earliest: its epoch and the 24h SLA. */
+  const STUCK_EPOCH = Date.parse('2026-11-25T12:00:00Z')
+  const STUCK_AT = STUCK_EPOCH + 24 * 60 * 60 * 1000
+  const CORRELATION = 'corr-dashboard'
+  const NONCE = 'a-raw-nonce'
   const revisionName = (repo: {nodeId: string}, id: number): string => `revision-${repo.nodeId}-${id}`
-  const request = (commentId = 700, repo = dashboard.nameWithOwner) => ({commentId, repo})
+  const request = (commentId = 700, repo = dashboard.nameWithOwner, at = REQUEST_AT) => ({commentId, repo, at})
   const itemOf = (repo: {nameWithOwner: string}, changes: Record<string, unknown> = {}) => {
     const [owner, name] = repo.nameWithOwner.split('/')
     return {
@@ -1674,7 +1711,27 @@ describe('a revised ask after a decline or a missing receipt', () => {
       markerHash: '',
     }),
   })
-  const declined = {status: 'blocked', blockedReason: 'declined'}
+  const answered = (blockedReason: 'declined' | 'countered') => ({
+    status: 'blocked',
+    blockedReason,
+    correlationId: CORRELATION,
+    nonceHash: hashNonce(NONCE),
+    epoch: RECEIPT_AT - 3_600_000,
+  })
+  const declined = answered('declined')
+  const countered = answered('countered')
+  const stuck = {status: 'needs-attention', needsAttentionReason: 'no-receipt', epoch: STUCK_EPOCH}
+  /** The authentic receipt comment of an answered item, written at `at`. */
+  const receiptFor = (blockedReason: 'declined' | 'countered', at: number | null, id = 4): GoalComment => ({
+    id,
+    author: 'fro-bot',
+    body: buildResultMarker({correlationId: CORRELATION, nonce: NONCE, status: blockedReason, summary: 'no'}),
+    ...(at === null ? {} : {at}),
+  })
+  const receiptOf = (changes: Record<string, unknown>, at: number | null): GoalComment[] =>
+    changes.blockedReason === 'declined' || changes.blockedReason === 'countered'
+      ? [receiptFor(changes.blockedReason, at)]
+      : []
   const anchorComment = (commentId = 700, at = ANCHOR_AT, author = 'fro-bot', repo = dashboard) => ({
     id: 901,
     author,
@@ -1690,9 +1747,15 @@ describe('a revised ask after a decline or a missing receipt', () => {
       projectItems: inProject(50),
       ...changes,
     })
-  const withItem = (changes: Record<string, unknown>): ReaderState => ({
+  const withItem = (changes: Record<string, unknown>, receiptAt: number | null = RECEIPT_AT): ReaderState => ({
     goals: [goal('initial', 50)],
-    comments: {50: [checklistComment(1, [lineFor(dashboard)]), stateComment(50, dashboard, changes)]},
+    comments: {
+      50: [
+        checklistComment(1, [lineFor(dashboard)]),
+        stateComment(50, dashboard, changes),
+        ...receiptOf(changes, receiptAt),
+      ],
+    },
     activity: {[dashboard.nameWithOwner]: {...NO_ACTIVITY, labels: ['part-declined']}},
   })
   const anchored = (state: ReaderState, comment = anchorComment()): ReaderState => {
@@ -1709,6 +1772,7 @@ describe('a revised ask after a decline or a missing receipt', () => {
     revision: Record<string, unknown> | null,
     base = withItem(declined),
     commentId = 700,
+    receiptAt = REVISION_RECEIPT_AT,
   ): ReaderState => ({
     ...base,
     goals: [...(base.goals as GoalIssue[]), goalFor(revisionName(dashboard, commentId), 60, [dashboard])],
@@ -1716,7 +1780,7 @@ describe('a revised ask after a decline or a missing receipt', () => {
       ...(base.comments as Record<number, GoalComment[]>),
       60: [
         checklistComment(3, [lineFor(dashboard)]),
-        ...(revision === null ? [] : [stateComment(60, dashboard, revision)]),
+        ...(revision === null ? [] : [stateComment(60, dashboard, revision), ...receiptOf(revision, receiptAt)]),
       ],
     },
   })
@@ -1886,8 +1950,8 @@ describe('a revised ask after a decline or a missing receipt', () => {
       const eligible = (changes: Record<string, unknown>) =>
         planAnswers(current(), readers(withItem(changes)), clock).revision_transitions.length === 1
 
-      expect(eligible({status: 'blocked', blockedReason: 'countered'})).toBe(true)
-      expect(eligible({status: 'needs-attention', needsAttentionReason: 'no-receipt'})).toBe(true)
+      expect(eligible(countered)).toBe(true)
+      expect(eligible(stuck)).toBe(true)
       expect(eligible({status: 'completed'})).toBe(false)
       expect(eligible({status: 'dispatched'})).toBe(false)
       expect(eligible({status: 'pending', epoch: undefined})).toBe(false)
@@ -1896,10 +1960,7 @@ describe('a revised ask after a decline or a missing receipt', () => {
     })
 
     it('lists the batch for an item that never got a receipt, and for a countered one', () => {
-      for (const changes of [
-        {status: 'needs-attention', needsAttentionReason: 'no-receipt'},
-        {status: 'blocked', blockedReason: 'countered'},
-      ]) {
+      for (const changes of [stuck, countered]) {
         const plan = planGoals(current(), readers(anchored(withItem(changes))))
 
         expect(plan.goal_batches.map(batch => batch.batch)).toStrictEqual([revisionName(dashboard, 700)])
@@ -1959,7 +2020,13 @@ describe('a revised ask after a decline or a missing receipt', () => {
       const parityGoal = goalFor(parityName(systematic), 51, [systematic])
       const state: ReaderState = {
         goals: [parityGoal],
-        comments: {51: [checklistComment(1, [lineFor(systematic)]), stateComment(51, systematic, declined)]},
+        comments: {
+          51: [
+            checklistComment(1, [lineFor(systematic)]),
+            stateComment(51, systematic, declined),
+            receiptFor('declined', RECEIPT_AT),
+          ],
+        },
         part0: {[systematic.nameWithOwner]: 'https://github.com/marcusrbrown/systematic/pull/7'},
         activity: {
           [systematic.nameWithOwner]: {
@@ -1975,6 +2042,107 @@ describe('a revised ask after a decline or a missing receipt', () => {
       expect(answers.revision_transitions).toMatchObject([
         {repo: systematic.nameWithOwner, part_issue: 11, comment_id: 700, labels: ['part-declined']},
       ])
+    })
+  })
+
+  describe('a request counts only if it was written after the latest attempt ended', () => {
+    const fires = (run: ReaderState, requests: ReturnType<typeof request>[]) => ({
+      transitions: planAnswers(current({revisions: requests}), readers(run), clock).revision_transitions,
+      batches: planGoals(current({revisions: requests}), readers(anchored(run))).goal_batches,
+    })
+
+    it('ignores a request written while the part was still running, and never fires it once the attempt declines', () => {
+      const early = request(700, dashboard.nameWithOwner, RECEIPT_AT - 3_600_000)
+
+      const {transitions, batches} = fires(withItem(declined), [early])
+      const answers = planAnswers(current({revisions: [early]}), readers(anchored(withItem(declined))), clock)
+
+      expect(transitions).toStrictEqual([])
+      expect(batches).toStrictEqual([])
+      expect(partOf(answers)).toMatchObject({state: 'declined', revision: 'revision-not-eligible'})
+    })
+
+    it('fires a request written after the decline, and not one in the same instant as the receipt', () => {
+      const after = fires(withItem(declined), [request(700, dashboard.nameWithOwner, RECEIPT_AT + 1)])
+      const same = fires(withItem(declined), [request(700, dashboard.nameWithOwner, RECEIPT_AT)])
+
+      expect(after.transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+      expect(after.batches.map(batch => batch.batch)).toStrictEqual([revisionName(dashboard, 700)])
+      expect(same.transitions).toStrictEqual([])
+      expect(same.batches).toStrictEqual([])
+    })
+
+    it('ignores a request written before the countered receipt, as for a decline', () => {
+      const early = request(700, dashboard.nameWithOwner, RECEIPT_AT - 1)
+
+      expect(fires(withItem(countered), [early]).transitions).toStrictEqual([])
+      expect(
+        fires(withItem(countered), [request(700, dashboard.nameWithOwner, RECEIPT_AT + 1)]).transitions,
+      ).toHaveLength(1)
+    })
+
+    it('ignores a request written while a revision attempt ran, and does not fire it when that attempt declines', () => {
+      const state = anchored(withRevisionGoal(declined))
+      const requests = [request(700), request(705, dashboard.nameWithOwner, REVISION_RECEIPT_AT - 1_800_000)]
+
+      const answers = planAnswers(current({revisions: requests}), readers(state), clock)
+
+      expect(answers.revision_transitions).toStrictEqual([])
+      expect(partOf(answers)).toMatchObject({state: 'declined', attempt: 'revision', revision: 'revision-not-eligible'})
+      expect(
+        planGoals(current({revisions: requests, projectItems: inProject(50, 60)}), readers(state)).goal_batches,
+      ).toStrictEqual([])
+    })
+
+    it('reads the time of the receipt that settled the item, not of a comment that only looks like one', () => {
+      const state = withItem(declined)
+      const forged: GoalComment = {
+        ...receiptFor('declined', RECEIPT_AT - 7_200_000, 3),
+        body: buildResultMarker({correlationId: CORRELATION, nonce: 'not-the-nonce', status: 'declined', summary: 'x'}),
+      }
+      state.comments = {50: [forged, ...(state.comments?.[50] as GoalComment[])]}
+
+      const fresh = fires(state, [request(700, dashboard.nameWithOwner, RECEIPT_AT - 3_600_000)])
+      const real = fires(state, [request(700, dashboard.nameWithOwner, RECEIPT_AT + 60_000)])
+
+      expect(fresh.transitions).toStrictEqual([])
+      expect(real.transitions).toHaveLength(1)
+    })
+
+    it('ignores a request when the time of the receipt cannot be told', () => {
+      for (const state of [withItem(declined, null), {...withItem(declined), comments: {50: []}}]) {
+        const answers = planAnswers(current(), readers(anchored(state)), clock)
+
+        expect(answers.revision_transitions).toStrictEqual([])
+        expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      }
+    })
+
+    it('ignores a request written before an item could have gone needs-attention, which is its epoch and the 24h SLA', () => {
+      const early = request(700, dashboard.nameWithOwner, STUCK_AT - 1)
+      const same = request(700, dashboard.nameWithOwner, STUCK_AT)
+
+      const answers = planAnswers(current({revisions: [early]}), readers(anchored(withItem(stuck))), clock)
+
+      expect(answers.revision_transitions).toStrictEqual([])
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(fires(withItem(stuck), [early]).batches).toStrictEqual([])
+      expect(fires(withItem(stuck), [same]).transitions).toStrictEqual([])
+    })
+
+    it('fires a request written after that moment', () => {
+      const later = request(700, dashboard.nameWithOwner, STUCK_AT + 1)
+
+      const {transitions, batches} = fires(withItem(stuck), [later])
+
+      expect(transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+      expect(batches.map(batch => batch.batch)).toStrictEqual([revisionName(dashboard, 700)])
+    })
+
+    it('ignores a request for an item that is needs-attention with no epoch to count from', () => {
+      const {transitions} = fires(withItem({...stuck, epoch: undefined}), [request()])
+
+      expect(transitions).toStrictEqual([])
     })
   })
 
@@ -1999,7 +2167,7 @@ describe('a revised ask after a decline or a missing receipt', () => {
 
     it('takes a newer request after the revision attempt was declined too', () => {
       const state = anchored(withRevisionGoal(declined))
-      const later = current({revisions: [request(700), request(720)]})
+      const later = current({revisions: [request(700), request(720, dashboard.nameWithOwner, LATER_REQUEST_AT)]})
 
       const answers = planAnswers(later, readers(state), clock)
 
@@ -2009,7 +2177,7 @@ describe('a revised ask after a decline or a missing receipt', () => {
 
     it('holds a newer request while the revision attempt is still open', () => {
       const state = anchored(withRevisionGoal({epoch: NOW - 1000}))
-      const later = current({revisions: [request(700), request(720)]})
+      const later = current({revisions: [request(700), request(720, dashboard.nameWithOwner, LATER_REQUEST_AT)]})
 
       const answers = planAnswers(later, readers(state), clock)
 

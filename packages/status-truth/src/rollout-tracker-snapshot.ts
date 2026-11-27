@@ -274,6 +274,8 @@ export interface TrackerComment {
   /** `id` is the author's numeric user ID; fixtures and old callers may omit it. */
   author: {login: string; id?: number}
   body: string
+  /** When the comment was created (ISO 8601). Read for an operator's revision request; a comment without it is no request. */
+  created_at?: string
 }
 
 const RELEASE_REPOS = {agent: 'fro-bot/agent', dashboard: 'fro-bot/dashboard'} as const
@@ -1030,7 +1032,7 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
       '--paginate',
       `repos/${repo}/issues/${issueNumber}/comments?per_page=100`,
       '--jq',
-      '.[] | {id, login: (.user.login // ""), uid: (.user.id // 0), body: (.body // "")}',
+      '.[] | {id, login: (.user.login // ""), uid: (.user.id // 0), body: (.body // ""), created_at: (.created_at // "")}',
     ],
     {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 60_000},
   )
@@ -1052,6 +1054,7 @@ function fetchTrackerComments(repo: string, issueNumber: string): TrackerComment
         id: parsed.id,
         author: userId === undefined ? {login: parsed.login} : {login: parsed.login, id: userId},
         body: parsed.body,
+        ...(typeof parsed.created_at === 'string' && parsed.created_at !== '' ? {created_at: parsed.created_at} : {}),
       }
     })
 }
