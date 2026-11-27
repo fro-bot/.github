@@ -13,7 +13,7 @@
       ],
       "brief": {
         "security": [
-          "Every job that runs on a pull request, an issue or a comment checks out with persist-credentials: false.",
+          "Every job this repository defines that runs on a pull request, an issue or a comment checks out with persist-credentials: false.",
           "Every agent step runs with isolate-agent.",
           "The agent action is pinned to a release by commit SHA, with the version in a comment, not to a moving ref."
         ],

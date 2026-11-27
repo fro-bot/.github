@@ -790,6 +790,16 @@ describe('the committed program-domains.json', () => {
     expect(standards.join('\n')).not.toContain('chosen by the kind of work, falling back to FRO_BOT_MODEL')
   })
 
+  it('scopes the checkout standard to the jobs a repository defines, not to reusable workflows it calls', () => {
+    const {brief} = selectDomain(committed, 'harness-tools')
+
+    expect(brief.security[0]).toBe(
+      'Every job this repository defines that runs on a pull request, an issue or a comment checks out with persist-credentials: false.',
+    )
+    expect(brief.security).not.toContain(
+      'Every job that runs on a pull request, an issue or a comment checks out with persist-credentials: false.',
+    )
+  })
   it('lists no repository in two domains', () => {
     const names = committed.domains.flatMap(domain => domain.repos.map(repo => repo.nameWithOwner.toLowerCase()))
 
