@@ -6335,6 +6335,55 @@ describe('a domain program: part issues with the brief', () => {
         expect(partOf(result, systematic)).toMatchObject({state: 'awaiting-answer'})
       })
 
+      it("does not mark a join batch's repo unknown because an unreadable initial goal excludes it", () => {
+        const cards = partIssues()
+
+        const result = preflight({
+          ...cards,
+          configPath: domainConfig({part0: []}),
+          items: [...(cards.items ?? []), goalItem(50), goalItem(51)],
+          goalIssues: [
+            goalIssueFor('initial', 50, [systematic, spaceBus]),
+            goalIssueFor(`join-${dashboard.nodeId}`, 51, [dashboard]),
+          ],
+          goalComments: {'51': [checklistFor([dashboard])]},
+        })
+
+        expect(partOf(result, dashboard)).toMatchObject({state: 'held', reason: 'not-dispatched'})
+        expect(partOf(result, systematic)).toMatchObject({state: 'unknown', reason: 'goals-unreadable'})
+        expect(partOf(result, spaceBus)).toMatchObject({state: 'unknown', reason: 'goals-unreadable'})
+      })
+
+      it('never puts a recorded member that is no longer public in the prompt, whatever the goal comments do', () => {
+        const cards = partIssues()
+        const base = {
+          ...cards,
+          configPath: domainConfig({part0: []}),
+          items: [...(cards.items ?? []), goalItem(50)],
+          goalIssues: [goalIssueFor('initial', 50, [systematic, spaceBus, dashboard])],
+          visibility: {[spaceBus.nameWithOwner]: 'private'},
+        }
+
+        const commentsCases: Record<string, readonly unknown[]>[] = [
+          {},
+          {'50': []},
+          {'50': [checklistFor([systematic, dashboard])]},
+        ]
+        for (const goalComments of commentsCases) {
+          const result = preflight({...base, goalComments})
+          const text = JSON.stringify([
+            result.domain.goal_batches,
+            result.domain.goal_instructions,
+            result.domain.answer_instructions,
+            result.domain.parts,
+            result.reason,
+          ])
+
+          expect(text).not.toContain(spaceBus.nameWithOwner)
+          expect(result.domain.goal_batches.every(batch => batch.checklist === '')).toBe(true)
+        }
+      })
+
       it('wakes for a new answer in a healthy batch while another batch keeps failing, and not for the failure twice', () => {
         const first = preflight(parityWithBrokenInitial({epoch: ms(1)}))
         const sameAgain = preflight({
@@ -6464,11 +6513,51 @@ describe('a domain program: part issues with the brief', () => {
         expect(text).toContain('"Parts" section')
       })
 
-      it('is empty when the program has no part issue yet', () => {
+      it('renders an explicit empty Parts section when a successful read finds no part', () => {
         const result = preflight({})
 
         expect(result.domain.parts).toEqual([])
-        expect(result.domain.answer_instructions).toBe('')
+        expect(result.domain.answer_instructions.startsWith('\n\nAnswers. ')).toBe(true)
+        expect(result.domain.answer_instructions).toContain('Rewrite the \"Parts\" section')
+        expect(result.domain.answer_instructions).toContain('No parts.')
+        expect(result.domain.answer_instructions).not.toContain(dashboard.nameWithOwner)
+      })
+
+      it('keeps the last-known rows when the read failed: a stopped domain says nothing about Parts', () => {
+        const stale = preflight({...dashboardGoal({epoch: ms(4)}), mainHead: 'c'.repeat(40)})
+        const noRegistry = preflight({...dashboardGoal({epoch: ms(4)}), registry: 'not a registry'})
+
+        expect(stale.domain.answer_instructions).toBe('')
+        expect(noRegistry.domain.answer_instructions).toBe('')
+      })
+
+      it('tells the tracker to empty the Parts section when the last part leaves, so Observe reads no stale stall', () => {
+        const only = (extra: Partial<DomainRun> = {}): Partial<DomainRun> => {
+          const card = partIssueCard(dashboard, 13)
+          return {
+            items: [card.item, goalItem(50)],
+            partIssues: {[card.key]: card.issue},
+            goalIssues: [goalIssueFor('initial', 50, [dashboard])],
+            goalComments: {'50': [checklistFor([dashboard]), stateComment(50, [itemFor(dashboard, {epoch: ms(4)})])]},
+            ...extra,
+          }
+        }
+        const published = preflight(only())
+        const gone = preflight(
+          only({
+            registry: registryText(allRows.map(row => (row === dashboard ? {...row, private: true} : row))),
+            comments: [comment(5, 'fro-bot', published.marker)],
+          }),
+        )
+
+        expect(published.domain.stalled_parts).toHaveLength(1)
+        expect(published.domain.answer_instructions).toContain(JSON.stringify(published.domain.parts))
+        expect(gone.domain.parts).toEqual([])
+        expect(gone.domain.stalled_parts).toEqual([])
+        expect(gone.should_comment).toBe(true)
+        expect(gone.domain.answer_instructions).toContain('Rewrite the \"Parts\" section')
+        expect(gone.domain.answer_instructions).toContain('No parts.')
+        expect(gone.domain.answer_instructions).toContain('remove every earlier row')
       })
 
       it('adds no answer field to a program with no domain', () => {

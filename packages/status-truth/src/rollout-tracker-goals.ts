@@ -337,16 +337,20 @@ export function planGoals(input: GoalPlanInput, readers: GoalReaders): GoalPlan 
     // A goal that exists is resumed from what it recorded when it was created: its members and its brief commit,
     // never today's eligible repos or today's pin. A goal that records neither cannot be resumed safely.
     const record = goal === undefined ? null : recordedGoal(goal.body)
-    const repos =
+    // The recorded membership is internal: it matches the approved checklist and decides whether the batch can be
+    // repaired. A recorded member that is not in today's eligible, public set is never named in the batch, its body
+    // or its error, and a batch that has one is stopped with a fixed reason, never repaired for a subset.
+    const recordedMembers =
       record === null
         ? candidate.repos
         : record.repos.map(name => eligibleByName.get(name.toLowerCase()) ?? {nameWithOwner: name, nodeId: ''})
+    const repos = record === null ? candidate.repos : recordedMembers.filter(repo => repo.nodeId !== '')
     // A goal whose comments cannot be read stops only its own batch: nothing is written for it, and the rest go on.
     let checklist = false
     let commentsUnreadable = false
     if (goal !== undefined) {
       try {
-        checklist = hasChecklist(readers.goalComments(goal.number), repos)
+        checklist = hasChecklist(readers.goalComments(goal.number), recordedMembers)
       } catch {
         commentsUnreadable = true
       }
@@ -587,6 +591,13 @@ function findItem(
     .toSorted((left, right) => left.number - right.number)
   let unreadable = false
   for (const goal of candidates) {
+    // The owning batch is resolved from the goal's recorded members before its comments are read: an initial goal
+    // that records members and not this repo is another batch's, so an unreadable one is no reason to doubt this part.
+    if (batchOf(goal.body, input.program) === 'initial') {
+      const record = recordedGoal(goal.body)
+      if (record !== null && !record.repos.some(name => name.toLowerCase() === repo.nameWithOwner.toLowerCase()))
+        continue
+    }
     let comments: readonly GoalComment[]
     try {
       comments = readers.goalComments(goal.number)
@@ -791,8 +802,12 @@ export function planAnswers(
 }
 
 function answerInstructions(input: GoalPlanInput, plan: Omit<AnswerPlan, 'answer_instructions'>): string {
-  if (plan.parts.length === 0) return ''
   const intro = '\n\nAnswers. '
+  // A successful read that finds no part still rewrites the section: the old rows would read as live stalls to
+  // Observe. A read that failed does not get here (the domain is stopped), so its last rows stay.
+  if (plan.parts.length === 0) {
+    return `${intro}The program ${input.program} has no part to report this run. Rewrite the "Parts" section in the body of the tracker issue to say "No parts." and nothing else: remove every earlier row, so a part that is no longer listed does not read as stalled. Name no repo.`
+  }
   const handOver =
     plan.parity_transitions.length === 0
       ? ''

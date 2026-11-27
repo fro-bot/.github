@@ -951,6 +951,40 @@ describe('a read that fails', () => {
     ])
   })
 
+  describe('a recorded member that is no longer in the current public set', () => {
+    const recorded = (comments: 'fail' | readonly GoalComment[]) =>
+      planGoals(
+        input({
+          eligible: [systematic, dashboard],
+          projectItems: [{content_repo: 'fro-bot/.github', content_number: 50}],
+        }),
+        readers({goals: [goalFor('initial', 50, [dashboard, spaceBus])], comments: {50: comments}}),
+      )
+
+    it.each([
+      ['unreadable goal comments', 'fail' as const],
+      ['a goal with no checklist yet', [] as readonly GoalComment[]],
+    ])('is named nowhere in the batch, and no checklist is repaired, with %s', (_name, comments) => {
+      const result = recorded(comments)
+
+      expect(JSON.stringify(result)).not.toContain(spaceBus.nameWithOwner)
+      expect(batchesOf(result)).toHaveLength(1)
+      expect(batchesOf(result)[0]).toMatchObject({goal_issue: 50, checklist: '', has_checklist: false})
+      expect(batchesOf(result)[0]?.error).toBe(
+        comments === 'fail'
+          ? 'goal comments cannot be read'
+          : 'a member of the goal is not ready, so its checklist waits',
+      )
+      expect(batchesOf(result)[0]?.repos).toStrictEqual([dashboard.nameWithOwner])
+    })
+
+    it('still matches the recorded checklist by its full membership, and lists nothing once it is complete', () => {
+      const result = recorded([checklistComment(1, [lineFor(dashboard), lineFor(spaceBus)])])
+
+      expect(batchesOf(result)).toStrictEqual([])
+    })
+  })
+
   it('lists the other batches normally while one batch cannot be read', () => {
     const result = planGoals(
       input({projectItems: [{content_repo: 'fro-bot/.github', content_number: 70}]}),
@@ -1249,7 +1283,34 @@ describe('planAnswers: the anchor is strict', () => {
     const result = planAnswers(input({eligible: [dashboard], partIssues: new Map()}), readers(), clock)
 
     expect(result.parts).toStrictEqual([])
-    expect(result.answer_instructions).toBe('')
+    expect(result.answer_instructions).toContain('No parts.')
+    expect(result.answer_instructions).toContain('Rewrite the "Parts" section')
+    expect(result.answer_instructions).not.toContain(dashboard.nameWithOwner)
+  })
+
+  it('resolves the owning batch before it reads goal comments: an unreadable goal that excludes the repo is not asked', () => {
+    const joinGoal = goalFor(`join-${dashboard.nodeId}`, 51, [dashboard])
+    const reader = readers({
+      goals: [goalFor('initial', 50, [systematic, spaceBus]), joinGoal],
+      comments: {51: []},
+    })
+
+    const result = planAnswers(input({eligible: [dashboard]}), reader, clock)
+
+    expect(result.parts[0]).toMatchObject({repo: dashboard.nameWithOwner, state: 'held', reason: 'not-dispatched'})
+    expect(reader.reads).not.toContain('comments 50')
+    expect(reader.reads).toContain('comments 51')
+  })
+
+  it('still asks an initial goal that records no members, as before', () => {
+    const reader = readers({
+      goals: [goal('initial', 50, {body: `A goal.\n${goalMarker('harness', 'initial')}\n`})],
+      comments: {50: []},
+    })
+
+    planAnswers(input({eligible: [dashboard]}), reader, clock)
+
+    expect(reader.reads).toContain('comments 50')
   })
 })
 
