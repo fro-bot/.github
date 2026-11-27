@@ -302,13 +302,21 @@ describe('the cross-repo-program skill: a start from a program proposal', () => 
     )
   })
 
-  it('creates nothing for a closed match, several matches, an unreadable recorded Project or a failed search, and tells the operator what to do', () => {
+  it('ignores closed matches beside exactly one open match, but stops when only closed matches exist', () => {
+    expect(flat).toContain('closed matches beside that one are ignored leftovers')
     expect(flat).toContain(
-      'a closed match, more than one match, a recorded Project that cannot be read, or a failed search',
+      'more than one open match, a recorded Project that cannot be read, a failed search, or closed matches with no open match',
     )
+    expect(flat).not.toContain('a closed match, more than one match')
+  })
+
+  it('creates nothing on a stop, and gives the operator two explicit paths: resume or abandon', () => {
+    expect(flat).toContain("create nothing and comment on the proposal with the links and the operator's two paths")
     expect(flat).toContain(
-      "create nothing and comment on the proposal with the links and the operator's step (close or fix the leftovers, then reapply `program-approved`)",
+      'resume: repair the canonical tracker (reopen it if closed, record its Project URL in its body), close any other leftover trackers, then reapply `program-approved`',
     )
+    expect(flat).toContain('abandon: close the proposal')
+    expect(flat).not.toContain('close or fix the leftovers')
   })
 
   it('names no reply prefix, pickup or dispatch from Observe any more', () => {

@@ -374,6 +374,7 @@ sequenceDiagram
 - Brief: repo skills, the agent-model resolver, `fro-bot`-user pull request review, dispatch-to-pull-request routing; Renovate Approve only where the repository uses Renovate automerge; exceptions recorded per repository.
 - Offer the program; Part 0 in systematic and space-bus; then parity dispatches.
 - Record per part: answer, pull request, outcome; whether an answer avoided rework; operator actions counted.
+- Observe at the pilot's first live start, accepted as known retry cases of a start from a proposal (Unit 6): (a) a run that creates the tracker issue and fails before the start pull request, where a retry's body search may miss the new tracker (search indexing lags) and create a second one; (b) a Project created but not yet recorded in the tracker body, which a retry treats as missing and recreates. The worst case of either is a duplicate tracker issue or Project to delete. Nothing dispatches before the start pull request merges and the operator applies `dispatch-approved`, so neither can send work to a repository. Record whether either happened.
 
 **Test expectation:** none -- live operational unit; evidence is the tracker, the pull requests and the run links recorded here.
 
@@ -394,6 +395,7 @@ sequenceDiagram
 | Systematic's issue path can't open a workflow-changing PR | R19 fallback: the operator authors Part 0 there |
 | Hash change wakes #3512 | Domain-only evidence; golden hash test |
 | Status-truth importing dispatch breaks the package graph | Declared dependency and lock entry, no reverse import; layout test in Unit 3 |
+| A retried start from a proposal creates a second tracker or Project (the tracker's body search misses a just-created issue, or the Project was not yet recorded in the body) | Accepted for the pilot; observed at Unit 7's first live start. Worst case is a duplicate to delete: nothing dispatches before the start pull request merges and `dispatch-approved` |
 
 ## Sources & References
 
