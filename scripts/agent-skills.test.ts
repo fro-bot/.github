@@ -109,6 +109,23 @@ describe('the cross-repo-program skill', () => {
     )
   })
 
+  it('keeps a GitHub closing keyword out of the start pull request body, with the exact cleanup sentence', () => {
+    const {body} = readSkill('cross-repo-program')
+    const text = body.replaceAll(/\s+/g, ' ')
+    const cleanupSentence =
+      'If this PR is closed without merging, the tracker issue #<n> and Project <number> are to be removed: close the issue and delete the Project.'
+    // GitHub links a closing keyword to the reference that follows it, with an optional colon between.
+    const closingKeywordBeforeReference =
+      /\b(?:close[sd]?|fix(?:es|ed)?|resolve[sd]?):?\s+(?:#|<n>|https:\/\/github\.com\/\S+\/issues\/)/i
+
+    expect(text).toContain(cleanupSentence)
+    expect(text).toContain('no closing keyword directly before an issue reference')
+    expect(text).toContain('merging the start PR would close the tracker issue')
+    expect(cleanupSentence).not.toMatch(closingKeywordBeforeReference)
+    expect(text).not.toMatch(closingKeywordBeforeReference)
+    expect(text).not.toContain('so they can be closed if the PR is rejected')
+  })
+
   it('says requests go in comments and a body edit is not read as a request', () => {
     const {body} = readSkill('cross-repo-program')
     const text = body.replaceAll(/\s+/g, ' ')
