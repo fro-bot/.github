@@ -190,6 +190,8 @@ jobs:
           DOMAIN_BOOTSTRAP="$(echo "$RESULT" | jq -r '.domain.bootstrap_instructions // ""')"
           DOMAIN_GOALS="$(echo "$RESULT" | jq -r '.domain.goal_instructions // ""')"
           DOMAIN_ANSWERS="$(echo "$RESULT" | jq -r '.domain.answer_instructions // ""')"
+          MARKER_UPDATE_ID="$(echo "$RESULT" | jq -r '.domain.marker_update.comment_id // ""')"
+          MARKER_UPDATE_BODY="$(echo "$RESULT" | jq -r '.domain.marker_update.body // ""')"
           {
             echo "should_comment=${SHOULD_COMMENT}"
             echo "reason=${REASON}"
@@ -214,6 +216,10 @@ jobs:
             echo "domain_answers<<DOMAIN_ANSWERS_TEXT"
             echo "${DOMAIN_ANSWERS}"
             echo "DOMAIN_ANSWERS_TEXT"
+            echo "marker_update_id=${MARKER_UPDATE_ID}"
+            echo "marker_update_body<<MARKER_UPDATE_TEXT"
+            echo "${MARKER_UPDATE_BODY}"
+            echo "MARKER_UPDATE_TEXT"
             echo "marker<<MARKER_TEXT"
             echo "${MARKER}"
             echo "MARKER_TEXT"
@@ -223,6 +229,26 @@ jobs:
           else
             echo "::notice::rollout-tracker: wake — ${REASON}"
           fi
+
+      # A domain program whose attention list emptied on a run that does not wake the tracker: the marker is
+      # written only when the agent runs, so the preflight hands back the marker comment with its marker replaced
+      # and this step records the clear in place. A same stall that returns then differs from the marker and wakes.
+      # It never blocks the tracker: a failed edit leaves the old marker, and the next run tries again.
+      - name: Record a cleared attention state
+        if: steps.snapshot.outputs.marker_update_id != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.FRO_BOT_PAT }}
+          COMMENT_ID: ${{ steps.snapshot.outputs.marker_update_id }}
+          COMMENT_BODY: ${{ steps.snapshot.outputs.marker_update_body }}
+          TRACKER_REPO: ${{ steps.snapshot.outputs.tracker_repo }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$COMMENT_ID" =~ ^[0-9]+$ ]]; then
+            printf '::error::the marker comment ID must be numeric\n' >&2
+            exit 1
+          fi
+          gh api -X PATCH "repos/${TRACKER_REPO}/issues/comments/${COMMENT_ID}" -f body="$COMMENT_BODY"
 
   # ── Fro Bot agent: runs after a successful preflight that reports a wake
   # (a changed hash or a pending operator mention) ──────────────────────────

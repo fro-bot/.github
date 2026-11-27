@@ -5550,7 +5550,7 @@ describe('a domain program: part issues with the brief', () => {
 
         expect(partOf(result, dashboard)).toMatchObject({state: 'awaiting-answer', stalled: 'answer'})
         expect(result.domain.stalled_parts).toEqual([
-          {repo: dashboard.nameWithOwner, part_issue: 13, stalled: 'answer'},
+          {repo: dashboard.nameWithOwner, part_issue: 13, stalled: 'answer', age_days: days},
         ])
       })
     })
@@ -5581,7 +5581,7 @@ describe('a domain program: part issues with the brief', () => {
 
         expect(partOf(result, dashboard)).toMatchObject({state: 'accepted', stalled: 'outcome'})
         expect(result.domain.stalled_parts).toEqual([
-          {repo: dashboard.nameWithOwner, part_issue: 13, stalled: 'outcome'},
+          {repo: dashboard.nameWithOwner, part_issue: 13, stalled: 'outcome', age_days: days},
         ])
       })
 
@@ -5987,7 +5987,7 @@ describe('a domain program: part issues with the brief', () => {
       const problems: {name: string; params: Partial<DomainRun>; wakes: boolean}[] = [
         {name: 'a goal that cannot be listed', params: {goalIssuesText: 'not json'}, wakes: true},
         {name: 'a brief that cannot be used', params: {commit: null}, wakes: true},
-        {name: 'a registry that cannot be read', params: {registry: null}, wakes: true},
+        {name: 'a registry that cannot be read', params: {registry: 'not a registry'}, wakes: true},
         {
           name: 'a listed repo that stopped being eligible',
           params: {registry: registryText(allRows.map(row => (row === spaceBus ? {...row, private: true} : row)))},
@@ -6044,6 +6044,191 @@ describe('a domain program: part issues with the brief', () => {
         expect(stale.domain.brief_error).toBe('stale-run')
         expect(stale.should_comment).toBe(false)
         expect(extractPreviousMarker(stale.marker)?.domain_digest).toBe(first.domain.attention_digest)
+      })
+    })
+
+    describe('the whole days a clock has run, precomputed for Observe', () => {
+      it('is the whole days since the dispatch epoch for a part awaiting its answer', () => {
+        expect(partOf(preflight(dashboardGoal({epoch: ms(4, -3_600_000)})), dashboard)?.age_days).toBe(4)
+        expect(partOf(preflight(dashboardGoal({epoch: ms(2, -DAY + 1)})), dashboard)?.age_days).toBe(2)
+        expect(partOf(preflight(dashboardGoal({epoch: ms(0, -1000)})), dashboard)?.age_days).toBe(0)
+      })
+
+      it('is the whole days since the accept for an accepted part, whatever the epoch says', () => {
+        const result = preflight({
+          ...dashboardGoal({epoch: ms(30)}),
+          activity: quiet({
+            [dashboard.nameWithOwner]: {timeline: [labeled('part-accepted', 'fro-bot', at(5, -60_000))]},
+          }),
+        })
+
+        expect(partOf(result, dashboard)).toMatchObject({state: 'accepted', age_days: 5})
+      })
+
+      it('is null for a held part, an unknown part and an answered or completed one: no clock runs there', () => {
+        const held = preflight(partIssues())
+        const unknown = preflight({...partIssues(), goalIssuesText: 'not json'})
+        const completed = preflight(dashboardGoal({status: 'completed', epoch: ms(30)}))
+        const declined = preflight(dashboardGoal({status: 'blocked', blockedReason: 'declined', epoch: ms(30)}))
+
+        expect(held.domain.parts.map(part => part.age_days)).toEqual([null, null, null])
+        expect(unknown.domain.parts.map(part => part.age_days)).toEqual([null, null, null])
+        expect(partOf(completed, dashboard)?.age_days).toBeNull()
+        expect(partOf(declined, dashboard)?.age_days).toBeNull()
+      })
+
+      it('is on every stalled part too, and the instructions require the Parts row to show it', () => {
+        const result = preflight(dashboardGoal({epoch: ms(7)}))
+
+        expect(result.domain.stalled_parts).toEqual([
+          {repo: dashboard.nameWithOwner, part_issue: 13, stalled: 'answer', age_days: 7},
+        ])
+        expect(result.domain.answer_instructions).toContain('age_days')
+        expect(result.domain.answer_instructions).toContain('the age in days (`age_days`) when it is not null')
+      })
+    })
+
+    describe('a stopped run does not move the answers hash', () => {
+      const settled = (): Partial<DomainRun> =>
+        dashboardGoal({status: 'blocked', blockedReason: 'declined', epoch: ms(1)})
+
+      it('carries the hash through a stale run: no wake, the same hash in the marker, and no wake on recovery', () => {
+        const first = preflight(settled())
+        const marker = [comment(5, 'fro-bot', first.marker)]
+
+        const stale = preflight({...settled(), mainHead: 'c'.repeat(40), comments: marker})
+        const recovered = preflight({...settled(), comments: [comment(6, 'fro-bot', stale.marker)]})
+
+        expect(first.snapshot.answers).toEqual([{repo: dashboard.nameWithOwner, answer: 'declined'}])
+        expect(stale.snapshot.answers).toEqual([])
+        expect(stale.hash).toBe(first.hash)
+        expect(extractPreviousMarker(stale.marker)?.hash).toBe(first.hash)
+        expect(stale.should_comment).toBe(false)
+        expect(recovered.hash).toBe(first.hash)
+        expect(recovered.should_comment).toBe(false)
+      })
+
+      it.each([
+        ['a brief that cannot be used', {commit: null}],
+        ['a registry that cannot be read', {registry: 'not a registry'}],
+        ['a part issue that cannot be read', {partIssues: {}}],
+        ['goals that cannot be read', {goalIssuesText: 'not json'}],
+      ] as const)('carries the hash through %s, wakes only for the digest, and not on recovery', (_name, params) => {
+        const first = preflight(settled())
+
+        const stopped = preflight({...settled(), ...params, comments: [comment(5, 'fro-bot', first.marker)]})
+        const recovered = preflight({...settled(), comments: [comment(6, 'fro-bot', stopped.marker)]})
+
+        expect(stopped.hash).toBe(first.hash)
+        expect(extractPreviousMarker(stopped.marker)?.hash).toBe(first.hash)
+        expect(stopped.reason).not.toContain('gating transition')
+        expect(stopped.should_comment).toBe(true)
+        expect(recovered.hash).toBe(first.hash)
+        expect(recovered.should_comment).toBe(false)
+      })
+
+      it('still takes a real answer change from a run that is not stopped', () => {
+        const first = preflight(dashboardGoal({epoch: ms(1)}))
+
+        const next = preflight({...settled(), comments: [comment(5, 'fro-bot', first.marker)]})
+
+        expect(next.hash).not.toBe(first.hash)
+        expect(next.should_comment).toBe(true)
+      })
+
+      it('uses the computed hash when there is no marker to carry', () => {
+        const cold = preflight({...settled(), registry: 'not a registry'})
+
+        expect(cold.should_comment).toBe(true)
+        expect(cold.hash).toBe(hashSnapshot(cold.snapshot))
+      })
+    })
+
+    describe('a cleared attention list is recorded in the marker, without a wake', () => {
+      const stalled = (): Partial<DomainRun> => dashboardGoal({epoch: ms(4)})
+      const calm = (): Partial<DomainRun> => dashboardGoal({epoch: ms(1)})
+
+      it('wakes for the stall, records the clear without waking, and wakes when the same stall returns', () => {
+        const first = preflight(stalled())
+        const cleared = preflight({...calm(), comments: [comment(5, 'fro-bot', first.marker)]})
+
+        expect(first.should_comment).toBe(true)
+        expect(cleared.should_comment).toBe(false)
+        expect(cleared.domain.attention_count).toBe(0)
+        expect(cleared.domain.marker_update).toEqual({comment_id: 5, body: cleared.marker})
+        expect(extractPreviousMarker(cleared.marker)).toEqual({
+          hash: first.hash,
+          last_mention_id: 0,
+          domain_digest: cleared.domain.attention_digest,
+        })
+
+        const written = comment(5, 'fro-bot', cleared.domain.marker_update?.body ?? '')
+        const quietAfter = preflight({...calm(), comments: [written]})
+        const returned = preflight({...stalled(), comments: [written]})
+
+        expect(quietAfter.domain.marker_update).toBeNull()
+        expect(quietAfter.should_comment).toBe(false)
+        expect(returned.should_comment).toBe(true)
+        expect(returned.reason).toBe('domain attention changed — 1 stalled, unknown or errored item')
+      })
+
+      it('replaces only the marker in the comment it edits', () => {
+        const first = preflight(stalled())
+        const body = `@fro-bot Parts: stalled one.\n${first.marker}\n`
+
+        const cleared = preflight({...calm(), comments: [comment(5, 'fro-bot', body)]})
+
+        expect(cleared.domain.marker_update).toEqual({
+          comment_id: 5,
+          body: `@fro-bot Parts: stalled one.\n${cleared.marker}\n`,
+        })
+      })
+
+      it('records nothing when nothing cleared: the digest is the same, the marker has none, the list is not empty, or there is no marker comment', () => {
+        const first = preflight(calm())
+        const old = buildMarker(first.hash, first.last_mention_id)
+
+        const same = preflight({...calm(), comments: [comment(5, 'fro-bot', first.marker)]})
+        const noDigest = preflight({...calm(), comments: [comment(5, 'fro-bot', old)]})
+        const stillStalled = preflight({...stalled(), comments: [comment(5, 'fro-bot', preflight(stalled()).marker)]})
+
+        expect(same.domain.marker_update).toBeNull()
+        expect(noDigest.domain.marker_update).toBeNull()
+        expect(stillStalled.domain.marker_update).toBeNull()
+        expect(first.domain.marker_update).toBeNull()
+      })
+
+      it('records nothing for a stale run, which knows nothing of the state', () => {
+        const first = preflight(stalled())
+
+        const stale = preflight({...calm(), mainHead: 'c'.repeat(40), comments: [comment(5, 'fro-bot', first.marker)]})
+
+        expect(stale.domain.marker_update).toBeNull()
+      })
+
+      it('records nothing when the run wakes anyway: the agent writes the marker then', () => {
+        const first = preflight(stalled())
+
+        const woke = preflight({
+          ...calm(),
+          comments: [comment(5, 'fro-bot', first.marker), comment(6, 'marcusrbrown', '@fro-bot hello')],
+        })
+
+        expect(woke.should_comment).toBe(true)
+        expect(woke.domain.marker_update).toBeNull()
+      })
+
+      it('prints no marker update for a program with no domain', () => {
+        const plain = bootstrapConfig([systematic])
+        const run = runCliRaw({
+          ...fixtureEnv({items: [], issues: [], comments: []}),
+          ROLLOUT_TRACKER_CONFIG: plain,
+          ROLLOUT_TRACKER_PROGRAM: 'plugins',
+          ROLLOUT_TRACKER_DEFAULT_CONFIG: readFileSync(plain, 'utf8'),
+          ROLLOUT_TRACKER_VISIBILITY_JSON: JSON.stringify({[systematic.nameWithOwner]: 'public'}),
+        })
+
+        expect(run.stdout).not.toContain('marker_update')
       })
     })
 

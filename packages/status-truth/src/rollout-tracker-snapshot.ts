@@ -28,6 +28,7 @@ import {
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
+import {planMarkerUpdate, withAttention} from './rollout-tracker-attention.ts'
 import {
   goalReaders,
   memoizeReaders,
@@ -253,6 +254,11 @@ export interface DomainPreflight {
   attention_digest: string
   /** How many things the digest covers; zero means there is nothing to wake for. */
   attention_count: number
+  /**
+   * The edit that records a cleared attention state in the marker comment, for a run that does not wake the tracker:
+   * the comment's ID and its whole body with only the marker replaced. Null when there is nothing to record.
+   */
+  marker_update: {comment_id: number; body: string} | null
 }
 
 export interface TrackerComment {
@@ -1334,46 +1340,8 @@ type DomainBase = Omit<
   | keyof AnswerPlan
   | 'attention_digest'
   | 'attention_count'
+  | 'marker_update'
 >
-
-/** A domain whose attention digest and count are not worked out yet. */
-type DomainParts = Omit<DomainPreflight, 'attention_digest' | 'attention_count'>
-
-/**
- * What needs a person's attention in a domain program, as a digest and a count: the stalled and unknown parts (by repo
- * and kind, never by prose), the fixed errors of the brief, the registry, the part issues and the goals, the goal
- * batches that stopped with an error, the Part 0 repos whose Part 0 cannot be read, the deferred repos, and how many
- * listed repos are ineligible. Everything in it is a fixed code, a public repo name or a count. A stale run is not
- * state: it reports a digest, and the caller carries the last one through instead.
- */
-function withAttention(domain: DomainParts): DomainPreflight {
-  const byRepo = (left: string, right: string): number => left.localeCompare(right)
-  const batchErrors = domain.goal_batches.flatMap(batch => (batch.error === null ? [] : [[batch.batch, batch.error]]))
-  const stable = {
-    stalled: domain.stalled_parts.map(part => `${part.repo.toLowerCase()} ${part.stalled}`).toSorted(byRepo),
-    unknown: domain.unknown_parts.map(part => `${part.repo.toLowerCase()} ${part.reason}`).toSorted(byRepo),
-    errors: [domain.brief_error, domain.registry_error, domain.part_issue_error, domain.goal_error].filter(
-      (message): message is string => message !== null,
-    ),
-    batches: batchErrors,
-    part0_unreadable: domain.part0_unreadable.map(name => name.toLowerCase()).toSorted(byRepo),
-    deferred: domain.deferred_repos.map(repo => `${repo.nameWithOwner.toLowerCase()} ${repo.reason}`).toSorted(byRepo),
-    ineligible: domain.ineligible_repos.length,
-  }
-  const count =
-    stable.stalled.length +
-    stable.unknown.length +
-    stable.errors.length +
-    stable.batches.length +
-    stable.part0_unreadable.length +
-    stable.deferred.length +
-    (stable.ineligible > 0 ? 1 : 0)
-  return {
-    ...domain,
-    attention_digest: createHash('sha256').update(JSON.stringify(stable, sortedReplacer)).digest('hex'),
-    attention_count: count,
-  }
-}
 
 function bootstrapInstructions(domain: DomainBase, program: string): string {
   const intro = '\n\nDomain program. '
@@ -1941,7 +1909,16 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
     .map(part => ({repo: part.repo, answer: part.state}))
     .toSorted((left, right) => left.repo.localeCompare(right.repo))
   const snapshot = buildSnapshot(items, issues, external, answers)
-  const hash = hashSnapshot(snapshot)
+  // A domain run that is stopped (the brief, the registry, the part issues or the goals cannot be read) knows no
+  // answers, so its snapshot would drop them and move the hash: it carries the last hash through instead, and the
+  // run that recovers compares like with like. With no marker to carry, the computed hash stands.
+  const stopped =
+    planned !== undefined &&
+    (planned.domain.brief_error !== null ||
+      planned.domain.registry_error !== null ||
+      planned.domain.part_issue_error !== null ||
+      planned.domain.goal_error !== null)
+  const hash = stopped && previousMarker !== null ? previousMarker.hash : hashSnapshot(snapshot)
   const bootstrapRepos = planned?.ready ?? partitioned.ready
   const bootstrapBlocked = planned?.blocked ?? partitioned.blocked
   const goalBatches = planned?.domain.goal_batches.filter(batch => batch.error === null).length ?? 0
@@ -1961,12 +1938,26 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
   const decided = decideComment(snapshot, hash, previousMarker, pendingIds, bootstrapRepos, goalBatches, domainWake)
   const decision =
     planned === undefined ? decided : {...decided, reason: `${decided.reason}${domainReasonSuffix(planned.domain)}`}
+  const marker = buildMarker(hash, lastMentionId, domainDigest)
+  const markerComment = findLatestMarkerComment(comments)
+  const markerUpdate =
+    planned === undefined
+      ? null
+      : planMarkerUpdate({
+          shouldComment: decision.should_comment,
+          stale,
+          attention: planned.domain.attention_count,
+          digest: planned.domain.attention_digest,
+          previous: previousMarker,
+          markerComment,
+          marker,
+        })
   const result: PreflightResult = {
     ...decision,
     pending_mention_ids: pendingIds,
     last_mention_id: lastMentionId,
-    marker: buildMarker(hash, lastMentionId, domainDigest),
-    marker_comment_id: findLatestMarkerComment(comments)?.id ?? null,
+    marker,
+    marker_comment_id: markerComment?.id ?? null,
     bootstrap_repos: bootstrapRepos,
     bootstrap_blocked: bootstrapBlocked,
     public_items: items
@@ -1985,7 +1976,7 @@ export async function runRolloutTrackerSnapshot(env: Env, io: SnapshotIo): Promi
       operator_login: entry.operator.login,
       evidence: entry.evidence,
     },
-    ...(planned === undefined ? {} : {domain: planned.domain}),
+    ...(planned === undefined ? {} : {domain: {...planned.domain, marker_update: markerUpdate}}),
   }
 
   io.stdout(`${JSON.stringify(result)}\n`)

@@ -596,10 +596,11 @@ env:
        For a program that has a `domain`, also report its stalled parts: read the
        "Parts" section of its tracker issue body, which the tracker keeps from its
        preflight, and list every part that section marks `stalled` with its
-       repository, its part issue link, the kind of stall (answer or outcome) and the
-       days since its clock started. List held parts and unknown parts only as counts.
-       Do not recompute a clock, open no issue and post no comment for a stalled
-       part, and name only a repository the public-only rule allows.
+       repository, its part issue link, the kind of stall (answer or outcome) and its
+       `age_days`. Copy `age_days` from the row as written. List held parts and unknown
+       parts only as counts. Do not recompute a clock or an age, open no issue and post
+       no comment for a stalled part, and name only a repository the public-only rule
+       allows.
 
   OBSERVE_OUTPUT: |
     OUTPUT — ONE PERPETUAL SUMMARY ISSUE

@@ -103,10 +103,11 @@ describe('fro-bot.yaml progressive improvement prompt', () => {
     expect(category).toContain('read the "Parts" section of its tracker issue body')
     expect(category).toContain('every part that section marks `stalled`')
     expect(category).toContain(
-      'its repository, its part issue link, the kind of stall (answer or outcome) and the days since its clock started',
+      'its repository, its part issue link, the kind of stall (answer or outcome) and its `age_days`',
     )
     expect(category).toContain('List held parts and unknown parts only as counts')
-    expect(category).toContain('Do not recompute a clock')
+    expect(category).toContain('Copy `age_days` from the row as written')
+    expect(category).toContain('Do not recompute a clock or an age')
     expect(category).toContain('open no issue and post no comment for a stalled part')
     expect(category).toContain('name only a repository the public-only rule allows')
   })
