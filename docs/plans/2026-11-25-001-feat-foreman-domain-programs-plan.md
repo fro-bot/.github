@@ -262,7 +262,7 @@ sequenceDiagram
 - A part issue or events read failure marks that part unknown and continues, for domain programs only.
 
 **Test scenarios:**
-- Happy path: a new `part-declined` label changes the hash and wakes the tracker; the prompt carries no comment link and none of the reason's text (originally it showed the reason comment's link; the reason is now the receipt's summary, changed 2026-11-27).
+- Happy path: the authenticated decline or counter receipt, reflected in the dispatch marker, changes the hash and wakes the tracker; a `part-declined` or `part-countered` label alone leaves the part awaiting an answer and does not. The prompt carries no comment link and none of the reason's text (originally it showed the reason comment's link; the reason is now the receipt's summary, changed 2026-11-27).
 - Edge case: a part with no epoch is held, not stalled; an epoch three days old with no answer is stalled; an accept 14 days old with no completion is stalled.
 - Edge case: the same stalled list on the next run does not wake the tracker again; a new stalled part does.
 - Edge case: a `part-accepted` label left from Part 0 does not count for the parity attempt; with no new accept after the parity-follows comment, the part waits for an answer and the answer clock starts at the parity epoch.

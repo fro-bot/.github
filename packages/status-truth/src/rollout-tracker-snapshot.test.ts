@@ -16,6 +16,7 @@ import {join, resolve} from 'node:path'
 import process from 'node:process'
 import {promisify} from 'node:util'
 import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
+import {buildResultMarker} from '@fro-bot/dispatch/dispatch-receipts'
 import {evaluateExpression} from '@fro-bot/test-kit/workflow-expression'
 import {runStepWithStubs} from '@fro-bot/test-kit/workflow-step'
 import {afterAll, afterEach, describe, expect, it, vi} from 'vitest'
@@ -4384,6 +4385,28 @@ describe('a domain program: part issues with the brief', () => {
       expect(body).toContain('Answer each ask separately')
     })
 
+    it('keeps a Part 0 reply on this issue: its one comment is the pull request link or the blocker, not a receipt', () => {
+      const body = issues()[systematic.nameWithOwner]?.body ?? ''
+      const part0 = body.slice(body.indexOf('## First ask: Part 0'), body.indexOf('## How to answer'))
+
+      expect(part0).toContain(
+        "A Part 0 run's one comment is its reply on this issue: the pull request link, or the blocker.",
+      )
+      expect(part0).toContain('Part 0 has no coordination issue and no receipt.')
+    })
+
+    it('scopes the label-only answer and the receipt to an ask that arrives through an approved goal dispatch', () => {
+      for (const repo of [dashboard, systematic]) {
+        const body = issues()[repo.nameWithOwner]?.body ?? ''
+        const answer = body.slice(body.indexOf('## How to answer'))
+
+        expect(answer).toContain('These steps apply to an ask that arrives through an approved goal dispatch.')
+      }
+      const part0Body = issues()[systematic.nameWithOwner]?.body ?? ''
+
+      expect(part0Body.slice(part0Body.indexOf('## How to answer'))).toContain('Part 0 does not arrive that way')
+    })
+
     it('is the same body for the same inputs, byte for byte', () => {
       expect(issues()).toEqual(issues())
     })
@@ -5654,6 +5677,31 @@ describe('a domain program: part issues with the brief', () => {
         expect(result.domain.answer_instructions).not.toContain('AGENTS.md forbids')
         expect(result.domain.answer_instructions).not.toContain('secret-detail')
       })
+
+      it.each(['declined', 'countered'] as const)(
+        'ends a %s part on the goal marker and keeps the receipt summary out of the Parts data and the instructions',
+        reason => {
+          const summary = `Distinctive reason ${reason}: AGENTS.md forbids workflow edits, see https://example.test/secret-detail.`
+          const base = dashboardGoal({status: 'blocked', blockedReason: reason, epoch: ms(30)})
+          const receipt = comment(
+            9,
+            'fro-bot',
+            buildResultMarker({correlationId: 'corr', nonce: 'raw-nonce', status: reason, summary}),
+          )
+          const result = preflight({
+            ...base,
+            goalComments: {...base.goalComments, '50': [...(base.goalComments?.['50'] ?? []), receipt]},
+          })
+
+          expect(partOf(result, dashboard)).toMatchObject({state: reason, stalled: null})
+          expect(partOf(result, dashboard)).not.toHaveProperty('answer_comment')
+          expect(result.domain.stalled_parts).toEqual([])
+          expect(JSON.stringify(result.domain.parts)).not.toContain('Distinctive reason')
+          expect(JSON.stringify(result.domain.parts)).not.toContain('secret-detail')
+          expect(result.domain.answer_instructions).not.toContain('Distinctive reason')
+          expect(result.domain.answer_instructions).not.toContain('secret-detail')
+        },
+      )
 
       it('tells the tracker the answer is a label, and that a decline or counter reason is the receipt summary, as data', () => {
         const text = preflight(dashboardGoal({epoch: ms(2)})).domain.answer_instructions
