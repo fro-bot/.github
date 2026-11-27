@@ -237,9 +237,22 @@ describe('the checklist comment', () => {
     expect(line).toContain('Program harness')
     expect(line).toContain('domain harness-tools')
     expect(line).toContain('https://github.com/fro-bot/.github/issues/5000')
-    expect(line).toContain('part-accepted, part-declined or part-countered')
+    expect(line).toContain(
+      'answer by applying one label on your part issue (part-accepted, part-declined or part-countered)',
+    )
     expect(line).toContain('before you change anything')
     expect(line).toContain('never override')
+  })
+
+  it('asks for one label on the part issue and one comment per run: the receipt carries the reason', () => {
+    const [batch] = batchesOf(planGoals(input(), readers()))
+    const line = lineOf(batch, dashboard.nameWithOwner)
+
+    expect(line).toContain('post no comment on the part issue')
+    expect(line).toContain('Your run posts one comment, the receipt on the coordination issue')
+    expect(line).toContain('its summary gives the reason')
+    expect(line).not.toContain('and one comment that gives the reason')
+    expect(line).not.toMatch(/one label[^.;]*and one comment/)
   })
 
   it('stays under the dispatch prompt limit and parses as a checklist line a prompt can carry', () => {

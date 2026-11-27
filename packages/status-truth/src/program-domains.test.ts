@@ -780,6 +780,16 @@ describe('the committed program-domains.json', () => {
     expect(standards).not.toMatch(/agent-model resolver|composite/i)
   })
 
+  it('requires one model expression with exclusive tier conditions, each falling back to FRO_BOT_MODEL inside its own condition', () => {
+    const {brief} = selectDomain(committed, 'harness-tools')
+    const standards = [...brief.security, ...brief.automation, ...brief.developerExperience]
+
+    expect(standards).toContain(
+      "Each agent step's model is selected by one expression whose tier conditions are mutually exclusive, and each tier falls back to FRO_BOT_MODEL inside its own condition, so an unset tier variable never passes the choice to another tier.",
+    )
+    expect(standards.join('\n')).not.toContain('chosen by the kind of work, falling back to FRO_BOT_MODEL')
+  })
+
   it('lists no repository in two domains', () => {
     const names = committed.domains.flatMap(domain => domain.repos.map(repo => repo.nameWithOwner.toLowerCase()))
 

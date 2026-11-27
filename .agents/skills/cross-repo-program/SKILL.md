@@ -57,7 +57,7 @@ Routing comes from this file and the literals in the content job. The `program-t
 
 ## Domain programs and their goals
 
-A program can run in a domain: a group of repositories in `program-domains.json` that shares one reviewed brief. Its repositories each have a part issue that carries the answer protocol, and its work reaches them through approved cross-repo goals.
+A program can run in a domain: a group of repositories in `program-domains.json` that shares one reviewed brief. Its repositories each have a part issue that carries the answer protocol, and its work reaches them through approved cross-repo goals. A repository's agent posts one comment per run, so it answers on the part issue with a label alone (`part-accepted`, `part-declined` or `part-countered`) and no comment there; its one comment is the dispatch receipt on the goal issue, whose summary carries the reason for a decline or a counter. The tracker reads an accept from the label event and a decline or counter from the receipt, and never quotes the receipt's text.
 
 **The start step accepts or declines the offer with a reason before any repository work starts.** Read the domain and its brief on `main`. Decline, with the reason in plain prose and nothing created, when the offer conflicts with the brief or a repository's rules, names a repository the domain does not list, or meets an empty brief. Accept, and the start run writes the config entry with `domain` (and `part0`, when some repositories need Part 0 first) and stops at the pull request, exactly as above. Declining never creates a tracker issue, a Project or a pull request.
 
