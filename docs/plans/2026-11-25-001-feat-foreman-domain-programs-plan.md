@@ -10,7 +10,7 @@ origin: docs/brainstorms/2026-11-25-foreman-domain-programs-requirements.md
 
 ## Overview
 
-Fro Bot becomes a foreman over GitHub (see origin: `docs/brainstorms/2026-11-25-foreman-domain-programs-requirements.md`). A reviewed domain file groups repositories and gives each domain a brief. A program is started the way the program-tracker skill starts one, opens a cross-repo goal that dispatches one part per repository, and the tracker shows each repository agent's answer, its outcome and any stall. Observe can propose a program from a recurring domain-wide gap. The first program is automation parity for the harness tools, with a Part 0 that brings dispatch-to-pull-request routing to the two repositories that lack it.
+Fro Bot becomes a foreman over GitHub (see origin: `docs/brainstorms/2026-11-25-foreman-domain-programs-requirements.md`). A reviewed domain file groups repositories and gives each domain a brief. A program is started the way the program-tracker skill starts one, opens a cross-repo goal that dispatches one part per repository, and the tracker shows each repository agent's answer, its outcome and any stall. Observe can propose a program from a recurring domain-wide gap. The first program is automation parity for the harness tools, with a Part 0 that brings dispatch-to-pull-request routing to the repositories that lack it (two when this plan was written, six after the 2026-11-27 inventory; see Unit 7 results).
 
 The plan extends four existing parts and adds no state store, writer layer or comment syntax: cross-repo dispatch, the program-tracker start and bootstrap, the tracker snapshot, and Observe's attention-list rules.
 
@@ -149,7 +149,7 @@ All four repositories pin agent v0.148.0 and run `isolate-agent` and `persist-cr
 
 ### Deferred to Implementation
 
-- Whether systematic's and space-bus's issue paths can open a pull request that changes workflows; observed on Part 0 itself (R19 fallback: the operator authors it).
+- Whether systematic's and space-bus's issue paths can open a pull request that changes workflows; observed on Part 0 itself (R19 fallback: the operator authors it). Answered 2026-11-27 for all six Part 0 repositories: they cannot, so the operator authors Part 0 (Unit 7 results).
 - The exact part issue title and body wording; pinned by the bootstrap prompt tests.
 - Unit 3, parity anchor: a parity batch is listed only after the tracker's parity-follows anchor comment exists on the part issue (Unit 5 lists it as soon as a merged pull request in the repo references the part issue).
 - Unit 3, wake on goal problems: a goal batch stopped with an `error`, and a `goal_error`, wake the tracker when they change, with the domain-state digest (Unit 5 reports them only when the tracker wakes for another reason, as `bootstrap_blocked` does).
@@ -372,13 +372,20 @@ sequenceDiagram
 
 **Approach:**
 - Brief: repo skills, the agent-model resolver, `fro-bot`-user pull request review, dispatch-to-pull-request routing; Renovate Approve only where the repository uses Renovate automerge; exceptions recorded per repository.
-- Offer the program; Part 0 in systematic and space-bus; then parity dispatches.
+- Offer the program; Part 0 in the six repositories whose dispatched prompt does not reach a pull request (systematic, space-bus, metacogs, opencode-copilot-delegate, dev-like, mothership; dashboard needs none); then parity dispatches.
 - Record per part: answer, pull request, outcome; whether an answer avoided rework; operator actions counted.
 - Observe at the pilot's first live start, accepted as known retry cases of a start from a proposal (Unit 6): (a) a run that creates the tracker issue and fails before the start pull request, where a retry's body search may miss the new tracker (search indexing lags) and create a second one; (b) a Project created but not yet recorded in the tracker body, which a retry treats as missing and recreates. The worst case of either is a duplicate tracker issue or Project to delete. Nothing dispatches before the start pull request merges and the operator applies `dispatch-approved`, so neither can send work to a repository. Record whether either happened.
 
 **Test expectation:** none -- live operational unit; evidence is the tracker, the pull requests and the run links recorded here.
 
 **Verification:** Every part answered; every accepted part merged or a recorded no-op; counts recorded.
+
+**Results (2026-11-27, inventory before the first dispatch):**
+- Seven repositories, not three or four, and the agent is pinned at v0.150.0 (by commit SHA, version in a comment) in all seven, not v0.148.0. The inventory section above is the 2026-11-25 state.
+- Dispatch routing: only `fro-bot/dashboard` routes a dispatched prompt to a branch and pull request (`branch-pr`). The other six resolve it to a discarded working directory, or keep it comment-only (systematic, by a documented contract), so Part 0 is needed in all six, not two. Part 0 now covers six repositories; the requirements document (R19) keeps its original two-repository wording.
+- Part 0 is operator-authored in all six: an agent cannot change `.github/**` from an issue or comment event, because `.github/**` is outside the brokered-push allowlist and no repository adds it. A `branch-pr` run can deliver workflow changes (evidence: #3880, systematic#1038). Whether `branch-pr` shares the brokered-push allowlist stays to be observed on Part 0 itself.
+- Brief reworded so each standard is checkable against repository state: the model standard no longer names this repository's composite, `repo-skills` applies only where `.agents/skills/` exists, Renovate Approve only where the Renovate config enables automerge, the pin is by commit SHA with the version in a comment. One recorded exception: `marcusrbrown/systematic`, whose release-notes prompt dispatch stays comment-only by contract.
+- Non-blocking (#4355): a goal with its full checklist but missing from the Project can be reattached and shown awaiting approval with fewer repos than its checklist; watch at the pilot.
 
 ## System-Wide Impact
 
@@ -392,7 +399,7 @@ sequenceDiagram
 | Risk | Mitigation |
 |---|---|
 | A target agent ignores the part issue protocol | The tracker shows no answer as stalled after 3 days; Unit 7 records it |
-| Systematic's issue path can't open a workflow-changing PR | R19 fallback: the operator authors Part 0 there |
+| An issue path can't open a workflow-changing PR (confirmed for all six Part 0 repositories, 2026-11-27) | R19 fallback: the operator authors Part 0 in each |
 | Hash change wakes #3512 | Domain-only evidence; golden hash test |
 | Status-truth importing dispatch breaks the package graph | Declared dependency and lock entry, no reverse import; layout test in Unit 3 |
 | A retried start from a proposal creates a second tracker or Project (the tracker's body search misses a just-created issue, or the Project was not yet recorded in the body) | Accepted for the pilot; observed at Unit 7's first live start. Worst case is a duplicate to delete: nothing dispatches before the start pull request merges and `dispatch-approved` |
