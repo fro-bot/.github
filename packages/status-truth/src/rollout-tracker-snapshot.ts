@@ -28,7 +28,14 @@ import {
   type EvidenceKind,
   type ProgramEntry,
 } from './program-trackers.ts'
-import {withAttention} from './rollout-tracker-attention.ts'
+import {
+  bootstrapInstructions,
+  countOf,
+  domainReasonSuffix,
+  LOOKUP_FAILED,
+  STALE_RUN,
+  withAttention,
+} from './rollout-tracker-attention.ts'
 import {
   goalReaders,
   memoizeReaders,
@@ -1204,7 +1211,6 @@ function readMainHead(briefRepo: string, env: Env): string {
   }).trim()
 }
 
-const STALE_RUN = 'stale-run'
 const PART_ISSUES_UNREADABLE = 'part issues cannot be read'
 
 /** The issue (or pull request) behind one Project item: whether it is a pull request, who wrote it and its body. */
@@ -1285,8 +1291,6 @@ function readPartIssueItems(
   return {verified, unverified}
 }
 
-const LOOKUP_FAILED = 'part issue lookup failed'
-
 /**
  * Every issue of the repo created by `fro-bot`, in every state and across every page, as `gh api --paginate`
  * prints them (one JSON object per line). With `ROLLOUT_TRACKER_EXISTING_ISSUES_JSON` (`{"owner/repo": [issue, ...]}`, names compared ignoring case)
@@ -1346,50 +1350,6 @@ function findExistingPartIssue(repo: ConfirmedRepo, program: string, env: Env): 
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'unknown error'
-}
-
-function countOf(count: number, one: string, many: string): string {
-  return count === 1 ? `1 ${one}` : `${count} ${many}`
-}
-
-/** The instructions that replace the generic bootstrap issue in the tracker prompt. They start with a blank line. */
-type DomainBase = Omit<
-  DomainPreflight,
-  | 'bootstrap_instructions'
-  | 'goal_batches'
-  | 'goal_error'
-  | 'part0_unreadable'
-  | 'goal_instructions'
-  | keyof AnswerPlan
-  | 'attention_digest'
-  | 'attention_count'
->
-
-function bootstrapInstructions(domain: DomainBase, program: string): string {
-  const intro = '\n\nDomain program. '
-  if (domain.brief_error === STALE_RUN) {
-    return `${intro}This run is not at the head of main (${STALE_RUN}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and say in your tracker comment only that the run was stale; a fresh run files.`
-  }
-  if (domain.brief_error !== null) {
-    return `${intro}The program's brief cannot be used (${domain.brief_error}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and tell the operator in your tracker comment that the brief cannot be used, with that message.`
-  }
-  if (domain.registry_error !== null) {
-    return `${intro}Which repos may take a part cannot be checked (${domain.registry_error}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and tell the operator in your tracker comment that the check failed, with that message.`
-  }
-  if (domain.part_issue_error !== null) {
-    return `${intro}Which repos already have their part issue cannot be checked (${domain.part_issue_error}), so the part issues wait: file no part issue this run, whatever the Bootstrap list says, and tell the operator in your tracker comment that the check failed, with that message.`
-  }
-  const skipped = domain.ineligible_repos.length
-  const notice =
-    skipped === 0
-      ? ''
-      : ` ${countOf(skipped, 'listed repo is not eligible and gets', 'listed repos are not eligible and get')} no part issue. Do not name ${skipped === 1 ? 'it' : 'them'} or say why.`
-  const deferred = domain.deferred_repos.length
-  const deferredNotice =
-    deferred === 0
-      ? ''
-      : ` ${countOf(deferred, 'listed repo could not be checked for an existing part issue', 'listed repos could not be checked for an existing part issue')} (${LOOKUP_FAILED}) and ${deferred === 1 ? 'gets' : 'get'} nothing this run: file nothing for ${deferred === 1 ? 'it' : 'them'} and say so in your tracker comment.`
-  return `${intro}The program ${program} runs in the domain ${domain.key}; its brief is pinned to commit ${domain.brief_commit} of program-domains.json. In this program the Bootstrap duty files the part issue given here, not an issue you write yourself. For each repo you file in, use that repo's title and body from this JSON array (repo, title and body; empty when no repo needs one) exactly, character for character, and add nothing. The body links the tracker issue, which is how the search for an existing issue finds it on a re-run. A repo with no entry here gets no issue; skip it silently.\n${JSON.stringify(domain.part_issues)}\nThe preflight has already searched the repo for this program's part issue, in every state, so do not search yourself. An entry whose \`existing\` is a number already has its part issue: add that issue to the Project and file nothing new. Every other entry has none: file it. Ignore the rules above that skip a repo with a Project item and that search for an issue that links the tracker issue: in this program only the marker identifies a part issue, and an unrelated issue or pull request of the repo never counts.${notice}${deferredNotice}`
 }
 
 /** What `planDomain` needs besides the program: where its tracker is and what the run has already found out. */
@@ -1584,20 +1544,6 @@ function planDomain(
     ready,
     blocked: lists.blocked.filter(repo => isEligible(repo)),
   }
-}
-
-/** The words a domain adds to the wake reason: a stopped bootstrap, or a count of repos that get no part issue. */
-function domainReasonSuffix(domain: DomainPreflight): string {
-  if (domain.brief_error !== null) return `; domain brief error: ${domain.brief_error}`
-  if (domain.registry_error !== null) return `; domain registry error: ${domain.registry_error}`
-  if (domain.part_issue_error !== null) return `; domain part issue error: ${domain.part_issue_error}`
-  const count = domain.ineligible_repos.length
-  const deferred = domain.deferred_repos.length
-  return (
-    (count === 0 ? '' : `; ${countOf(count, 'listed repo is', 'listed repos are')} not eligible for a part issue`) +
-    (deferred === 0 ? '' : `; ${countOf(deferred, 'listed repo is', 'listed repos are')} deferred (${LOOKUP_FAILED})`) +
-    (domain.goal_error === null ? '' : `; domain goal error: ${domain.goal_error}`)
-  )
 }
 
 // ─── CLI entrypoint ───────────────────────────────────────────────────────────

@@ -374,7 +374,7 @@
     },
     {
       "path": "packages/status-truth/src/rollout-tracker-attention.ts",
-      "reason": "The digest and count of what needs attention in a domain program: withAttention digests the stalled and unknown parts, the fixed errors, the errored goal batches, the unreadable Part 0 repos, the deferred repos and the ineligible count. It writes nothing: its only output is part of the one JSON line the preflight prints, and the wake it feeds decides only whether a tracker agent run starts. Pinned through the preflight by packages/status-truth/src/rollout-tracker-snapshot.test.ts (the digest inputs, the wake on a changed digest, once on a clear and none on the same state). Not in the mutate list: it was never mutated."
+      "reason": "The domain-only wording and digest of a domain program's preflight: bootstrapInstructions writes the part issue duty of the tracker prompt, domainReasonSuffix the words a domain adds to the wake reason, and withAttention digests the stalled and unknown parts, the fixed errors, the errored goal batches, the unreadable Part 0 repos, the deferred repos and the ineligible count. It writes nothing: its only output is part of the one JSON line the preflight prints, and the wake it feeds decides only whether a tracker agent run starts. Pinned through the preflight by packages/status-truth/src/rollout-tracker-snapshot.test.ts (the instruction and reason texts, the digest inputs, the wake on a changed digest, once on a clear and none on the same state). Not in the mutate list: it was never mutated."
     },
     {
       "path": "packages/status-truth/src/rollout-tracker-snapshot.ts",
