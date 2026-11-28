@@ -822,7 +822,8 @@ function batchOf(body: string, program: string): string | null {
 /**
  * The item as the goal's own receipt says it stands, for a marker that lags it: dispatch's track job is the only writer
  * of the marker and resolves a receipt on its own schedule, so a part can have answered while the marker still shows it
- * dispatched. An item the marker already holds terminal (`completed`, `failed`, `blocked`) is never changed. Otherwise
+ * dispatched. Only an item on an open goal is read this way, the set track reads: a goal the operator closed keeps what its
+ * marker records, so a late receipt cannot undo the closure. An item the marker already holds terminal (`completed`, `failed`, `blocked`) is never changed. Otherwise
  * the earliest authentic receipt (dispatch's own gates: author, correlation id, nonce hash) gives the status and reason
  * track would write, through the same resolver and outcome map. Nothing is written back.
  */
@@ -891,7 +892,8 @@ function findItem(
       candidate =>
         `${candidate.target.owner}/${candidate.target.name}`.toLowerCase() === repo.nameWithOwner.toLowerCase(),
     )
-    const item = recorded === undefined ? undefined : withReceipt(recorded, comments)
+    // Track reads only open goals, so a receipt on a closed one is never resolved by it: the operator's closure stands.
+    const item = recorded === undefined || goal.state === 'closed' ? recorded : withReceipt(recorded, comments)
     if (item !== undefined || revision) return {item, closed: goal.state === 'closed', comments}
   }
   if (unreadable) throw new Error(GOAL_COMMENTS_UNREADABLE)

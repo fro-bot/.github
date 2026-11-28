@@ -4441,12 +4441,12 @@ async function track(items: DispatchItem[], receipts: CrossRepoResult[], now: nu
   return {result, written: written?.state.items ?? [], update, comments}
 }
 
-/** Forty ordinary comments: more than GitHub's default page of 30, so what follows them is on page 2. */
+/** 120 ordinary comments: more than the 100 a page the loop asks for, so what follows them is on page 2. */
 const chatter = (): MockComment[] =>
-  Array.from({length: 40}, (_, index) => ({id: 100 + index, body: `ordinary comment ${index}`, login: 'someone'}))
+  Array.from({length: 120}, (_, index) => ({id: 1000 + index, body: `ordinary comment ${index}`, login: 'someone'}))
 
 describe('goal comments past the first page', () => {
-  it('runTrack resolves an authentic receipt written after forty ordinary comments', async () => {
+  it('runTrack resolves an authentic receipt written after 120 ordinary comments', async () => {
     const goalIssue = makeOpenGoal({goal: 'g', items: [pinnedItem()], markerHash: ''})
     const receipt = makeReceiptComment(makeReceipt({correlationId: 'c1', nonce: RAW, status: 'declined'}))
     const {octokit, comments} = mockOctokitForGoal(goalIssue, {comments: [...chatter(), receipt]})
@@ -4465,7 +4465,7 @@ describe('goal comments past the first page', () => {
     expect(result.counts.itemsBlocked).toBe(1)
   })
 
-  it('readLatestMarker and loadOpenGoalIssues find a marker written after forty ordinary comments', async () => {
+  it('readLatestMarker and loadOpenGoalIssues find a marker written after 120 ordinary comments', async () => {
     const state = makeState({goal: 'goal-late'})
     const listForRepo = vi.fn(async () => ({data: [{number: 7}]}))
     const {octokit, comments} = mockOctokit({listForRepo})
@@ -4476,7 +4476,7 @@ describe('goal comments past the first page', () => {
     expect((await loadOpenGoalIssues(octokit, REPO)).map(entry => entry.marker.state.goal)).toStrictEqual(['goal-late'])
   })
 
-  it('runDispatch reads the checklist and the marker that follow forty ordinary comments', async () => {
+  it('runDispatch reads the checklist and the marker that follow 120 ordinary comments', async () => {
     const target = {owner: 'fro-bot', name: 'agent'}
     const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
     const item: DispatchItem = {

@@ -2343,6 +2343,21 @@ describe('a revised ask after a decline or a missing receipt', () => {
       expect(partOf(answers)).toMatchObject({state: 'declined'})
     })
 
+    it('leaves a closed goal alone: a decline posted after the operator closed it neither undoes the closure nor makes a revision eligible', () => {
+      const state = withMarker({}, receiptFor('declined', RECEIPT_AT))
+      const closed = {...state, goals: [goal('initial', 50, {state: 'closed'})]}
+      const afterReceipt = request(700, dashboard.nameWithOwner, RECEIPT_AT + 1)
+
+      const answers = stateOf(closed, [afterReceipt])
+      const run = fires(closed, [afterReceipt])
+
+      expect(partOf(answers)).toMatchObject({state: 'closed', stalled: null})
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+      expect(run.transitions).toStrictEqual([])
+      expect(run.batches).toStrictEqual([])
+    })
+
     it('never overrides a terminal marker, whatever the receipt says', () => {
       const completed = stateOf(withMarker({status: 'completed'}, receiptFor('declined', RECEIPT_AT)))
       const declined = stateOf(
@@ -2356,10 +2371,10 @@ describe('a revised ask after a decline or a missing receipt', () => {
     })
 
     it.each(['declined', 'countered', 'success', 'noop', 'failed'] as const)(
-      'derives the same status as dispatch track from the same comments, with a %s receipt past the first page',
+      'derives the same status as dispatch track from the same comments, with a %s receipt on the second page of 100',
       async status => {
-        const chatter = Array.from({length: 40}, (_, index) => ({
-          id: 100 + index,
+        const chatter = Array.from({length: 120}, (_, index) => ({
+          id: 1000 + index,
           author: 'someone',
           body: `ordinary comment ${index}`,
         }))
