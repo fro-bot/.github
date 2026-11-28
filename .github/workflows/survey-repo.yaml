@@ -304,7 +304,7 @@ jobs:
       - name: Run Fro Bot survey ingest
         id: survey-agent
         if: ${{ steps.onboarded.outputs.onboarded == 'true' }}
-        uses: fro-bot/agent@893b5bb1fdb4f40f47c8f7dbcb88900130ca0a6f # v0.152.0
+        uses: fro-bot/agent@31f36006a499833a423d99e123ddac58bcea847b # v0.153.0
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -365,7 +365,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 1)
         id: survey-agent-retry-1
         if: ${{ success() && steps.survey-agent.conclusion == 'success' && steps.wiki-changes.outputs.changed == 'false' }}
-        uses: fro-bot/agent@893b5bb1fdb4f40f47c8f7dbcb88900130ca0a6f # v0.152.0
+        uses: fro-bot/agent@31f36006a499833a423d99e123ddac58bcea847b # v0.153.0
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
@@ -426,7 +426,7 @@ jobs:
       - name: Run Fro Bot survey ingest (retry 2)
         id: survey-agent-retry-2
         if: ${{ success() && steps.survey-agent-retry-1.conclusion == 'success' && steps.wiki-changes-retry-1.outputs.changed == 'false' }}
-        uses: fro-bot/agent@893b5bb1fdb4f40f47c8f7dbcb88900130ca0a6f # v0.152.0
+        uses: fro-bot/agent@31f36006a499833a423d99e123ddac58bcea847b # v0.153.0
         timeout-minutes: 23
         with:
           isolate-agent: 'true'
