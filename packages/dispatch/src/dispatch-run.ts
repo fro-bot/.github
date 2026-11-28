@@ -49,6 +49,7 @@ import {
   LOOSE_TASK_LIST_PREFIX,
   parseDecomposition,
   resolveReceipts,
+  withReceiptDeadline,
 } from './dispatch-receipts.ts'
 
 /**
@@ -826,13 +827,7 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
     // and past the confirm-time SLA -> needs-attention/no-receipt. An item
     // never confirmed (`epoch` unset) is never SLA-aged (a pre-confirm crash
     // is a dispatch failure, not an SLA miss).
-    const preItemsWithSla = preItems.map<DispatchItem>(item => {
-      if (item.status !== 'dispatched') return item
-      if (item.epoch !== undefined && now - item.epoch > slaMs) {
-        return {...item, status: 'needs-attention', needsAttentionReason: 'no-receipt' as const}
-      }
-      return item
-    })
+    const preItemsWithSla = preItems.map<DispatchItem>(item => withReceiptDeadline(item, now, slaMs))
 
     // Diagnostic-only annotation (R1/R3/R4): run-lookup is consulted ONLY for
     // an item that just became `needs-attention`/`no-receipt`, and only to

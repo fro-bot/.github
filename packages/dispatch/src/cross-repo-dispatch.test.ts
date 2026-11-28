@@ -53,6 +53,7 @@ import {
   parseResult,
   repairJsonStringEscapes,
   resolveReceipts,
+  withReceiptDeadline,
 } from './dispatch-receipts.ts'
 import {readLatestMarker, runDispatch, runTrack} from './dispatch-run.ts'
 
@@ -2752,6 +2753,45 @@ function makeDispatchedItem(overrides: Partial<DispatchItem> = {}): DispatchItem
     ...overrides,
   }
 }
+
+describe('withReceiptDeadline — the one 24h receipt rule runTrack and the rollout tracker share', () => {
+  const epoch = 1_000_000
+
+  it('marks a dispatched item with a confirm epoch needs-attention/no-receipt only once now is strictly past epoch + SLA', () => {
+    const item = makeDispatchedItem({epoch})
+
+    expect(withReceiptDeadline(item, epoch + RECEIPT_SLA_MS)).toBe(item)
+    expect(withReceiptDeadline(item, epoch + RECEIPT_SLA_MS + 1)).toStrictEqual({
+      ...item,
+      status: 'needs-attention',
+      needsAttentionReason: 'no-receipt',
+    })
+  })
+
+  it('never ages an item that was not confirmed: no epoch, no deadline', () => {
+    const item = makeDispatchedItem({epoch: undefined})
+
+    expect(withReceiptDeadline(item, Number.MAX_SAFE_INTEGER)).toBe(item)
+  })
+
+  it.each(['pending', 'needs-attention', 'completed', 'failed', 'blocked'] as const)(
+    'leaves a %s item as it is, however late',
+    status => {
+      const item = makeDispatchedItem({epoch, status})
+
+      expect(withReceiptDeadline(item, epoch + RECEIPT_SLA_MS * 10)).toBe(item)
+    },
+  )
+
+  it('takes the window from the caller when one is given, and does not change the item it was handed', () => {
+    const item = makeDispatchedItem({epoch})
+    const frozen = structuredClone(item)
+
+    expect(withReceiptDeadline(item, epoch + 11, 10)).toMatchObject({status: 'needs-attention'})
+    expect(withReceiptDeadline(item, epoch + 10, 10)).toBe(item)
+    expect(item).toStrictEqual(frozen)
+  })
+})
 
 describe('resolveReceipts — three-gate trust + earliest-wins (pure core)', () => {
   const RAW_NONCE = 'raw-nonce-for-item'

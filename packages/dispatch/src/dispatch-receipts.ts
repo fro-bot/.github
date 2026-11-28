@@ -7,6 +7,7 @@ import {createHash, randomBytes} from 'node:crypto'
 import {
   FROBOT_COMMENT_AUTHORS,
   MAX_ITEMS_PER_GOAL,
+  RECEIPT_SLA_MS,
   type BlockedReason,
   type CrossRepoResult,
   type DecompositionResult,
@@ -599,4 +600,19 @@ export function itemOutcomeForReceipt(status: ResultStatus): {status: ItemStatus
     case 'countered':
       return {status: 'blocked', blockedReason: status}
   }
+}
+
+/**
+ * The item as the 24h receipt deadline leaves it: a `dispatched` item that was confirmed (it has an `epoch`) and is
+ * strictly more than `slaMs` old at `now` has no receipt in time, so it is `needs-attention` with the reason
+ * `no-receipt`. Anything else is returned as it is, the same object: an item never confirmed is never aged (a crash
+ * before the confirm is a dispatch failure, not a missed deadline), and an item in any other status has been settled
+ * or flagged by something else. The caller resolves authentic receipts first, because a receipt wins over the
+ * deadline. Pure. It is the one rule `runTrack` writes the marker with and the rollout tracker reads a lagging marker
+ * with, so the two cannot disagree about when a part has missed its deadline.
+ */
+export function withReceiptDeadline(item: DispatchItem, now: number, slaMs: number = RECEIPT_SLA_MS): DispatchItem {
+  if (item.status !== 'dispatched') return item
+  if (item.epoch === undefined || now - item.epoch <= slaMs) return item
+  return {...item, status: 'needs-attention', needsAttentionReason: 'no-receipt'}
 }
