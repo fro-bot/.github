@@ -2,7 +2,7 @@
 type: repo
 title: bfra-me/ha-addon-repository
 created: 2026-05-20
-updated: 2026-11-13
+updated: 2026-11-27
 sources:
   - url: https://github.com/bfra-me/ha-addon-repository
     sha: 0a163c3fa8846704103658142fa742f40d165743
@@ -73,6 +73,8 @@ node_id: R_kgDOIKWaJA
 Template repository for a Home Assistant add-on repository. GitHub template (`is_template: true`) under the `bfra-me` org, used as the blueprint when starting a new HA add-on collection. The repo ships one example add-on (`example/`) that gets built and published to GHCR.
 
 This is the bfra-me ecosystem's add-on counterpart to Marcus's runtime [[marcusrbrown--ha-config]] — where ha-config consumes add-ons and integrations, this repo defines the scaffolding for building and publishing new ones.
+
+Current state (checked 2026-11-27 at `5e97c0c8`): Fro Bot runs `fro-bot/agent` **v0.144.2** with `isolate-agent: true` (#607), and both reusable `bfra-me/.github` callers are at **v4.43.0** (#604). The job is still two steps, ending at `Run Fro Bot`, with no `output-mode` input and no persistence step.
 
 ## 2026-11-13 — Three commits, two files, one input deleted
 
@@ -319,9 +321,9 @@ The rule: **when a fix must be hand-applied under time pressure, the minimum-via
 - **Primary language:** Dockerfile
 - **Topics:** `addon`, `addons`, `hassio`, `home-assistant`, `homeassistant`, `template`
 - **Created:** 2022-10-08 · **Repo id:** `547723812` · **`node_id`:** `R_kgDOIKWaJA`
-- **HEAD:** `b7bcd528f511809e0f5906af42ca6ff131c1ff1e` (2026-09-14T16:36:34Z) → **`8fcd4acc92a0d657d2d5503802f9e10a89f2023d`** (2026-11-09T03:35:17Z, observed 2026-11-13)
+- **HEAD:** `b7bcd528f511809e0f5906af42ca6ff131c1ff1e` (2026-09-14T16:36:34Z) → **`8fcd4acc92a0d657d2d5503802f9e10a89f2023d`** (2026-11-09T03:35:17Z, observed 2026-11-13) → **`5e97c0c8ec0a51df255e630222d3d1d8ab0b988c`** (2026-11-19T02:44:08Z, observed 2026-11-27)
 - **Stars / forks / watchers:** 2 / 1 / 2 (steady across all nine surveys)
-- **`open_issues_count`:** 7 = 4 Renovate PRs + 3 issues (#4 Dependency Dashboard, #554 Daily Autohealing Report, #569 settings-sync failure)
+- **`open_issues_count`:** 8 = 5 Renovate PRs + 3 issues (#4 Dependency Dashboard, #554 Daily Autohealing Report, #569 settings-sync failure)
 
 ## Layout
 
@@ -677,7 +679,7 @@ The two `frenck/action-*` tools are siblings serving the two sides of HA develop
 - **Delivery break, rechecked 2026-11-13:** unchanged in source at `8fcd4acc` across a ~24-minor agent bump. The only human edit to `fro-bot.yaml` in the interval removed an input rather than adding the delivery half.
 
 - **Delivery break (new 2026-09-15, highest priority):** `fro-bot.yaml` requests `working-dir` output and has no commit/push/PR step. The agent has produced a correct 4-line fix twelve nights running and landed none of it. Fix: adopt [[marcusrbrown--sparkle]]'s `Resolve delivery mode` pattern — one computed step feeding both the agent's `output-mode` and a conditional credential restore — so the delivery decision and the credential cannot disagree. Do **not** simply re-enable `persist-credentials` without the delivery half; that reintroduces the credential exposure #586 removed and still delivers nothing.
-- **`SCHEDULE_PROMPT` dead references (carried since 2026-05-30, now partly orphaned):** the `bfra-me/.github` "currently v4.16.6" literal is ~23 minors stale, and category 3 still names `chrisdickinson/setup-yq`, deleted in #573. Both degrade gracefully because the same clauses instruct dynamic lookup (see *Stale prompt constants*), so this is wasted work rather than wrong output — but the `PR_REVIEW_PROMPT` was updated for the build system change and the `SCHEDULE_PROMPT` was not, so the file is now internally inconsistent about which build system it describes.
+- **`SCHEDULE_PROMPT` dead references (carried since 2026-05-30, now partly orphaned):** the `bfra-me/.github` "currently v4.16.6" literal is ~27 minors stale against v4.43.0, and category 3 still names `chrisdickinson/setup-yq`, deleted in #573. Both degrade gracefully because the same clauses instruct dynamic lookup (see *Stale prompt constants*), so this is wasted work rather than wrong output — but the `PR_REVIEW_PROMPT` was updated for the build system change and the `SCHEDULE_PROMPT` was not, so the file is now internally inconsistent about which build system it describes.
 - **Executable doc drift (new 2026-09-15):** `npx prettier@3.8.3` in `AGENTS.md` and `CONTRIBUTING.md` against a `3.9.6` gate. A documented local check that predicts the gate incorrectly is worse than none. Fix alongside the Python `3.13.13` → `3.13.15` correction and the 5-vs-8 required-check contradiction.
 - **Unverified network fetch in the image (carried, now unexcused):** `curl -sSLf` of the tempio binary into `/usr/bin` with no checksum or signature, inside an image the build then cosign-signs. The version is current as of #577, which removes the "it is stale anyway" framing and isolates the integrity gap. Fix: publish/verify a SHA-256 alongside `TEMPIO_VERSION`, or vendor the binary.
 - **`.github/settings.yml` is not a reliable actuator (new 2026-09-15):** issue #569, upstream `bfra-me/.github#2667`. Failures are unretried and unlogged; push-triggered runs are green while skipping the apply step. Until the upstream retry + error-body logging lands, treat branch protection as hand-applied and verify after every change. Applied state currently unverified. See [[probot-settings]].
