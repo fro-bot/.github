@@ -7,9 +7,11 @@ import {createHash, randomBytes} from 'node:crypto'
 import {
   FROBOT_COMMENT_AUTHORS,
   MAX_ITEMS_PER_GOAL,
+  type BlockedReason,
   type CrossRepoResult,
   type DecompositionResult,
   type DispatchItem,
+  type ItemStatus,
   type ParseResultOutcome,
   type ResultStatus,
   type TrackerComment,
@@ -579,4 +581,22 @@ export function mintNonce(): string {
 /** Full SHA-256 hex digest of a raw nonce, for storage as `nonceHash` (R6). Never truncated. */
 export function hashNonce(rawNonce: string): string {
   return createHash('sha256').update(rawNonce).digest('hex')
+}
+
+/**
+ * The item state an authentic receipt status resolves to. Explicit per status, with no default branch, so a new
+ * status fails to compile here instead of silently completing the item. `declined` and `countered` end the attempt
+ * as terminal `blocked`: the item is neither completed nor left to age into `needs-attention`.
+ */
+export function itemOutcomeForReceipt(status: ResultStatus): {status: ItemStatus; blockedReason?: BlockedReason} {
+  switch (status) {
+    case 'success':
+    case 'noop':
+      return {status: 'completed'}
+    case 'failed':
+      return {status: 'failed'}
+    case 'declined':
+    case 'countered':
+      return {status: 'blocked', blockedReason: status}
+  }
 }

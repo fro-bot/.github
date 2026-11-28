@@ -117,7 +117,7 @@ describe('dispatch uses only the supplied env', () => {
     // and it lists the comments of the supplied repository.
     expect(recorded.removeLabel).toStrictEqual([])
     expect(recorded.listComments as IssueCall[]).toStrictEqual([
-      {owner: 'supplied-owner', repo: 'supplied-repo', issue_number: 7},
+      {owner: 'supplied-owner', repo: 'supplied-repo', issue_number: 7, per_page: 100, page: 1},
     ])
     // The result goes to the supplied path, not the ambient one.
     expect(existsSync(join(directory, 'ambient-result.json'))).toBe(false)

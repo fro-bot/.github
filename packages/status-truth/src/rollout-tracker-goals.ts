@@ -14,10 +14,11 @@ import {
   MAX_ITEMS_PER_GOAL,
   MAX_PROMPT_LENGTH,
   RECEIPT_SLA_MS,
+  TERMINAL_STATUSES,
   type DispatchItem,
   type ResultStatus,
 } from '@fro-bot/dispatch/dispatch-model'
-import {resolveReceipts} from '@fro-bot/dispatch/dispatch-receipts'
+import {itemOutcomeForReceipt, resolveReceipts} from '@fro-bot/dispatch/dispatch-receipts'
 import {isOperatorComment, type CommentLike, type ConfirmedRepo, type ProgramEntry} from './program-trackers.ts'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -819,7 +820,32 @@ function batchOf(body: string, program: string): string | null {
 }
 
 /**
- * The dispatch item of a repo for the current attempt, from the goal marker of its batch, newest goal first: a revision
+ * The item as the goal's own receipt says it stands, for a marker that lags it: dispatch's track job is the only writer
+ * of the marker and resolves a receipt on its own schedule, so a part can have answered while the marker still shows it
+ * dispatched. Only an item on an open goal is read this way, the set track reads: a goal the operator closed keeps what its
+ * marker records, so a late receipt cannot undo the closure. An item the marker already holds terminal (`completed`, `failed`, `blocked`) is never changed. Otherwise
+ * the earliest authentic receipt (dispatch's own gates: author, correlation id, nonce hash) gives the status and reason
+ * track would write, through the same resolver and outcome map. Nothing is written back.
+ */
+function withReceipt(item: DispatchItem, comments: readonly GoalComment[]): DispatchItem {
+  if (TERMINAL_STATUSES.has(item.status)) return item
+  const terminal = resolveReceipts(
+    [item],
+    comments.map(comment => ({author: {login: comment.author}, body: comment.body})),
+  ).get(item.id)?.terminal
+  if (terminal === undefined) return item
+  const outcome = itemOutcomeForReceipt(terminal)
+  return {
+    ...item,
+    status: outcome.status,
+    needsAttentionReason: undefined,
+    noReceiptDiagnostic: undefined,
+    ...(outcome.blockedReason === undefined ? {} : {blockedReason: outcome.blockedReason}),
+  }
+}
+
+/**
+ * The dispatch item of a repo for the current attempt, from the goal marker of its batch (as `withReceipt` reads it against the goal's receipts), newest goal first: a revision
  * goal, then the parity batch for a repo with Part 0, otherwise the first batch or the repo's own join batch. A goal with
  * no state marker yet has no item, and a revision goal that has none still answers (`item` is undefined): the repo's
  * latest attempt is not dispatched, whatever an older goal says. `closed` says the goal that holds the item is closed.
@@ -862,10 +888,12 @@ function findItem(
       continue
     }
     const marker = selectStateMarker(comments.map(comment => ({author: {login: comment.author}, body: comment.body})))
-    const item = marker?.state.items.find(
+    const recorded = marker?.state.items.find(
       candidate =>
         `${candidate.target.owner}/${candidate.target.name}`.toLowerCase() === repo.nameWithOwner.toLowerCase(),
     )
+    // Track reads only open goals, so a receipt on a closed one is never resolved by it: the operator's closure stands.
+    const item = recorded === undefined || goal.state === 'closed' ? recorded : withReceipt(recorded, comments)
     if (item !== undefined || revision) return {item, closed: goal.state === 'closed', comments}
   }
   if (unreadable) throw new Error(GOAL_COMMENTS_UNREADABLE)

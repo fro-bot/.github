@@ -2,10 +2,16 @@ import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
-import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
-import {MAX_ITEMS_PER_GOAL, MAX_PROMPT_LENGTH} from '@fro-bot/dispatch/dispatch-model'
+import {buildMarkerComment, selectStateMarker} from '@fro-bot/dispatch/dispatch-marker'
+import {
+  MAX_ITEMS_PER_GOAL,
+  MAX_PROMPT_LENGTH,
+  type CrossRepoDispatchOctokitClient,
+  type GoalState,
+} from '@fro-bot/dispatch/dispatch-model'
 import {isPromptSafe, parseBriefReference} from '@fro-bot/dispatch/dispatch-plan'
 import {buildResultMarker, extractItemPrompts, hashNonce, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
+import {runTrack} from '@fro-bot/dispatch/dispatch-run'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parseProgramTrackers, selectProgram} from './program-trackers.ts'
 import {
@@ -2235,6 +2241,203 @@ describe('a revised ask after a decline or a missing receipt', () => {
       const {transitions} = fires(state, [request(700, dashboard.nameWithOwner, STUCK_AT + 3_600_001)])
 
       expect(transitions).toHaveLength(1)
+    })
+  })
+
+  describe('a receipt while the marker still says dispatched', () => {
+    /** Track has not run: the marker holds the dispatched item, and the goal already carries the receipt. */
+    const lagging = {correlationId: CORRELATION, nonceHash: hashNonce(NONCE), epoch: RECEIPT_AT - 3_600_000}
+    const withMarker = (changes: Record<string, unknown>, ...receipts: GoalComment[]): ReaderState => ({
+      goals: [goal('initial', 50)],
+      comments: {
+        50: [
+          checklistComment(1, [lineFor(dashboard)]),
+          stateComment(50, dashboard, {...lagging, ...changes}),
+          ...receipts,
+        ],
+      },
+      activity: {[dashboard.nameWithOwner]: {...NO_ACTIVITY, labels: ['part-declined']}},
+    })
+    const forged = (changes: Partial<GoalComment> & {nonce?: string; correlationId?: string}): GoalComment => ({
+      ...receiptFor('success', RECEIPT_AT),
+      body: buildResultMarker({
+        correlationId: changes.correlationId ?? CORRELATION,
+        nonce: changes.nonce ?? NONCE,
+        status: 'declined',
+        summary: 'no',
+      }),
+      ...(changes.author === undefined ? {} : {author: changes.author}),
+    })
+    const stateOf = (state: ReaderState, requests = [request()]) =>
+      planAnswers(current({revisions: requests}), readers(state), clock)
+
+    it.each(['declined', 'countered'] as const)(
+      'derives the %s answer from the receipt and makes a later revision request eligible',
+      status => {
+        const state = withMarker({}, receiptFor(status, RECEIPT_AT))
+
+        const answers = stateOf(state)
+
+        expect(partOf(answers)).toMatchObject({state: status, stalled: null, age_days: null})
+        expect(partOf(answers)).not.toHaveProperty('revision')
+        expect(answers.revision_transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+        expect(fires(state, [request()]).batches.map(batch => batch.batch)).toStrictEqual([
+          revisionName(dashboard, 700),
+        ])
+      },
+    )
+
+    it.each([
+      ['success', 'completed'],
+      ['noop', 'completed'],
+      ['failed', 'failed'],
+    ] as const)('derives a %s receipt as %s, and a revision request is not eligible', (status, expected) => {
+      const answers = stateOf(withMarker({}, receiptFor(status, RECEIPT_AT)))
+
+      expect(partOf(answers)).toMatchObject({state: expected, stalled: null})
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+    })
+
+    it('ends a request written before the receipt as not eligible, as for a marker that says declined', () => {
+      const answers = stateOf(withMarker({}, receiptFor('declined', RECEIPT_AT)), [
+        request(700, dashboard.nameWithOwner, RECEIPT_AT - 1),
+      ])
+
+      expect(partOf(answers)).toMatchObject({state: 'declined', revision: 'revision-not-eligible'})
+    })
+
+    it('gives the same part as the marker does once track has written it', () => {
+      const receipt = receiptFor('declined', RECEIPT_AT)
+
+      const fromReceipt = stateOf(withMarker({}, receipt))
+      const fromMarker = stateOf(withMarker({status: 'blocked', blockedReason: 'declined'}, receipt))
+
+      expect(partOf(fromReceipt)).toStrictEqual(partOf(fromMarker))
+      expect(fromReceipt.revision_transitions).toStrictEqual(fromMarker.revision_transitions)
+    })
+
+    it.each([
+      ['a wrong nonce', forged({nonce: 'not-the-nonce'})],
+      ['an unknown correlation id', forged({correlationId: 'corr-someone-else'})],
+      ['an author that is not Fro Bot', forged({author: 'marcusrbrown'})],
+    ])('ignores a forged receipt with %s: the part still awaits its answer and nothing is eligible', (_name, bad) => {
+      const answers = stateOf(withMarker({}, bad))
+
+      expect(partOf(answers)).toMatchObject({state: 'awaiting-answer'})
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+    })
+
+    it('ignores a receipt whose item has no dispatch epoch yet', () => {
+      const answers = stateOf(withMarker({epoch: undefined}, receiptFor('declined', RECEIPT_AT)))
+
+      expect(partOf(answers)).toMatchObject({state: 'held', reason: 'not-dispatched'})
+    })
+
+    it('takes the earliest authentic receipt: a decline before a later success is a decline', () => {
+      const answers = stateOf(
+        withMarker({}, receiptFor('declined', RECEIPT_AT, 4), receiptFor('success', RECEIPT_AT + 60_000, 5)),
+      )
+
+      expect(partOf(answers)).toMatchObject({state: 'declined'})
+    })
+
+    it('leaves a closed goal alone: a decline posted after the operator closed it neither undoes the closure nor makes a revision eligible', () => {
+      const state = withMarker({}, receiptFor('declined', RECEIPT_AT))
+      const closed = {...state, goals: [goal('initial', 50, {state: 'closed'})]}
+      const afterReceipt = request(700, dashboard.nameWithOwner, RECEIPT_AT + 1)
+
+      const answers = stateOf(closed, [afterReceipt])
+      const run = fires(closed, [afterReceipt])
+
+      expect(partOf(answers)).toMatchObject({state: 'closed', stalled: null})
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+      expect(run.transitions).toStrictEqual([])
+      expect(run.batches).toStrictEqual([])
+    })
+
+    it('never overrides a terminal marker, whatever the receipt says', () => {
+      const completed = stateOf(withMarker({status: 'completed'}, receiptFor('declined', RECEIPT_AT)))
+      const declined = stateOf(
+        withMarker({status: 'blocked', blockedReason: 'declined'}, receiptFor('success', RECEIPT_AT)),
+      )
+      const failed = stateOf(withMarker({status: 'failed'}, receiptFor('success', RECEIPT_AT)))
+
+      expect(partOf(completed)).toMatchObject({state: 'completed'})
+      expect(partOf(declined)).toMatchObject({state: 'declined'})
+      expect(partOf(failed)).toMatchObject({state: 'failed'})
+    })
+
+    it.each(['declined', 'countered', 'success', 'noop', 'failed'] as const)(
+      'derives the same status as dispatch track from the same comments, with a %s receipt on the second page of 100',
+      async status => {
+        const chatter = Array.from({length: 120}, (_, index) => ({
+          id: 1000 + index,
+          author: 'someone',
+          body: `ordinary comment ${index}`,
+        }))
+        const state = withMarker({}, ...chatter, receiptFor(status, RECEIPT_AT))
+        const listed = [...(state.comments?.[50] as GoalComment[])]
+
+        // Track: a fake client that pages like GitHub (30 a page unless asked for more) over the same comments.
+        const comments = listed.map(comment => ({...comment}))
+        const octokit = {
+          rest: {
+            issues: {
+              listComments: async (params: {per_page?: number; page?: number}) => {
+                const perPage = params.per_page ?? 30
+                const page = params.page ?? 1
+                return {
+                  data: comments
+                    .slice((page - 1) * perPage, page * perPage)
+                    .map(comment => ({id: comment.id, body: comment.body, user: {login: comment.author}})),
+                }
+              },
+              createComment: async () => ({data: {id: 0}}),
+              updateComment: async (params: {comment_id: number; body: string}) => {
+                const target = comments.find(comment => comment.id === params.comment_id)
+                if (target !== undefined) (target as {body: string}).body = params.body
+                return {}
+              },
+              update: async () => ({}),
+              removeLabel: async () => ({}),
+              listForRepo: async () => ({data: []}),
+            },
+            actions: {createWorkflowDispatch: async () => ({}), listWorkflowRunsForRepo: async () => ({data: {}})},
+          },
+        } as unknown as CrossRepoDispatchOctokitClient
+        const marker = selectStateMarker(listed.map(comment => ({author: {login: comment.author}, body: comment.body})))
+        await runTrack({
+          octokit,
+          repo: {owner: 'fro-bot', repo: '.github'},
+          loadOpenGoalIssues: async () => [{issueNumber: 50, marker: marker as NonNullable<typeof marker>}],
+          loadRegistry: async () => [{owner: 'fro-bot', name: 'dashboard', has_fro_bot_workflow: true, private: false}],
+          findRunConclusion: async () => undefined,
+          now: () => NOW,
+        })
+        const written = selectStateMarker(
+          comments.map(comment => ({author: {login: comment.author}, body: comment.body})),
+        )?.state as Omit<GoalState, 'markerHash'>
+        const item = written.items[0]
+        const trackState = item?.status === 'blocked' ? item.blockedReason : item?.status
+
+        expect(partOf(stateOf(state))).toMatchObject({state: trackState})
+        expect(trackState).not.toBe('dispatched')
+      },
+    )
+
+    it('reads the receipt for a repo whose latest attempt is a revision goal still dispatched', () => {
+      const state = withRevisionGoal({...lagging, status: 'dispatched'}, withItem(declined), 700, REVISION_RECEIPT_AT)
+      state.comments = {
+        ...state.comments,
+        60: [...(state.comments?.[60] as GoalComment[]), receiptFor('countered', REVISION_RECEIPT_AT)],
+      }
+
+      const answers = stateOf(anchored(state), [request(710, dashboard.nameWithOwner, LATER_REQUEST_AT)])
+
+      expect(partOf(answers)).toMatchObject({attempt: 'revision', state: 'countered'})
     })
   })
 
