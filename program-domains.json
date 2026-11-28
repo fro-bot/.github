@@ -30,7 +30,7 @@
         "exceptions": [
           {
             "nameWithOwner": "marcusrbrown/systematic",
-            "reason": "Its release-notes prompt dispatch stays comment-only by a documented contract; the dispatch-to-pull-request standard applies to every other dispatched prompt."
+            "reason": "Its release-notes prompt dispatch stays comment-only and its Connect sweep runs without repository skills, each by a documented contract; the dispatch-to-pull-request and repo-skills standards apply to every other dispatched prompt and agent step."
           }
         ]
       }
