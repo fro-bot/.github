@@ -1,7 +1,7 @@
 ---
 title: "feat: replace the wiki excerpt with an index for the daily passes"
 type: feat
-status: active
+status: complete
 date: 2026-11-14
 origin: docs/brainstorms/2026-11-14-wiki-baseline-index-requirements.md
 ---
@@ -343,7 +343,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 
 - Lint passes. No current document names `wiki_linked`, `wiki-query` or a wiki excerpt as present behaviour.
 
-- [ ] **Unit 5: Live checks after merge**
+- [x] **Unit 5: Live checks after merge**
 
 **Goal:** The first runs show the change working.
 
@@ -376,7 +376,7 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - [x] **The server lists two tools.** The `Fro Bot` pull request run [45530059817](https://github.com/fro-bot/.github/actions/runs/45530059817) (2026-11-25) logged `message="mcp connected" server=knowledge tools=2` in its `opencode-logs` artifact. The log gives the count, not the names; the names are `wiki_search` and `solutions_search` in `packages/wiki-ops/src/knowledge-mcp.ts`.
 - [x] **Both daily jobs print the index line.** The scheduled run [43682281142](https://github.com/fro-bot/.github/actions/runs/43682281142) (2026-11-15) printed `wiki-index: listed=48 held=48 skipped=0 sentences=kept bytes=7374` in both the Remediate and the Observe job.
 - [x] **The knowledge summary prints as before.** Both daily jobs of the same run printed `Knowledge tools: server started, no calls.` The survey run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468) printed a table with one `solutions_search` and one `wiki_search` call.
-- [ ] **The 14-day call-rate count.** Not yet run. It is due 2026-11-28.
+- [x] **The 14-day call-rate count.** Run on 2026-11-28; recorded under Results (2026-11-28) below.
 
 **Results (2026-11-16):**
 
@@ -384,6 +384,28 @@ Index line shape: `path | title | type | opening sentence`, with the last field 
 - **Survey with two tools.** The survey run [43681628468](https://github.com/fro-bot/.github/actions/runs/43681628468) worked with the two tools: its summaries show `solutions_search` and `wiki_search` called, each `ok`. This is still the called tools, not the offered list, so the unticked "server lists two tools" item above stays open. (Historical: run 45530059817 later settled the offered count; see the 2026-11-15 list.)
 - **Tally since the merge (a sample of 38 agent jobs, taken 2026-11-16; not re-derived here).** 17 jobs made at least one knowledge-tool call, and all 17 were pull request reviews. Remediate, Observe and the issue runs made none. 4 jobs printed `Knowledge tools: no call log found (...)`, all on runs of the `isolate-agent/opt-in` branch.
 - **Still open (as of 2026-11-25).** Only the 14-day count, due 2026-11-28. Unit 5 stays unticked until it is recorded.
+
+**Results (2026-11-28): the 14-day knowledge-tool count.**
+
+- **Window.** 2026-11-14T19:19Z (#4232 merge) to 2026-11-28T01:03Z: 13.3 of 14 days. The remaining 0.7 day cannot change the verdict: pulling the rate under 10% would take about 734 more counted jobs without a call, and the window adds about 12 counted jobs a day.
+- **Method.** The rules in `docs/brainstorms/2026-11-14-knowledge-tools-prompt-duties-requirements.md` (R8-R14): a job counts when its `Run Fro Bot` step concluded `success` or `failure`, read from its `Summarize knowledge tool calls` step; a call table is a call attempt, `server started, no calls.` is none, `no call log found` is unknown. Surveys are beside the rate.
+- **Per kind.**
+
+  | Kind | Counted jobs | Called | No calls | Unknown |
+  | --- | ---: | ---: | ---: | ---: |
+  | Pull request review | 126 | 88 | 37 | 1 |
+  | Issue | 2 | 0 | 2 | 0 |
+  | Comment | 0 | 0 | 0 | 0 |
+  | Remediate | 17 | 0 | 15 | 2 |
+  | Observe | 16 | 1 | 14 | 1 |
+  | **Total** | **161** | **89** | **68** | **4** |
+
+  The pull request rate is 88/125. Issue is 0/2. No comment run counted: the agent step was skipped on all 101 `issue_comment` runs. Remediate is 0/15 (0/13 scheduled) and Observe is 1/15. Called and none sum to 157 once the four unknowns leave the rate.
+- **R14 verdict.** 89 of 157 = 56.7%, well above 1 in 10. R13's removal does not fire; the tools stay and this record is the count. Excluding the 7 jobs on the `isolate-agent/opt-in` probe branch gives 87 of 154 = 56.5%, the same verdict.
+- **Errors and unknowns.** The tables' `ok` total is 94 and the error total 0. R10 puts two groups outside the denominator, and the 56.7% verdict stands without them: 4 jobs with a missing call log, and the 101 `issue_comment` runs whose agent step was skipped (no job to count, so the Comment row is empty). The four missing-log jobs are all on the `isolate-agent/opt-in` probe branch, on runs before #4253 moved the call log out of `RUNNER_TEMP` (43690899321, 43698123070, 43699001483 and 43699128074). No counted job created after 2026-11-15T09:25Z is unknown: 142 jobs, 82 with calls, 60 without.
+- **Surveys, beside the rate.** 30 survey runs; on the last summary of each job, 28 called a tool and 2 made no call (43715597103, 45648015577). All calls were `ok`.
+- **Remediate misses.** The prompt told Remediate to search the documented solutions when it starts a fix, and it made no call on either fix run: 44474579642 (2026-11-19, scheduled) opened #4299, and 45990614724 (2026-11-27, dispatched) opened #4358. Two more scheduled runs investigated `fro-bot/agent` with no wiki search (44253547413 likely, 43812012295 possibly; both depend on how "investigates" is read). Observe's one called job is 45126439876 (`wiki_search` twice).
+- **Decision (operator, 2026-11-28).** The aggregate keeps the tools (R14), but the Remediate and Observe search duties never fire, so they are dropped. The `knowledge` server stays wired into both jobs and the tools stay available. The pull request, issue and comment duty and the survey duties are unchanged. Prompt, tests and README were changed together in the change that records this result.
 
 ## System-Wide Impact
 
