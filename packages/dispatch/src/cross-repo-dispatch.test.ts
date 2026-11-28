@@ -54,7 +54,7 @@ import {
   repairJsonStringEscapes,
   resolveReceipts,
 } from './dispatch-receipts.ts'
-import {runDispatch, runTrack} from './dispatch-run.ts'
+import {readLatestMarker, runDispatch, runTrack} from './dispatch-run.ts'
 
 function makeItem(overrides: Partial<DispatchItem> = {}): DispatchItem {
   return {
@@ -1096,9 +1096,16 @@ function mockOctokit(
   const octokit: CrossRepoDispatchOctokitClient = {
     rest: {
       issues: {
-        listComments: async () => ({
-          data: comments.map(c => ({id: c.id, body: c.body, user: {login: c.login}})),
-        }),
+        // Like GitHub: a page of `per_page` comments (30 when the caller asks for none), oldest first.
+        listComments: async params => {
+          const perPage = params.per_page ?? 30
+          const page = params.page ?? 1
+          return {
+            data: comments
+              .slice((page - 1) * perPage, page * perPage)
+              .map(c => ({id: c.id, body: c.body, user: {login: c.login}})),
+          }
+        },
         createComment: createComment as CrossRepoDispatchOctokitClient['rest']['issues']['createComment'],
         updateComment: updateComment as CrossRepoDispatchOctokitClient['rest']['issues']['updateComment'],
         update: (overrides.update ??
@@ -4433,6 +4440,74 @@ async function track(items: DispatchItem[], receipts: CrossRepoResult[], now: nu
   const written = extractMarker(comments[0]?.body ?? '')
   return {result, written: written?.state.items ?? [], update, comments}
 }
+
+/** Forty ordinary comments: more than GitHub's default page of 30, so what follows them is on page 2. */
+const chatter = (): MockComment[] =>
+  Array.from({length: 40}, (_, index) => ({id: 100 + index, body: `ordinary comment ${index}`, login: 'someone'}))
+
+describe('goal comments past the first page', () => {
+  it('runTrack resolves an authentic receipt written after forty ordinary comments', async () => {
+    const goalIssue = makeOpenGoal({goal: 'g', items: [pinnedItem()], markerHash: ''})
+    const receipt = makeReceiptComment(makeReceipt({correlationId: 'c1', nonce: RAW, status: 'declined'}))
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {comments: [...chatter(), receipt]})
+
+    const result = await runTrack({
+      octokit,
+      repo: REPO,
+      loadOpenGoalIssues: async () => [goalIssue],
+      loadRegistry: async () => [gateEntryFor(TARGET_A)],
+      findRunConclusion: async () => undefined,
+      now: () => EPOCH + HOUR_MS,
+    })
+
+    const written = extractMarker(comments[0]?.body ?? '')?.state.items ?? []
+    expect(written[0]).toMatchObject({status: 'blocked', blockedReason: 'declined'})
+    expect(result.counts.itemsBlocked).toBe(1)
+  })
+
+  it('readLatestMarker and loadOpenGoalIssues find a marker written after forty ordinary comments', async () => {
+    const state = makeState({goal: 'goal-late'})
+    const listForRepo = vi.fn(async () => ({data: [{number: 7}]}))
+    const {octokit, comments} = mockOctokit({listForRepo})
+    comments.push(...chatter())
+    seedMarkerComment(comments, state)
+
+    expect((await readLatestMarker(octokit, REPO, 7))?.state.goal).toBe('goal-late')
+    expect((await loadOpenGoalIssues(octokit, REPO)).map(entry => entry.marker.state.goal)).toStrictEqual(['goal-late'])
+  })
+
+  it('runDispatch reads the checklist and the marker that follow forty ordinary comments', async () => {
+    const target = {owner: 'fro-bot', name: 'agent'}
+    const decomposition = makeDecompositionBody([{...target, prompt: 'do the thing'}])
+    const item: DispatchItem = {
+      id: 'item-1',
+      target,
+      promptHash: extractPromptHash(decomposition, target),
+      status: 'pending',
+    }
+    const {octokit, comments} = mockOctokit()
+    comments.push(...chatter(), {id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, {goal: 'goal-1', items: [item], markerHash: ''})
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+
+    const result = await runDispatch({
+      octokit,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(target)],
+      loadOtherOpenGoalMarkers: async () => [],
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-1',
+    })
+
+    expect(result.counts.dispatched).toBe(1)
+    expect(createWorkflowDispatch).toHaveBeenCalledOnce()
+  })
+})
 
 describe('runTrack — receipt status mapping and the receipt SLA (characterization)', () => {
   it.each([

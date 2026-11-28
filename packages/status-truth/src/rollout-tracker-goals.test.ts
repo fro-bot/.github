@@ -2,10 +2,16 @@ import {chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync} from 'node:
 import {tmpdir} from 'node:os'
 import {join} from 'node:path'
 import process from 'node:process'
-import {buildMarkerComment} from '@fro-bot/dispatch/dispatch-marker'
-import {MAX_ITEMS_PER_GOAL, MAX_PROMPT_LENGTH} from '@fro-bot/dispatch/dispatch-model'
+import {buildMarkerComment, selectStateMarker} from '@fro-bot/dispatch/dispatch-marker'
+import {
+  MAX_ITEMS_PER_GOAL,
+  MAX_PROMPT_LENGTH,
+  type CrossRepoDispatchOctokitClient,
+  type GoalState,
+} from '@fro-bot/dispatch/dispatch-model'
 import {isPromptSafe, parseBriefReference} from '@fro-bot/dispatch/dispatch-plan'
 import {buildResultMarker, extractItemPrompts, hashNonce, parseDecomposition} from '@fro-bot/dispatch/dispatch-receipts'
+import {runTrack} from '@fro-bot/dispatch/dispatch-run'
 import {afterEach, describe, expect, it, vi} from 'vitest'
 import {parseProgramTrackers, selectProgram} from './program-trackers.ts'
 import {
@@ -2348,6 +2354,64 @@ describe('a revised ask after a decline or a missing receipt', () => {
       expect(partOf(declined)).toMatchObject({state: 'declined'})
       expect(partOf(failed)).toMatchObject({state: 'failed'})
     })
+
+    it.each(['declined', 'countered', 'success', 'noop', 'failed'] as const)(
+      'derives the same status as dispatch track from the same comments, with a %s receipt past the first page',
+      async status => {
+        const chatter = Array.from({length: 40}, (_, index) => ({
+          id: 100 + index,
+          author: 'someone',
+          body: `ordinary comment ${index}`,
+        }))
+        const state = withMarker({}, ...chatter, receiptFor(status, RECEIPT_AT))
+        const listed = [...(state.comments?.[50] as GoalComment[])]
+
+        // Track: a fake client that pages like GitHub (30 a page unless asked for more) over the same comments.
+        const comments = listed.map(comment => ({...comment}))
+        const octokit = {
+          rest: {
+            issues: {
+              listComments: async (params: {per_page?: number; page?: number}) => {
+                const perPage = params.per_page ?? 30
+                const page = params.page ?? 1
+                return {
+                  data: comments
+                    .slice((page - 1) * perPage, page * perPage)
+                    .map(comment => ({id: comment.id, body: comment.body, user: {login: comment.author}})),
+                }
+              },
+              createComment: async () => ({data: {id: 0}}),
+              updateComment: async (params: {comment_id: number; body: string}) => {
+                const target = comments.find(comment => comment.id === params.comment_id)
+                if (target !== undefined) (target as {body: string}).body = params.body
+                return {}
+              },
+              update: async () => ({}),
+              removeLabel: async () => ({}),
+              listForRepo: async () => ({data: []}),
+            },
+            actions: {createWorkflowDispatch: async () => ({}), listWorkflowRunsForRepo: async () => ({data: {}})},
+          },
+        } as unknown as CrossRepoDispatchOctokitClient
+        const marker = selectStateMarker(listed.map(comment => ({author: {login: comment.author}, body: comment.body})))
+        await runTrack({
+          octokit,
+          repo: {owner: 'fro-bot', repo: '.github'},
+          loadOpenGoalIssues: async () => [{issueNumber: 50, marker: marker as NonNullable<typeof marker>}],
+          loadRegistry: async () => [{owner: 'fro-bot', name: 'dashboard', has_fro_bot_workflow: true, private: false}],
+          findRunConclusion: async () => undefined,
+          now: () => NOW,
+        })
+        const written = selectStateMarker(
+          comments.map(comment => ({author: {login: comment.author}, body: comment.body})),
+        )?.state as Omit<GoalState, 'markerHash'>
+        const item = written.items[0]
+        const trackState = item?.status === 'blocked' ? item.blockedReason : item?.status
+
+        expect(partOf(stateOf(state))).toMatchObject({state: trackState})
+        expect(trackState).not.toBe('dispatched')
+      },
+    )
 
     it('reads the receipt for a repo whose latest attempt is a revision goal still dispatched', () => {
       const state = withRevisionGoal({...lagging, status: 'dispatched'}, withItem(declined), 700, REVISION_RECEIPT_AT)

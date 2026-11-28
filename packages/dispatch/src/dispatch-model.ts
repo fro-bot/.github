@@ -340,6 +340,8 @@ export interface CrossRepoDispatchOctokitClient {
         owner: string
         repo: string
         issue_number: number
+        per_page?: number
+        page?: number
       }) => Promise<{data: {id: number; body?: string | null; user: {login: string} | null}[]}>
       readonly createComment: (params: {
         owner: string

@@ -71,6 +71,33 @@ export interface CasWriteResult {
   reason?: 'mismatch'
 }
 
+const COMMENTS_PAGE_SIZE = 100
+
+/**
+ * Every comment of an issue, oldest first. GitHub returns 30 comments a page unless asked for more, so one call misses a
+ * receipt, a checklist or a marker written after the first page: the tracker preflight reads the goal's comments in full
+ * (`gh api --paginate`), and the two readers must derive the same state from the same comments. Pages of 100 are read
+ * until one comes back short.
+ */
+async function listAllComments(
+  octokit: CrossRepoDispatchOctokitClient,
+  repo: RepoRepository,
+  issueNumber: number,
+): Promise<{id: number; body?: string | null; user: {login: string} | null}[]> {
+  const all: {id: number; body?: string | null; user: {login: string} | null}[] = []
+  for (let page = 1; ; page += 1) {
+    const response = await octokit.rest.issues.listComments({
+      owner: repo.owner,
+      repo: repo.repo,
+      issue_number: issueNumber,
+      per_page: COMMENTS_PAGE_SIZE,
+      page,
+    })
+    all.push(...response.data)
+    if (response.data.length < COMMENTS_PAGE_SIZE) return all
+  }
+}
+
 /**
  * Read the latest bot-authored marker comment, including its comment id, so
  * callers can update that same comment in place rather than appending a new
@@ -81,17 +108,13 @@ async function readLatestMarkerComment(
   repo: RepoRepository,
   issueNumber: number,
 ): Promise<{marker: MarkerData; commentId: number} | null> {
-  const response = await octokit.rest.issues.listComments({
-    owner: repo.owner,
-    repo: repo.repo,
-    issue_number: issueNumber,
-  })
-  const commentId = response.data.findLast(
+  const listed = await listAllComments(octokit, repo, issueNumber)
+  const commentId = listed.findLast(
     comment => FROBOT_COMMENT_AUTHORS.has(comment.user?.login ?? '') && extractMarker(comment.body ?? '') !== null,
   )?.id
   if (commentId === undefined) return null
 
-  const comments: TrackerComment[] = response.data.map(comment => ({
+  const comments: TrackerComment[] = listed.map(comment => ({
     author: {login: comment.user?.login ?? ''},
     body: comment.body ?? '',
   }))
@@ -262,12 +285,8 @@ export async function runDispatch(input: RunDispatchInput): Promise<RunDispatchR
   const issueNumber = input.event.issue.number
 
   // 2. Read the issue's bot marker.
-  const commentsResponse = await input.octokit.rest.issues.listComments({
-    owner: input.repo.owner,
-    repo: input.repo.repo,
-    issue_number: issueNumber,
-  })
-  const comments: TrackerComment[] = commentsResponse.data.map(comment => ({
+  const listedComments = await listAllComments(input.octokit, input.repo, issueNumber)
+  const comments: TrackerComment[] = listedComments.map(comment => ({
     author: {login: comment.user?.login ?? ''},
     body: comment.body ?? '',
   }))
@@ -740,12 +759,8 @@ export async function runTrack(input: RunTrackInput): Promise<RunTrackResult> {
     counts.goalsProcessed += 1
     const state: GoalState = {...goalIssue.marker.state, markerHash: goalIssue.marker.hash}
 
-    const commentsResponse = await input.octokit.rest.issues.listComments({
-      owner: input.repo.owner,
-      repo: input.repo.repo,
-      issue_number: goalIssue.issueNumber,
-    })
-    const comments: TrackerComment[] = commentsResponse.data.map(comment => ({
+    const listedComments = await listAllComments(input.octokit, input.repo, goalIssue.issueNumber)
+    const comments: TrackerComment[] = listedComments.map(comment => ({
       author: {login: comment.user?.login ?? ''},
       body: comment.body ?? '',
     }))
