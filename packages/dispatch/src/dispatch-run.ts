@@ -17,7 +17,6 @@ import {
   TARGET_WORKFLOW_ID,
   TARGET_WORKFLOW_REF,
   TERMINAL_STATUSES,
-  type BlockedReason,
   type CrossRepoDispatchOctokitClient,
   type DecompositionResult,
   type DispatchItem,
@@ -28,7 +27,6 @@ import {
   type ItemStatus,
   type MarkerData,
   type ReceiptCapability,
-  type ResultStatus,
   type SnapshotSignals,
   type TrackerComment,
 } from './dispatch-model.ts'
@@ -47,6 +45,7 @@ import {
   computeCorrelationId,
   extractItemPrompts,
   hashNonce,
+  itemOutcomeForReceipt,
   LOOSE_TASK_LIST_PREFIX,
   parseDecomposition,
   resolveReceipts,
@@ -649,24 +648,6 @@ function flipItemStatus(
   const nextState: GoalState = {...marker.state, items, markerHash: ''}
   const serialized = serializeMarker(nextState)
   return {...nextState, markerHash: serialized.hash}
-}
-
-/**
- * The item state an authentic receipt status resolves to. Explicit per status, with no default branch, so a new
- * status fails to compile here instead of silently completing the item. `declined` and `countered` end the attempt
- * as terminal `blocked`: the item is neither completed nor left to age into `needs-attention`.
- */
-function itemOutcomeForReceipt(status: ResultStatus): {status: ItemStatus; blockedReason?: BlockedReason} {
-  switch (status) {
-    case 'success':
-    case 'noop':
-      return {status: 'completed'}
-    case 'failed':
-      return {status: 'failed'}
-    case 'declined':
-    case 'countered':
-      return {status: 'blocked', blockedReason: status}
-  }
 }
 
 export interface OpenGoalIssue {

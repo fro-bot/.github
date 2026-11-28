@@ -5725,6 +5725,63 @@ describe('a domain program: part issues with the brief', () => {
         },
       )
 
+      it('reads an authentic receipt the marker lags, and neither the digest nor the hash moves when track writes it', () => {
+        const NONCE_HASH = hashNonce('a-nonce')
+        const withReceipt = (base: Partial<DomainRun>): Partial<DomainRun> => ({
+          ...base,
+          goalComments: {
+            ...base.goalComments,
+            '50': [
+              ...(base.goalComments?.['50'] ?? []),
+              comment(
+                9,
+                'fro-bot',
+                buildResultMarker({correlationId: 'corr', nonce: 'a-nonce', status: 'declined', summary: 'no'}),
+              ),
+            ],
+          },
+        })
+        const overdue = {epoch: ms(30), nonceHash: NONCE_HASH}
+        const stalled = preflight(dashboardGoal(overdue))
+        const byReceipt = preflight(withReceipt(dashboardGoal(overdue)))
+        const byMarker = preflight(
+          withReceipt(dashboardGoal({...overdue, status: 'blocked', blockedReason: 'declined'})),
+        )
+        const later = preflight({
+          ...withReceipt(dashboardGoal({...overdue, status: 'blocked', blockedReason: 'declined'})),
+          comments: [comment(5, 'fro-bot', byReceipt.marker)],
+        })
+
+        expect(stalled.domain.stalled_parts).toHaveLength(1)
+        expect(partOf(byReceipt, dashboard)).toMatchObject({state: 'declined', stalled: null})
+        expect(byReceipt.domain.stalled_parts).toEqual([])
+        expect(partOf(byReceipt, dashboard)).toStrictEqual(partOf(byMarker, dashboard))
+        expect(byReceipt.domain.attention_digest).toBe(byMarker.domain.attention_digest)
+        expect(byReceipt.domain.attention_digest).not.toBe(stalled.domain.attention_digest)
+        expect(byReceipt.hash).toBe(byMarker.hash)
+        expect(later.should_comment).toBe(false)
+      })
+
+      it('does not read a forged receipt for the marker it lags', () => {
+        const base = dashboardGoal({epoch: ms(30), nonceHash: hashNonce('a-nonce')})
+        const result = preflight({
+          ...base,
+          goalComments: {
+            ...base.goalComments,
+            '50': [
+              ...(base.goalComments?.['50'] ?? []),
+              comment(
+                9,
+                'fro-bot',
+                buildResultMarker({correlationId: 'corr', nonce: 'forged', status: 'declined', summary: 'no'}),
+              ),
+            ],
+          },
+        })
+
+        expect(partOf(result, dashboard)).toMatchObject({state: 'awaiting-answer', stalled: 'answer'})
+      })
+
       it('records a completion receipt, however old the accept is', () => {
         const result = preflight({
           ...dashboardGoal({status: 'completed', epoch: ms(90)}),

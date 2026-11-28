@@ -2238,6 +2238,130 @@ describe('a revised ask after a decline or a missing receipt', () => {
     })
   })
 
+  describe('a receipt while the marker still says dispatched', () => {
+    /** Track has not run: the marker holds the dispatched item, and the goal already carries the receipt. */
+    const lagging = {correlationId: CORRELATION, nonceHash: hashNonce(NONCE), epoch: RECEIPT_AT - 3_600_000}
+    const withMarker = (changes: Record<string, unknown>, ...receipts: GoalComment[]): ReaderState => ({
+      goals: [goal('initial', 50)],
+      comments: {
+        50: [
+          checklistComment(1, [lineFor(dashboard)]),
+          stateComment(50, dashboard, {...lagging, ...changes}),
+          ...receipts,
+        ],
+      },
+      activity: {[dashboard.nameWithOwner]: {...NO_ACTIVITY, labels: ['part-declined']}},
+    })
+    const forged = (changes: Partial<GoalComment> & {nonce?: string; correlationId?: string}): GoalComment => ({
+      ...receiptFor('success', RECEIPT_AT),
+      body: buildResultMarker({
+        correlationId: changes.correlationId ?? CORRELATION,
+        nonce: changes.nonce ?? NONCE,
+        status: 'declined',
+        summary: 'no',
+      }),
+      ...(changes.author === undefined ? {} : {author: changes.author}),
+    })
+    const stateOf = (state: ReaderState, requests = [request()]) =>
+      planAnswers(current({revisions: requests}), readers(state), clock)
+
+    it.each(['declined', 'countered'] as const)(
+      'derives the %s answer from the receipt and makes a later revision request eligible',
+      status => {
+        const state = withMarker({}, receiptFor(status, RECEIPT_AT))
+
+        const answers = stateOf(state)
+
+        expect(partOf(answers)).toMatchObject({state: status, stalled: null, age_days: null})
+        expect(partOf(answers)).not.toHaveProperty('revision')
+        expect(answers.revision_transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+        expect(fires(state, [request()]).batches.map(batch => batch.batch)).toStrictEqual([
+          revisionName(dashboard, 700),
+        ])
+      },
+    )
+
+    it.each([
+      ['success', 'completed'],
+      ['noop', 'completed'],
+      ['failed', 'failed'],
+    ] as const)('derives a %s receipt as %s, and a revision request is not eligible', (status, expected) => {
+      const answers = stateOf(withMarker({}, receiptFor(status, RECEIPT_AT)))
+
+      expect(partOf(answers)).toMatchObject({state: expected, stalled: null})
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+    })
+
+    it('ends a request written before the receipt as not eligible, as for a marker that says declined', () => {
+      const answers = stateOf(withMarker({}, receiptFor('declined', RECEIPT_AT)), [
+        request(700, dashboard.nameWithOwner, RECEIPT_AT - 1),
+      ])
+
+      expect(partOf(answers)).toMatchObject({state: 'declined', revision: 'revision-not-eligible'})
+    })
+
+    it('gives the same part as the marker does once track has written it', () => {
+      const receipt = receiptFor('declined', RECEIPT_AT)
+
+      const fromReceipt = stateOf(withMarker({}, receipt))
+      const fromMarker = stateOf(withMarker({status: 'blocked', blockedReason: 'declined'}, receipt))
+
+      expect(partOf(fromReceipt)).toStrictEqual(partOf(fromMarker))
+      expect(fromReceipt.revision_transitions).toStrictEqual(fromMarker.revision_transitions)
+    })
+
+    it.each([
+      ['a wrong nonce', forged({nonce: 'not-the-nonce'})],
+      ['an unknown correlation id', forged({correlationId: 'corr-someone-else'})],
+      ['an author that is not Fro Bot', forged({author: 'marcusrbrown'})],
+    ])('ignores a forged receipt with %s: the part still awaits its answer and nothing is eligible', (_name, bad) => {
+      const answers = stateOf(withMarker({}, bad))
+
+      expect(partOf(answers)).toMatchObject({state: 'awaiting-answer'})
+      expect(partOf(answers)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+    })
+
+    it('ignores a receipt whose item has no dispatch epoch yet', () => {
+      const answers = stateOf(withMarker({epoch: undefined}, receiptFor('declined', RECEIPT_AT)))
+
+      expect(partOf(answers)).toMatchObject({state: 'held', reason: 'not-dispatched'})
+    })
+
+    it('takes the earliest authentic receipt: a decline before a later success is a decline', () => {
+      const answers = stateOf(
+        withMarker({}, receiptFor('declined', RECEIPT_AT, 4), receiptFor('success', RECEIPT_AT + 60_000, 5)),
+      )
+
+      expect(partOf(answers)).toMatchObject({state: 'declined'})
+    })
+
+    it('never overrides a terminal marker, whatever the receipt says', () => {
+      const completed = stateOf(withMarker({status: 'completed'}, receiptFor('declined', RECEIPT_AT)))
+      const declined = stateOf(
+        withMarker({status: 'blocked', blockedReason: 'declined'}, receiptFor('success', RECEIPT_AT)),
+      )
+      const failed = stateOf(withMarker({status: 'failed'}, receiptFor('success', RECEIPT_AT)))
+
+      expect(partOf(completed)).toMatchObject({state: 'completed'})
+      expect(partOf(declined)).toMatchObject({state: 'declined'})
+      expect(partOf(failed)).toMatchObject({state: 'failed'})
+    })
+
+    it('reads the receipt for a repo whose latest attempt is a revision goal still dispatched', () => {
+      const state = withRevisionGoal({...lagging, status: 'dispatched'}, withItem(declined), 700, REVISION_RECEIPT_AT)
+      state.comments = {
+        ...state.comments,
+        60: [...(state.comments?.[60] as GoalComment[]), receiptFor('countered', REVISION_RECEIPT_AT)],
+      }
+
+      const answers = stateOf(anchored(state), [request(710, dashboard.nameWithOwner, LATER_REQUEST_AT)])
+
+      expect(partOf(answers)).toMatchObject({attempt: 'revision', state: 'countered'})
+    })
+  })
+
   describe('which comment', () => {
     it('takes the newest request of a repo that no goal has used', () => {
       const answers = planAnswers(
