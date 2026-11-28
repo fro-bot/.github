@@ -4465,6 +4465,51 @@ describe('goal comments past the first page', () => {
     expect(result.counts.itemsBlocked).toBe(1)
   })
 
+  it('runTrack writes nothing and closes nothing, and the error propagates, when page two of the comments fails', async () => {
+    const goalIssue = makeOpenGoal({goal: 'g', items: [pinnedItem()], markerHash: ''})
+    // An authentic receipt on page one: a read that stopped there would resolve the item and close the goal.
+    const receipt = makeReceiptComment(makeReceipt({correlationId: 'c1', nonce: RAW, status: 'success'}))
+    const createComment = vi.fn(async () => ({data: {id: 0}}))
+    const updateComment = vi.fn(async () => ({}))
+    const update = vi.fn(async () => ({data: {}}))
+    const {octokit, comments} = mockOctokitForGoal(goalIssue, {
+      comments: [receipt, ...chatter()],
+      createComment,
+      updateComment,
+      update,
+    })
+    const before = comments.map(comment => comment.body)
+    const failing: CrossRepoDispatchOctokitClient = {
+      ...octokit,
+      rest: {
+        ...octokit.rest,
+        issues: {
+          ...octokit.rest.issues,
+          listComments: async params => {
+            if (params.page === 2) throw new Error('page two failed')
+            return octokit.rest.issues.listComments(params)
+          },
+        },
+      },
+    }
+
+    await expect(
+      runTrack({
+        octokit: failing,
+        repo: REPO,
+        loadOpenGoalIssues: async () => [goalIssue],
+        loadRegistry: async () => [gateEntryFor(TARGET_A)],
+        findRunConclusion: async () => undefined,
+        now: () => EPOCH + HOUR_MS,
+      }),
+    ).rejects.toThrow('page two failed')
+
+    expect(updateComment).not.toHaveBeenCalled()
+    expect(createComment).not.toHaveBeenCalled()
+    expect(update).not.toHaveBeenCalled()
+    expect(comments.map(comment => comment.body)).toStrictEqual(before)
+  })
+
   it('readLatestMarker and loadOpenGoalIssues find a marker written after 120 ordinary comments', async () => {
     const state = makeState({goal: 'goal-late'})
     const listForRepo = vi.fn(async () => ({data: [{number: 7}]}))
