@@ -7,6 +7,8 @@ import {createHash, randomBytes} from 'node:crypto'
 import {
   FROBOT_COMMENT_AUTHORS,
   MAX_ITEMS_PER_GOAL,
+  RECEIPT_SLA_MS,
+  TERMINAL_STATUSES,
   type BlockedReason,
   type CrossRepoResult,
   type DecompositionResult,
@@ -598,5 +600,44 @@ export function itemOutcomeForReceipt(status: ResultStatus): {status: ItemStatus
     case 'declined':
     case 'countered':
       return {status: 'blocked', blockedReason: status}
+  }
+}
+
+/**
+ * The item as the 24h receipt deadline leaves it: a `dispatched` item that was confirmed (it has an `epoch`) and is
+ * strictly more than `slaMs` old at `now` has no receipt in time, so it is `needs-attention` with the reason
+ * `no-receipt`. Anything else is returned as it is, the same object: an item never confirmed is never aged (a crash
+ * before the confirm is a dispatch failure, not a missed deadline), and an item in any other status has been settled
+ * or flagged by something else. The caller resolves authentic receipts first, because a receipt wins over the
+ * deadline. Pure. It is the one rule `runTrack` writes the marker with and the rollout tracker reads a lagging marker
+ * with, so the two cannot disagree about when a part has missed its deadline.
+ */
+export function withReceiptDeadline(item: DispatchItem, now: number, slaMs: number = RECEIPT_SLA_MS): DispatchItem {
+  if (item.status !== 'dispatched') return item
+  // The comparison is kept positive: only a true `now - epoch > slaMs` over finite numbers is overdue, so a NaN clock,
+  // epoch or window leaves the item as it is (the negation `<=` would read NaN as overdue).
+  if (item.epoch === undefined || !(now - item.epoch > slaMs)) return item
+  return {...item, status: 'needs-attention', needsAttentionReason: 'no-receipt'}
+}
+
+/**
+ * The item as its goal's own comments and the clock say it stands, for a marker that lags them: the earliest authentic
+ * receipt (`resolveReceipts`' gates: author, correlation id, nonce hash) gives the status and reason track would write
+ * (`itemOutcomeForReceipt`); with none, `withReceiptDeadline`. A terminal item is never changed. Pure, and nothing is
+ * written: dispatch's track job stays the only writer of a marker. It is the one reading the rollout tracker uses for
+ * a part and `runDispatch`'s same-target guard uses for another goal's item, so the two cannot disagree about whether
+ * an earlier attempt is still in flight.
+ */
+export function settleItem(item: DispatchItem, comments: TrackerComment[], now: number): DispatchItem {
+  if (TERMINAL_STATUSES.has(item.status)) return item
+  const terminal = resolveReceipts([item], comments).get(item.id)?.terminal
+  if (terminal === undefined) return withReceiptDeadline(item, now)
+  const outcome = itemOutcomeForReceipt(terminal)
+  return {
+    ...item,
+    status: outcome.status,
+    needsAttentionReason: undefined,
+    noReceiptDiagnostic: undefined,
+    ...(outcome.blockedReason === undefined ? {} : {blockedReason: outcome.blockedReason}),
   }
 }

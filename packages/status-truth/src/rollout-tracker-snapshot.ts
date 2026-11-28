@@ -1541,6 +1541,7 @@ function planDomain(
     partIssues.set(name, Math.min(item.content_number, partIssues.get(name) ?? item.content_number))
   }
   const goalInput = {
+    now: input.now,
     program: entry.key,
     domain: domainKey,
     tracker,

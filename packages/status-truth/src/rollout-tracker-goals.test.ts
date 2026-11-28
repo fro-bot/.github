@@ -41,7 +41,11 @@ const systematic = {nameWithOwner: 'marcusrbrown/systematic', nodeId: 'R_systema
 const spaceBus = {nameWithOwner: 'fro-bot/space-bus', nodeId: 'R_space_bus'}
 const dashboard = {nameWithOwner: 'fro-bot/dashboard', nodeId: 'R_dashboard'}
 
+/** The preflight's clock for a plan that is not about time: a moment after every fixture below, within a day of the dispatches that are meant to be running. */
+const PLAN_NOW = Date.parse('2026-11-27T12:00:00Z')
+
 const input = (changes: Partial<GoalPlanInput> = {}): GoalPlanInput => ({
+  now: PLAN_NOW,
   program: 'harness',
   domain: 'harness-tools',
   tracker: {repo: 'fro-bot/.github', number: 5000},
@@ -2438,6 +2442,213 @@ describe('a revised ask after a decline or a missing receipt', () => {
       const answers = stateOf(anchored(state), [request(710, dashboard.nameWithOwner, LATER_REQUEST_AT)])
 
       expect(partOf(answers)).toMatchObject({attempt: 'revision', state: 'countered'})
+    })
+  })
+
+  describe('a receipt deadline the marker has not caught up with', () => {
+    /** Track has not run since the deadline: the marker holds the dispatched item, and no receipt is on the goal. */
+    const overdue = {correlationId: CORRELATION, nonceHash: hashNonce(NONCE), epoch: STUCK_EPOCH}
+    const withOverdue = (changes: Record<string, unknown> = {}, ...receipts: GoalComment[]): ReaderState => ({
+      goals: [goal('initial', 50)],
+      comments: {
+        50: [
+          checklistComment(1, [lineFor(dashboard)]),
+          stateComment(50, dashboard, {...overdue, ...changes}),
+          ...receipts,
+        ],
+      },
+      activity: {[dashboard.nameWithOwner]: {...NO_ACTIVITY, labels: ['part-declined']}},
+    })
+    const afterSla = request(700, dashboard.nameWithOwner, STUCK_AT + 3_600_000)
+    /** What each plan makes of a state at a clock: the part, the revision hand-over and the batches that would be listed. */
+    const readAt = (state: ReaderState, now: number, requests = [afterSla]) => {
+      const answers = planAnswers(current({revisions: requests}), readers(state), {...clock, now})
+      const batches = planGoals(
+        current({revisions: requests, now}),
+        readers(anchored(state, anchorComment(requests[0]?.commentId))),
+      ).goal_batches
+      return {part: partOf(answers), transitions: answers.revision_transitions, batches}
+    }
+    const eligible = (state: ReaderState, now: number, requests = [afterSla]): boolean => {
+      const read = readAt(state, now, requests)
+      return read.transitions.length === 1 && read.batches.length === 1
+    }
+
+    it('reads an item still dispatched past the deadline as needs-attention: a request written after it is eligible', () => {
+      const read = readAt(withOverdue(), NOW)
+
+      expect(read.part).toMatchObject({state: 'awaiting-answer', dispatched_at: new Date(STUCK_EPOCH).toISOString()})
+      expect(read.part).not.toHaveProperty('revision')
+      expect(read.transitions.map(entry => entry.comment_id)).toStrictEqual([700])
+      expect(read.batches.map(batch => batch.batch)).toStrictEqual([revisionName(dashboard, 700)])
+    })
+
+    it('ends the attempt at the deadline and not before: eligible only once the clock is past epoch plus 24h', () => {
+      const request701 = request(701, dashboard.nameWithOwner, STUCK_AT + 1)
+
+      expect(eligible(withOverdue(), STUCK_AT, [request701])).toBe(false)
+      expect(eligible(withOverdue(), STUCK_AT + 1, [request701])).toBe(true)
+    })
+
+    it('ignores a request written before the deadline, as for a marker that says needs-attention', () => {
+      const early = request(700, dashboard.nameWithOwner, STUCK_AT - 1)
+
+      expect(eligible(withOverdue(), NOW, [early])).toBe(false)
+      expect(readAt(withOverdue(), NOW, [early]).part).toMatchObject({revision: 'revision-not-eligible'})
+    })
+
+    it('leaves an item whose deadline has not passed dispatched: nothing is eligible', () => {
+      const fresh = withOverdue({epoch: NOW - 1000})
+      const read = readAt(fresh, NOW, [request(700, dashboard.nameWithOwner, NOW - 500)])
+
+      expect(read.part).toMatchObject({state: 'awaiting-answer', revision: 'revision-not-eligible'})
+      expect(read.transitions).toStrictEqual([])
+      expect(read.batches).toStrictEqual([])
+    })
+
+    it('leaves an item with no dispatch epoch alone, as track does', () => {
+      const read = readAt(withOverdue({epoch: undefined}), NOW)
+
+      expect(read.part).toMatchObject({state: 'held', reason: 'not-dispatched'})
+      expect(read.transitions).toStrictEqual([])
+      expect(read.batches).toStrictEqual([])
+    })
+
+    it('lets an authentic receipt win over the deadline: the receipt time ends the attempt', () => {
+      const afterReceipt = request(700, dashboard.nameWithOwner, RECEIPT_AT + 1)
+      const answeredLate = withOverdue({}, receiptFor('declined', RECEIPT_AT))
+
+      expect(readAt(answeredLate, NOW, [afterReceipt]).part).toMatchObject({state: 'declined'})
+      expect(eligible(answeredLate, NOW, [afterReceipt])).toBe(true)
+      // The deadline moment is earlier than the receipt, and a request between them is not honored.
+      expect(eligible(answeredLate, NOW, [afterSla])).toBe(false)
+      expect(readAt(answeredLate, NOW, [afterSla]).part).toMatchObject({revision: 'revision-not-eligible'})
+    })
+
+    it.each([
+      ['success', 'completed'],
+      ['noop', 'completed'],
+      ['failed', 'failed'],
+    ] as const)('reads an authentic %s receipt as %s, never as the deadline', (status, expected) => {
+      const read = readAt(withOverdue({}, receiptFor(status, RECEIPT_AT)), NOW, [
+        request(700, dashboard.nameWithOwner, RECEIPT_AT + 1),
+      ])
+
+      expect(read.part).toMatchObject({state: expected, stalled: null, revision: 'revision-not-eligible'})
+      expect(read.transitions).toStrictEqual([])
+      expect(read.batches).toStrictEqual([])
+    })
+
+    it('ignores a forged receipt: the deadline still applies', () => {
+      const forged: GoalComment = {
+        ...receiptFor('success', RECEIPT_AT),
+        body: buildResultMarker({correlationId: CORRELATION, nonce: 'not-the-nonce', status: 'success', summary: 'x'}),
+      }
+
+      expect(eligible(withOverdue({}, forged), NOW)).toBe(true)
+    })
+
+    it('leaves a closed goal alone: the operator closed it, so the clocks stopped', () => {
+      const closed = {...withOverdue(), goals: [goal('initial', 50, {state: 'closed'})]}
+      const answers = planAnswers(current({revisions: [afterSla]}), readers(closed), clock)
+      const batches = planGoals(current({revisions: [afterSla]}), readers(anchored(closed))).goal_batches
+
+      expect(partOf(answers)).toMatchObject({state: 'closed', stalled: null, revision: 'revision-not-eligible'})
+      expect(answers.revision_transitions).toStrictEqual([])
+      expect(batches).toStrictEqual([])
+    })
+
+    it.each([
+      ['completed', {status: 'completed'}, 'completed'],
+      ['failed', {status: 'failed'}, 'failed'],
+      ['declined', {status: 'blocked', blockedReason: 'declined'}, 'declined'],
+      ['a gate block', {status: 'blocked'}, 'held'],
+    ] as const)('never overrides a terminal marker: %s stays as recorded', (_name, changes, expected) => {
+      const read = readAt(withOverdue(changes), NOW)
+
+      expect(read.part?.state).toBe(expected)
+      expect(read.transitions).toStrictEqual([])
+      expect(read.batches).toStrictEqual([])
+    })
+
+    it('gives the same part, hand-over and batches as the marker does once track has written it', () => {
+      const recorded = withOverdue({
+        status: 'needs-attention',
+        needsAttentionReason: 'no-receipt',
+        noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+      })
+
+      expect(readAt(withOverdue(), NOW)).toStrictEqual(readAt(recorded, NOW))
+      expect(eligible(recorded, NOW)).toBe(true)
+    })
+
+    it('reads the revision goal that is still dispatched past its own deadline', () => {
+      const state = anchored(withRevisionGoal({...overdue, status: 'dispatched'}, withItem(declined), 700))
+      const next = request(710, dashboard.nameWithOwner, STUCK_AT + 3_600_000)
+
+      const late = planAnswers(current({revisions: [request(700), next]}), readers(state), clock)
+      const early = planAnswers(current({revisions: [request(700), next]}), readers(state), {...clock, now: STUCK_AT})
+
+      expect(partOf(late)).toMatchObject({attempt: 'revision', state: 'awaiting-answer'})
+      expect(partOf(late)).not.toHaveProperty('revision')
+      expect(late.revision_transitions.map(entry => entry.comment_id)).toStrictEqual([710])
+      expect(partOf(early)).toMatchObject({revision: 'revision-not-eligible'})
+      expect(early.revision_transitions).toStrictEqual([])
+    })
+
+    it.each([
+      ['at the deadline', STUCK_AT],
+      ['one millisecond past it', STUCK_AT + 1],
+      ['a day past it', STUCK_AT + 86_400_000],
+    ])('reads the same state as dispatch track writes for the same comments, %s', async (_name, now) => {
+      const state = withOverdue()
+      const listed = [...(state.comments?.[50] as GoalComment[])].map(comment => ({...comment}))
+      const octokit = {
+        rest: {
+          issues: {
+            listComments: async (params: {per_page?: number; page?: number}) => {
+              const perPage = params.per_page ?? 30
+              const page = params.page ?? 1
+              return {
+                data: listed
+                  .slice((page - 1) * perPage, page * perPage)
+                  .map(comment => ({id: comment.id, body: comment.body, user: {login: comment.author}})),
+              }
+            },
+            createComment: async () => ({data: {id: 0}}),
+            updateComment: async (params: {comment_id: number; body: string}) => {
+              const target = listed.find(comment => comment.id === params.comment_id)
+              if (target !== undefined) (target as {body: string}).body = params.body
+              return {}
+            },
+            update: async () => ({}),
+            removeLabel: async () => ({}),
+            listForRepo: async () => ({data: []}),
+          },
+          actions: {createWorkflowDispatch: async () => ({}), listWorkflowRunsForRepo: async () => ({data: {}})},
+        },
+      } as unknown as CrossRepoDispatchOctokitClient
+      const asComments = () => listed.map(comment => ({author: {login: comment.author}, body: comment.body}))
+      const marker = selectStateMarker(asComments())
+      await runTrack({
+        octokit,
+        repo: {owner: 'fro-bot', repo: '.github'},
+        loadOpenGoalIssues: async () => [{issueNumber: 50, marker: marker as NonNullable<typeof marker>}],
+        loadRegistry: async () => [{owner: 'fro-bot', name: 'dashboard', has_fro_bot_workflow: true, private: false}],
+        findRunConclusion: async () => undefined,
+        now: () => now,
+      })
+      const written = selectStateMarker(asComments())?.state.items[0]
+      const overdueAtNow = now - STUCK_EPOCH > 24 * 60 * 60 * 1000
+      const recorded: ReaderState = {
+        ...state,
+        comments: {50: [checklistComment(1, [lineFor(dashboard)]), stateComment(50, dashboard, {...written})]},
+      }
+
+      expect(written?.status).toBe(overdueAtNow ? 'needs-attention' : 'dispatched')
+      if (overdueAtNow) expect(written?.needsAttentionReason).toBe('no-receipt')
+      expect(readAt(state, now)).toStrictEqual(readAt(recorded, now))
+      expect(eligible(state, now)).toBe(overdueAtNow)
     })
   })
 

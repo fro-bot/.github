@@ -14,11 +14,10 @@ import {
   MAX_ITEMS_PER_GOAL,
   MAX_PROMPT_LENGTH,
   RECEIPT_SLA_MS,
-  TERMINAL_STATUSES,
   type DispatchItem,
   type ResultStatus,
 } from '@fro-bot/dispatch/dispatch-model'
-import {itemOutcomeForReceipt, resolveReceipts} from '@fro-bot/dispatch/dispatch-receipts'
+import {resolveReceipts, settleItem} from '@fro-bot/dispatch/dispatch-receipts'
 import {isOperatorComment, type CommentLike, type ConfirmedRepo, type ProgramEntry} from './program-trackers.ts'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -111,6 +110,8 @@ export interface PartActivity {
 }
 
 export interface GoalPlanInput {
+  /** The preflight's clock, in epoch milliseconds: the one the answer and outcome windows run on and dispatch's receipt deadline is read against. */
+  readonly now: number
   readonly program: string
   readonly domain: string
   readonly tracker: {readonly repo: string; readonly number: number}
@@ -702,7 +703,7 @@ function revisionVerdict(
   let found: ReturnType<typeof findItem>
   let activity: PartActivity
   try {
-    found = findItem(input, readers, goals, repo, input.part0Names.has(lowered))
+    found = findItem(input, readers, goals, repo, input.part0Names.has(lowered), input.now)
     activity = readers.partActivity(repo.nameWithOwner, input.partIssues.get(lowered) ?? 0)
   } catch {
     return {kind: 'unreadable'}
@@ -820,28 +821,23 @@ function batchOf(body: string, program: string): string | null {
 }
 
 /**
- * The item as the goal's own receipt says it stands, for a marker that lags it: dispatch's track job is the only writer
- * of the marker and resolves a receipt on its own schedule, so a part can have answered while the marker still shows it
- * dispatched. Only an item on an open goal is read this way, the set track reads: a goal the operator closed keeps what its
- * marker records, so a late receipt cannot undo the closure. An item the marker already holds terminal (`completed`, `failed`, `blocked`) is never changed. Otherwise
- * the earliest authentic receipt (dispatch's own gates: author, correlation id, nonce hash) gives the status and reason
- * track would write, through the same resolver and outcome map. Nothing is written back.
+ * The item as the goal's own receipt, or its missed receipt deadline, says it stands, for a marker that lags them:
+ * dispatch's track job is the only writer of the marker and resolves a receipt, or flags a missed deadline, on its own schedule, so a part
+ * can have answered, or have run out of time, while the marker still shows it dispatched. Only an item on an open goal is
+ * read this way, the set track reads: a goal the operator closed keeps what its marker records, so a late receipt cannot
+ * undo the closure. An item the marker already holds terminal (`completed`, `failed`, `blocked`) is never changed.
+ * Otherwise the earliest authentic receipt (dispatch's own gates: author, correlation id, nonce hash) gives the status
+ * and reason track would write, through the same resolver and outcome map. With no such receipt, a `dispatched` item that
+ * has missed the 24h deadline by `now` is `needs-attention` with the reason track gives it, through the one rule
+ * dispatch holds (`settleItem`, which `runDispatch`'s same-target guard reads another goal's items with too); an
+ * item with no dispatch epoch is left alone, as track leaves it. Nothing is written back, and the run-lookup diagnostic track adds is not read, because nothing here depends on it.
  */
-function withReceipt(item: DispatchItem, comments: readonly GoalComment[]): DispatchItem {
-  if (TERMINAL_STATUSES.has(item.status)) return item
-  const terminal = resolveReceipts(
-    [item],
+function withReceipt(item: DispatchItem, comments: readonly GoalComment[], now: number): DispatchItem {
+  return settleItem(
+    item,
     comments.map(comment => ({author: {login: comment.author}, body: comment.body})),
-  ).get(item.id)?.terminal
-  if (terminal === undefined) return item
-  const outcome = itemOutcomeForReceipt(terminal)
-  return {
-    ...item,
-    status: outcome.status,
-    needsAttentionReason: undefined,
-    noReceiptDiagnostic: undefined,
-    ...(outcome.blockedReason === undefined ? {} : {blockedReason: outcome.blockedReason}),
-  }
+    now,
+  )
 }
 
 /**
@@ -858,6 +854,7 @@ function findItem(
   goals: readonly GoalIssue[],
   repo: ConfirmedRepo,
   parity: boolean,
+  now: number,
 ): {item: DispatchItem | undefined; closed: boolean; comments: readonly GoalComment[]} | undefined {
   const wanted = parity ? [`parity-${repo.nodeId}`] : ['initial', `join-${repo.nodeId}`]
   const batchFor = (goal: GoalIssue): string => batchOf(goal.body, input.program) ?? ''
@@ -893,7 +890,7 @@ function findItem(
         `${candidate.target.owner}/${candidate.target.name}`.toLowerCase() === repo.nameWithOwner.toLowerCase(),
     )
     // Track reads only open goals, so a receipt on a closed one is never resolved by it: the operator's closure stands.
-    const item = recorded === undefined || goal.state === 'closed' ? recorded : withReceipt(recorded, comments)
+    const item = recorded === undefined || goal.state === 'closed' ? recorded : withReceipt(recorded, comments, now)
     if (item !== undefined || revision) return {item, closed: goal.state === 'closed', comments}
   }
   if (unreadable) throw new Error(GOAL_COMMENTS_UNREADABLE)
@@ -981,7 +978,7 @@ function partStatus(
 
   let found: ReturnType<typeof findItem>
   try {
-    found = findItem(input, readers, goals, repo, parity)
+    found = findItem(input, readers, goals, repo, parity, clock.now)
   } catch {
     return unknown('goals-unreadable')
   }
@@ -1092,7 +1089,10 @@ export function planAnswers(
       goals = null
     }
   }
-  const results = repos.map(repo => partResult({...input, partIssues}, readers, clock, goals, unreadableParts, repo))
+  // The clock handed in is the one clock of the run: the answer plan reads the receipt deadline against it too.
+  const results = repos.map(repo =>
+    partResult({...input, partIssues, now: clock.now}, readers, clock, goals, unreadableParts, repo),
+  )
   const parts = results.map(result => result.status)
   const plan = {
     parts,

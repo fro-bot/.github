@@ -5762,6 +5762,37 @@ describe('a domain program: part issues with the brief', () => {
         expect(later.should_comment).toBe(false)
       })
 
+      it('reads a missed receipt deadline the marker lags: a revise after it is eligible, and neither the digest nor the hash moves when track writes it', () => {
+        const base = {correlationId: 'corr', nonceHash: hashNonce('a-nonce')}
+        const request = {id: 700, author: {login: 'marcusrbrown', id: 831617}, body: 'revise fro-bot/dashboard'}
+        /** The operator's request, an hour before the run; the dispatch is `sent` before it. */
+        const run = (sent: number, changes: Record<string, unknown> = {}): Partial<DomainRun> => ({
+          ...dashboardGoal({...base, epoch: sent, ...changes}),
+          activity: quiet({[dashboard.nameWithOwner]: {labels: ['part-declined'], timeline: []}}),
+          comments: [{...request, created_at: at(0, -3_600_000)}],
+        })
+        const lagging = preflight(run(ms(2)))
+        const recorded = preflight(
+          run(ms(2), {
+            status: 'needs-attention',
+            needsAttentionReason: 'no-receipt',
+            noReceiptDiagnostic: 'dispatch-accepted-no-receipt',
+          }),
+        )
+        // Dispatched thirty minutes before the request: the deadline is still ahead of the run.
+        const running = preflight(run(ms(0, -5_400_000)))
+
+        expect(lagging.domain.revision_transitions).toHaveLength(1)
+        expect(partOf(lagging, dashboard)).not.toHaveProperty('revision')
+        expect(running.domain.revision_transitions).toEqual([])
+        expect(partOf(running, dashboard)).toMatchObject({revision: 'revision-not-eligible'})
+        expect(lagging.domain.revision_transitions).toEqual(recorded.domain.revision_transitions)
+        expect(partOf(lagging, dashboard)).toStrictEqual(partOf(recorded, dashboard))
+        expect(lagging.domain.attention_digest).toBe(recorded.domain.attention_digest)
+        expect(lagging.hash).toBe(recorded.hash)
+        expect(lagging.should_comment).toBe(true)
+      })
+
       it('does not read a forged receipt for the marker it lags', () => {
         const base = dashboardGoal({epoch: ms(30), nonceHash: hashNonce('a-nonce')})
         const result = preflight({
