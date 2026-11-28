@@ -2,7 +2,7 @@
 type: repo
 title: marcusrbrown/renovate-config — Shareable Renovate Configuration Presets
 created: 2026-04-28
-updated: 2026-11-12
+updated: 2026-11-27
 sources:
   - url: https://github.com/marcusrbrown/renovate-config
     sha: 18cebf2b28c6c1322489e41fc5786595be64adbf
@@ -69,6 +69,8 @@ node_id: R_kgDOHRfvyQ
 # marcusrbrown/renovate-config
 
 Shareable [Renovate](https://docs.renovatebot.com/) configuration presets for Marcus R. Brown's personal GitHub repositories. This is the canonical dependency-update policy source consumed by every `marcusrbrown/*` and `fro-bot/*` repo.
+
+Current state (2026-11-27, `main` at `5a9aa942`): public, MIT, JavaScript, default branch `main`, not archived, six workflow files. `packageManager` is `pnpm@11.29.0`. Fro Bot is pinned to v0.150.0 (`61388f23`) with `isolate-agent: true` (#1722) and run traces sent to a collector (#1750). It still declares no `output-mode`.
 
 ## Repository Basics
 
@@ -353,7 +355,7 @@ Two sequential jobs:
 
 ### `renovate.yaml`
 
-Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.40` (SHA `0ff5a4d`; was `@v4.16.30` at 2026-06-25, `@v4.16.25` at 2026-06-14, `@v4.16.23` at 2026-06-04, `@v4.16.9` at 2026-05-23). Triggers on issue edits, PR edits, push to non-main branches, manual dispatch, and `workflow_run` after main CI succeeds. Includes `path-filters` scoped to Renovate config files and presets.
+Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.43.0` (SHA `e6a1ab17`; was `@v4.16.30` at 2026-06-25, `@v4.16.25` at 2026-06-14, `@v4.16.23` at 2026-06-04, `@v4.16.9` at 2026-05-23). Triggers on issue edits, PR edits, push to non-main branches, manual dispatch, and `workflow_run` after main CI succeeds. Includes `path-filters` scoped to Renovate config files and presets.
 
 ### `codeql-analysis.yaml` — CodeQL security scanning
 
@@ -363,7 +365,7 @@ Uses reusable workflow `bfra-me/.github/.github/workflows/renovate.yaml@v4.16.40
 
 ## Fro Bot Integration
 
-**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.95.0` (SHA `4ad00541cd9e4f1853f9dcd1fb2ac316d559d54f`). The agent pin advanced v0.76.2 → v0.95.0 between 2026-06-25 and 2026-07-26 — ~19 minors in a month, the same rapid Renovate-authored cadence tracking [[fro-bot--agent]] (now a fleet pin leader). Runner action pins moved this cycle: `actions/checkout` v6.0.3 → **v6.1.0** (`d23441a`), `actions/setup-node` v6.4.0 → **v6.5.0** (`2499707`); `pnpm/action-setup` holds at **v6.0.9** (`0ebf471`).
+**Fro Bot workflow present and active** — `fro-bot.yaml` with `fro-bot/agent@v0.150.0` (SHA `61388f23e4c0bd864b5f6dc05f460597c83a8093`). The agent pin advanced v0.76.2 → v0.95.0 between 2026-06-25 and 2026-07-26 — ~19 minors in a month, the same rapid Renovate-authored cadence tracking [[fro-bot--agent]] (now a fleet pin leader). Runner action pins moved this cycle: `actions/checkout` v6.0.3 → **v6.1.0** (`d23441a`), `actions/setup-node` v6.4.0 → **v6.5.0** (`2499707`); `pnpm/action-setup` holds at **v6.0.9** (`0ebf471`).
 
 Trigger surface:
 - Issue comments, PR review comments, discussion comments (mentioning `@fro-bot`)
@@ -400,13 +402,13 @@ Single-issue management: the perpetual `Daily Autohealing Report` issue receives
 
 | Tool | Version / Config |
 | --- | --- |
-| ESLint | 10.7.0 (was 10.5.0), extends `@bfra.me/eslint-config` 0.51.1 |
-| Prettier | 3.9.6 (was 3.8.4 — crossed 3.8 → 3.9), extends `@bfra.me/prettier-config/120-proof` (0.16.9) |
-| lint-staged | 17.1.1 (was 17.0.8 — crossed 17.0 → 17.1) (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
-| simple-git-hooks | 2.13.1 (pre-commit runs lint-staged) |
-| semantic-release | 25.0.8 (was 25.0.5) |
+| ESLint | 10.15.0 (was 10.5.0), extends `@bfra.me/eslint-config` 0.54.1 |
+| Prettier | 3.10.1 (was 3.8.4 — crossed 3.8 → 3.9), extends `@bfra.me/prettier-config/120-proof` (0.16.14) |
+| lint-staged | 17.6.2 (was 17.0.8 — crossed 17.0 → 17.1) (`*.{js,json,jsx,md,toml,ts,tsx,yml,yaml}`) |
+| simple-git-hooks | 2.14.0 (pre-commit runs lint-staged) |
+| semantic-release | 25.0.9 (was 25.0.5) |
 | eslint-config-prettier | 10.1.8 |
-| eslint-plugin-prettier | 5.5.6 |
+| eslint-plugin-prettier | 5.5.7 |
 | markdownlint | 0.40.0 |
 | conventional-changelog-conventionalcommits | 9.3.1 |
 
