@@ -104,11 +104,11 @@ async function listAllComments(
  * callers can update that same comment in place rather than appending a new
  * one on every state transition (single-comment marker discipline).
  */
-async function readLatestMarkerComment(
+export async function readLatestMarkerComment(
   octokit: CrossRepoDispatchOctokitClient,
   repo: RepoRepository,
   issueNumber: number,
-): Promise<{marker: MarkerData; commentId: number} | null> {
+): Promise<{marker: MarkerData; commentId: number; comments: TrackerComment[]} | null> {
   const listed = await listAllComments(octokit, repo, issueNumber)
   const commentId = listed.findLast(
     comment => FROBOT_COMMENT_AUTHORS.has(comment.user?.login ?? '') && extractMarker(comment.body ?? '') !== null,
@@ -121,7 +121,7 @@ async function readLatestMarkerComment(
   }))
   const marker = selectStateMarker(comments)
   if (marker === null) return null
-  return {marker, commentId}
+  return {marker, commentId, comments}
 }
 
 export async function readLatestMarker(

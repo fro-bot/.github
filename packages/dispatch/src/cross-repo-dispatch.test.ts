@@ -2768,6 +2768,16 @@ describe('withReceiptDeadline — the one 24h receipt rule runTrack and the roll
     })
   })
 
+  it.each([
+    ['a NaN clock', Number.NaN, epoch, RECEIPT_SLA_MS],
+    ['a NaN epoch', epoch + RECEIPT_SLA_MS * 2, Number.NaN, RECEIPT_SLA_MS],
+    ['a NaN window', epoch + RECEIPT_SLA_MS * 2, epoch, Number.NaN],
+  ])('leaves the item unchanged for %s: overdue needs a true positive comparison', (_name, now, itemEpoch, slaMs) => {
+    const item = makeDispatchedItem({epoch: itemEpoch})
+
+    expect(withReceiptDeadline(item, now, slaMs)).toBe(item)
+  })
+
   it('never ages an item that was not confirmed: no epoch, no deadline', () => {
     const item = makeDispatchedItem({epoch: undefined})
 
@@ -3457,6 +3467,148 @@ describe('loadOtherOpenGoalMarkers', () => {
     const result = await loadOtherOpenGoalMarkers(patched.octokit, REPO, 42)
     expect(result).toHaveLength(1)
     expect(result[0]?.goal).toBe('goal-other')
+  })
+})
+
+describe('the same-target guard reads another goal as the tracker does, not as its marker last recorded it', () => {
+  const NOW = 10 * RECEIPT_SLA_MS
+  const NONCE = 'prior-nonce'
+  const OLD_EPOCH = NOW - RECEIPT_SLA_MS - 1
+  const prior = (changes: Partial<DispatchItem> = {}): DispatchItem => ({
+    id: 'old-item',
+    target: TARGET_A,
+    promptHash: 'h',
+    status: 'dispatched',
+    correlationId: 'corr-old',
+    nonceHash: hashNonce(NONCE),
+    epoch: OLD_EPOCH,
+    ...changes,
+  })
+  const receiptFrom = (status: CrossRepoResult['status'], id = 5): MockComment => ({
+    id,
+    login: 'fro-bot',
+    body: buildResultMarker({correlationId: 'corr-old', nonce: NONCE, status, summary: 'x'}),
+  })
+  const goalComments = (item: DispatchItem, ...extra: MockComment[]): MockComment[] => [
+    {id: 1, login: 'fro-bot', body: buildMarkerComment({goal: 'old', items: [item], markerHash: ''})},
+    ...extra,
+  ]
+
+  /** Goal 99 is the old attempt, as its marker last recorded it; goal 42 is the approved revision with one pending item. */
+  async function approveRevision(old: MockComment[], now = NOW) {
+    const decomposition = makeDecompositionBody([{...TARGET_A, prompt: 'do the revised thing'}])
+    const fresh: DispatchItem = {
+      id: 'new-item',
+      target: TARGET_A,
+      promptHash: extractPromptHash(decomposition, TARGET_A),
+      status: 'pending',
+    }
+    const listForRepo = vi.fn(async () => ({data: [{number: 42}, {number: 99}]}))
+    const {octokit, comments} = mockOctokit({listForRepo})
+    comments.push({id: 1, body: decomposition, login: 'marcusrbrown'})
+    seedMarkerComment(comments, {goal: 'new', items: [fresh], markerHash: ''})
+    const routed = {
+      ...octokit,
+      rest: {
+        ...octokit.rest,
+        issues: {
+          ...octokit.rest.issues,
+          listComments: async (params: {
+            owner: string
+            repo: string
+            issue_number: number
+            per_page?: number
+            page?: number
+          }) =>
+            params.issue_number === 99
+              ? {data: old.map(c => ({id: c.id, body: c.body, user: {login: c.login}}))}
+              : octokit.rest.issues.listComments(params),
+        },
+      },
+    }
+    const before = JSON.stringify(old)
+    const createWorkflowDispatch = vi.fn(async (_params: unknown) => ({}))
+    const result = await runDispatch({
+      octokit: routed,
+      event: makeLabeledEvent(),
+      repo: REPO,
+      approveLabel: 'dispatch-approved',
+      loadRegistry: async () => [gateEntryFor(TARGET_A)],
+      loadOtherOpenGoalMarkers: async () => loadOtherOpenGoalMarkers(routed, REPO, 42, () => now),
+      findRunByCorrelationId: async () => false,
+      createWorkflowDispatch: async params => {
+        await createWorkflowDispatch(params)
+      },
+      nonceSource: () => 'nonce-new',
+    })
+    // Dispatch never writes another goal's marker: the old goal's comments are exactly what they were.
+    expect(JSON.stringify(old)).toBe(before)
+    return {result, createWorkflowDispatch}
+  }
+
+  it('sends the revision when the old goal marker still says dispatched past its receipt deadline', async () => {
+    const {result, createWorkflowDispatch} = await approveRevision(goalComments(prior()))
+
+    expect(result.counts.dispatched).toBe(1)
+    expect(result.counts.deferred).toBe(0)
+    expect(createWorkflowDispatch).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['declined', 'countered', 'success', 'failed'] as const)(
+    'sends the revision when the old goal marker still says dispatched and its authentic %s receipt is there',
+    async status => {
+      // Within the SLA, so only the receipt can settle it.
+      const fresh = prior({epoch: NOW - 1000})
+      const {result, createWorkflowDispatch} = await approveRevision(goalComments(fresh, receiptFrom(status)))
+
+      expect(result.counts.dispatched).toBe(1)
+      expect(createWorkflowDispatch).toHaveBeenCalledTimes(1)
+    },
+  )
+
+  it('still defers the revision while the old item is genuinely in flight: inside the SLA, no receipt', async () => {
+    const {result, createWorkflowDispatch} = await approveRevision(goalComments(prior({epoch: NOW - 1000})))
+
+    expect(result.counts.dispatched).toBe(0)
+    expect(result.counts.deferred).toBe(1)
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('still defers it exactly at the deadline, and for a forged receipt', async () => {
+    const atDeadline = await approveRevision(goalComments(prior({epoch: NOW - RECEIPT_SLA_MS})))
+    const forged: MockComment = {
+      id: 5,
+      login: 'fro-bot',
+      body: buildResultMarker({correlationId: 'corr-old', nonce: 'not-the-nonce', status: 'success', summary: 'x'}),
+    }
+    const forgedReceipt = await approveRevision(goalComments(prior({epoch: NOW - 1000}), forged))
+
+    expect(atDeadline.createWorkflowDispatch).not.toHaveBeenCalled()
+    expect(forgedReceipt.createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('still defers it for an old item that was never confirmed (no epoch): it is not aged', async () => {
+    const {createWorkflowDispatch} = await approveRevision(goalComments(prior({epoch: undefined})))
+
+    expect(createWorkflowDispatch).not.toHaveBeenCalled()
+  })
+
+  it('reads each other goal through the comments the marker read already fetched: no read beyond the comments', async () => {
+    const listComments = vi.fn(async (params: {issue_number: number}) => ({
+      data:
+        params.issue_number === 99
+          ? [{id: 1, body: buildMarkerComment(makeState({goal: 'o', items: [prior()]})), user: {login: 'fro-bot'}}]
+          : [],
+    }))
+    const listForRepo = vi.fn(async () => ({data: [{number: 42}, {number: 99}]}))
+    const {octokit} = mockOctokit({listForRepo})
+    const patched = {...octokit, rest: {...octokit.rest, issues: {...octokit.rest.issues, listComments}}}
+
+    const [settled] = await loadOtherOpenGoalMarkers(patched, REPO, 42, () => NOW)
+
+    expect(settled?.items[0]).toMatchObject({status: 'needs-attention', needsAttentionReason: 'no-receipt'})
+    expect(listComments).toHaveBeenCalledTimes(1)
+    expect(listForRepo).toHaveBeenCalledTimes(1)
   })
 })
 

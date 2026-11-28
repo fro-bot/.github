@@ -9,7 +9,8 @@ import {
   type DispatchTarget,
   type GoalState,
 } from './dispatch-model.ts'
-import {readLatestMarker, type OpenGoalIssue, type RepoRepository} from './dispatch-run.ts'
+import {settleItem} from './dispatch-receipts.ts'
+import {readLatestMarker, readLatestMarkerComment, type OpenGoalIssue, type RepoRepository} from './dispatch-run.ts'
 
 /** What one live read of a repository says about it: the identity behind the name, and whether it is public now. */
 export interface LiveRepository {
@@ -160,12 +161,16 @@ export async function loadOpenGoalIssues(
 /**
  * Enumerate OTHER open `cross-repo-goal` issues' marker states (excluding
  * `currentIssueNumber`) for same-target in-flight serialization in
- * `planDispatch`.
+ * `planDispatch`. Each item is read as the tracker reads it (`settleItem`, over the
+ * comments the marker read already fetched): a marker that lags an authentic receipt or a missed
+ * receipt deadline must not hold a target that is no longer in flight, because
+ * nothing retries an approved item the guard deferred. Nothing is written back to the other goal.
  */
 export async function loadOtherOpenGoalMarkers(
   octokit: CrossRepoDispatchOctokitClient,
   repo: RepoRepository,
   currentIssueNumber: number,
+  now: () => number = Date.now,
 ): Promise<GoalState[]> {
   const issuesResponse = await octokit.rest.issues.listForRepo({
     owner: repo.owner,
@@ -175,12 +180,14 @@ export async function loadOtherOpenGoalMarkers(
     per_page: 100,
   })
 
+  const clock = now()
   const results: GoalState[] = []
   for (const issue of issuesResponse.data) {
     if (issue.number === currentIssueNumber) continue
-    const marker = await readLatestMarker(octokit, repo, issue.number)
-    if (marker === null) continue
-    results.push({...marker.state, markerHash: marker.hash})
+    const found = await readLatestMarkerComment(octokit, repo, issue.number)
+    if (found === null) continue
+    const items = found.marker.state.items.map(item => settleItem(item, found.comments, clock))
+    results.push({...found.marker.state, items, markerHash: found.marker.hash})
   }
   return results
 }

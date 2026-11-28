@@ -8,6 +8,7 @@ import {
   FROBOT_COMMENT_AUTHORS,
   MAX_ITEMS_PER_GOAL,
   RECEIPT_SLA_MS,
+  TERMINAL_STATUSES,
   type BlockedReason,
   type CrossRepoResult,
   type DecompositionResult,
@@ -613,6 +614,30 @@ export function itemOutcomeForReceipt(status: ResultStatus): {status: ItemStatus
  */
 export function withReceiptDeadline(item: DispatchItem, now: number, slaMs: number = RECEIPT_SLA_MS): DispatchItem {
   if (item.status !== 'dispatched') return item
-  if (item.epoch === undefined || now - item.epoch <= slaMs) return item
+  // The comparison is kept positive: only a true `now - epoch > slaMs` over finite numbers is overdue, so a NaN clock,
+  // epoch or window leaves the item as it is (the negation `<=` would read NaN as overdue).
+  if (item.epoch === undefined || !(now - item.epoch > slaMs)) return item
   return {...item, status: 'needs-attention', needsAttentionReason: 'no-receipt'}
+}
+
+/**
+ * The item as its goal's own comments and the clock say it stands, for a marker that lags them: the earliest authentic
+ * receipt (`resolveReceipts`' gates: author, correlation id, nonce hash) gives the status and reason track would write
+ * (`itemOutcomeForReceipt`); with none, `withReceiptDeadline`. A terminal item is never changed. Pure, and nothing is
+ * written: dispatch's track job stays the only writer of a marker. It is the one reading the rollout tracker uses for
+ * a part and `runDispatch`'s same-target guard uses for another goal's item, so the two cannot disagree about whether
+ * an earlier attempt is still in flight.
+ */
+export function settleItem(item: DispatchItem, comments: TrackerComment[], now: number): DispatchItem {
+  if (TERMINAL_STATUSES.has(item.status)) return item
+  const terminal = resolveReceipts([item], comments).get(item.id)?.terminal
+  if (terminal === undefined) return withReceiptDeadline(item, now)
+  const outcome = itemOutcomeForReceipt(terminal)
+  return {
+    ...item,
+    status: outcome.status,
+    needsAttentionReason: undefined,
+    noReceiptDiagnostic: undefined,
+    ...(outcome.blockedReason === undefined ? {} : {blockedReason: outcome.blockedReason}),
+  }
 }

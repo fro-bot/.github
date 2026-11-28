@@ -14,11 +14,10 @@ import {
   MAX_ITEMS_PER_GOAL,
   MAX_PROMPT_LENGTH,
   RECEIPT_SLA_MS,
-  TERMINAL_STATUSES,
   type DispatchItem,
   type ResultStatus,
 } from '@fro-bot/dispatch/dispatch-model'
-import {itemOutcomeForReceipt, resolveReceipts, withReceiptDeadline} from '@fro-bot/dispatch/dispatch-receipts'
+import {resolveReceipts, settleItem} from '@fro-bot/dispatch/dispatch-receipts'
 import {isOperatorComment, type CommentLike, type ConfirmedRepo, type ProgramEntry} from './program-trackers.ts'
 
 type Env = Readonly<Record<string, string | undefined>>
@@ -830,24 +829,15 @@ function batchOf(body: string, program: string): string | null {
  * Otherwise the earliest authentic receipt (dispatch's own gates: author, correlation id, nonce hash) gives the status
  * and reason track would write, through the same resolver and outcome map. With no such receipt, a `dispatched` item that
  * has missed the 24h deadline by `now` is `needs-attention` with the reason track gives it, through the one rule
- * dispatch holds (`withReceiptDeadline`); an item with no dispatch epoch is left alone, as track leaves it. Nothing is
- * written back, and the run-lookup diagnostic track adds is not read, because nothing here depends on it.
+ * dispatch holds (`settleItem`, which `runDispatch`'s same-target guard reads another goal's items with too); an
+ * item with no dispatch epoch is left alone, as track leaves it. Nothing is written back, and the run-lookup diagnostic track adds is not read, because nothing here depends on it.
  */
 function withReceipt(item: DispatchItem, comments: readonly GoalComment[], now: number): DispatchItem {
-  if (TERMINAL_STATUSES.has(item.status)) return item
-  const terminal = resolveReceipts(
-    [item],
+  return settleItem(
+    item,
     comments.map(comment => ({author: {login: comment.author}, body: comment.body})),
-  ).get(item.id)?.terminal
-  if (terminal === undefined) return withReceiptDeadline(item, now)
-  const outcome = itemOutcomeForReceipt(terminal)
-  return {
-    ...item,
-    status: outcome.status,
-    needsAttentionReason: undefined,
-    noReceiptDiagnostic: undefined,
-    ...(outcome.blockedReason === undefined ? {} : {blockedReason: outcome.blockedReason}),
-  }
+    now,
+  )
 }
 
 /**
