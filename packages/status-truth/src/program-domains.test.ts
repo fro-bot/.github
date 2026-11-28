@@ -760,12 +760,15 @@ describe('the committed program-domains.json', () => {
     expect(brief.security.length).toBeGreaterThan(0)
     expect(brief.automation.length).toBeGreaterThan(0)
     expect(brief.developerExperience.length).toBeGreaterThan(0)
-    // The release-notes prompt dispatch stays comment-only by a documented contract; no other repository is excused.
+    // The release-notes prompt dispatch stays comment-only and the Connect sweep runs without repository skills, each by
+    // a documented contract; no other repository is excused.
     expect(brief.exceptions.map(exception => exception.nameWithOwner)).toEqual(['marcusrbrown/systematic'])
     for (const exception of brief.exceptions) {
       expect(repos.map(repo => repo.nameWithOwner)).toContain(exception.nameWithOwner)
       expect(exception.reason).toMatch(/comment-only/)
       expect(exception.reason).toMatch(/dispatch-to-pull-request/)
+      expect(exception.reason).toMatch(/Connect sweep runs without repository skills/)
+      expect(exception.reason).toMatch(/repo-skills standards apply to every other dispatched prompt and agent step/)
     }
   })
 
