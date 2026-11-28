@@ -26,8 +26,8 @@ The November requirements set one success test: scheduled and dispatched runs, a
 **Prompt**
 
 - R1. No agent prompt tells the agent to avoid the knowledge tools by default or describes them as optional.
-- R2. The pull request job, Remediate and Observe are told: when a run reviews changed code or starts a fix, search documented solutions first, with a query drawn from the area being changed. Triage, review of a change with no code, and report-only work carry no such duty.
-- R3. Remediate and Observe are told: when investigating a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it before drawing a conclusion about that repository. A repository that only appears in an inventory carries no such duty.
+- R2. The pull request job, Remediate and Observe are told (Remediate and Observe no longer, see the count record below): when a run reviews changed code or starts a fix, search documented solutions first, with a query drawn from the area being changed. Triage, review of a change with no code, and report-only work carry no such duty.
+- R3. (Dropped 2026-11-28; see the count record below.) Remediate and Observe are told: when investigating a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it before drawing a conclusion about that repository. A repository that only appears in an inventory carries no such duty.
 - R4. Each survey attempt is told to search the wiki and documented solutions before it writes a page.
 - R5. No prompt names `knowledge_wiki_linked`; the tool is removed.
 - R6. The rules on tool output in the `fro-bot.yaml` prompts stay: a failed call returns an error code, an empty result means nothing matched, and query text and returned excerpts are not echoed into output or logs. The survey prompts gain the empty-result and no-echo rules, which they lack today.
@@ -81,6 +81,14 @@ The November requirements set one success test: scheduled and dispatched runs, a
 - No linked-pages tool: it is removed.
 - Removal is decided now, with its trigger, so an unused server does not stay by default.
 - Surveys stay out of the rate. Their duty is unconditional, so their calls show that the instruction was followed, and their volume alone could clear the threshold while reviews and the daily passes made no calls.
+
+---
+
+## Count Record (2026-11-28)
+
+R14 applies: 89 of 157 counted jobs had a call attempt, 56.7%, so the tools stay. The window ran 2026-11-14T19:19Z to 2026-11-28T01:03Z (13.3 of 14 days); the remainder cannot change the verdict. Per kind (called / counted without unknowns): pull request 88/125, issue 0/2, comment none counted (agent step skipped on all 101 runs), Remediate 0/15, Observe 1/15. The `ok` total is 94 and the error total 0. Four jobs were unknown, all on the `isolate-agent/opt-in` probe branch before #4253. Surveys, beside the rate, had 28 of 30 jobs with calls. The full record and run IDs are in `docs/plans/2026-11-14-001-feat-wiki-index-for-daily-passes-plan.md`, Unit 5.
+
+Remediate made no call on either fix run (44474579642 and 45990614724) and Observe called once, so the operator dropped the Remediate and Observe search duties (R2 for those two jobs, and R3). The tools stay wired into both jobs. R2 stays for the pull request, issue and comment job; R4 stays for surveys.
 
 ---
 

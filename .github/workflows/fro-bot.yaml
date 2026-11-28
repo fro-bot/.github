@@ -1320,16 +1320,6 @@ jobs:
             `knowledge_wiki_search` use the checkout, which may hold an older copy of a listed
             page or lack it; a miss there does not mean the page is absent from the wiki.
 
-            When this run reviews changed code or starts a fix, first search the documented
-            solutions with `knowledge_solutions_search`, using a query drawn from the area being
-            changed. Triage, review of a change with no code, and report-only work need no such
-            search.
-
-            When you investigate a specific repository other than this one that is listed in
-            `metadata/repos.yaml`, search the wiki for it with `knowledge_wiki_search` before you
-            draw a conclusion about that repository. A repository that only appears in an
-            inventory needs no such search.
-
             `knowledge_wiki_search` takes a short grounded `query` and returns wiki pages.
             `knowledge_solutions_search` takes a `query` and returns documented solutions. A
             tool that fails returns a short error code, not content; an empty result
@@ -1540,16 +1530,6 @@ jobs:
             type, and its opening sentence when it has one, and the first line says how many
             pages it lists out of how many the wiki holds. Read a page from disk, or find one
             with `knowledge_wiki_search`.
-
-            When this run reviews changed code or starts a fix, first search the documented
-            solutions with `knowledge_solutions_search`, using a query drawn from the area being
-            changed. Triage, review of a change with no code, and report-only work need no such
-            search.
-
-            When you investigate a specific repository other than this one that is listed in
-            `metadata/repos.yaml`, search the wiki for it with `knowledge_wiki_search` before you
-            draw a conclusion about that repository. A repository that only appears in an
-            inventory needs no such search.
 
             `knowledge_wiki_search` takes a short grounded `query` and returns wiki pages.
             `knowledge_solutions_search` takes a `query` and returns documented solutions. A

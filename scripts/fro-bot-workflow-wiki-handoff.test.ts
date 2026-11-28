@@ -5,8 +5,10 @@ import {parse} from 'yaml'
 
 // Regression guard: the prompts name the two `knowledge_*` tools and carry no bash recipe and no hand-off
 // path. The `<wiki_context_expansion>` block also carries the prompt contract for the tools: the three jobs
-// get one block each: a shared core, plus the sentences that belong to one job (the index guidance and the
-// repository duty in the two daily-pass jobs, the older-checkout sentence in Remediate only). None of them
+// get one block each: a shared core, plus the sentences that belong to one job (the solutions duty in the
+// pull request, issue and comment job only; the index guidance in the two daily-pass jobs, the older-checkout
+// sentence in Remediate only). The two daily passes carry no search duty: the 14-day count showed they never
+// fired, so the tools stay wired and available there without an obligation to call them. None of the blocks
 // describes the tools as optional or as something to avoid by default, and the pull request job's
 // `<wiki_context>` says no wiki context is provided.
 
@@ -56,6 +58,13 @@ const SOLUTIONS_DUTY =
   'When this run reviews changed code or starts a fix, first search the documented solutions with `knowledge_solutions_search`, using a query drawn from the area being changed. Triage, review of a change with no code, and report-only work need no such search.'
 const REPOSITORY_DUTY =
   'When you investigate a specific repository other than this one that is listed in `metadata/repos.yaml`, search the wiki for it with `knowledge_wiki_search` before you draw a conclusion about that repository. A repository that only appears in an inventory needs no such search.'
+/** Wording that obliges a search; the daily-pass prompts carry none of it, and neither does any prompt's repository duty. */
+const SEARCH_DUTY_WORDING = [
+  /first search the documented solutions/iu,
+  /search the wiki for it/iu,
+  /\b(?:must|should)\s[^.]*search/iu,
+  /\bsearch[^.]*\sbefore you (?:draw|conclude)/iu,
+]
 const OUTPUT_RULES = [
   'A tool that fails returns a short error code, not content; an empty result means nothing matched.',
   'Do not print or echo the query text, returned excerpts, or any token/env values into your output or logs.',
@@ -159,22 +168,33 @@ describe('fro-bot.yaml agent prompts', () => {
       expect(flat(expansionBlock(wiring.prompt)), `job ${wiring.jobKey}`).toContain(UNTRUSTED_SENTENCE)
     })
 
-    it('tells the run to search documented solutions first when it reviews changed code or starts a fix', () => {
-      expect(flat(expansionBlock(wiring.prompt)), `job ${wiring.jobKey}`).toContain(SOLUTIONS_DUTY)
+    it('tells only the content job to search documented solutions first when it reviews changed code or starts a fix', () => {
+      const block = flat(expansionBlock(wiring.prompt))
+      const isDailyPass = (DAILY_PASS_JOBS as readonly string[]).includes(wiring.jobKey)
+
+      expect(block.includes(SOLUTIONS_DUTY), `job ${wiring.jobKey}`).toBe(!isDailyPass)
+    })
+
+    it('carries no search duty in the daily-pass jobs, and no repository duty in any job', () => {
+      const prompt = flat(wiring.prompt)
+      const isDailyPass = (DAILY_PASS_JOBS as readonly string[]).includes(wiring.jobKey)
+
+      expect(prompt.includes(REPOSITORY_DUTY), `job ${wiring.jobKey}`).toBe(false)
+      if (isDailyPass) {
+        for (const wording of SEARCH_DUTY_WORDING) {
+          expect(prompt, `job ${wiring.jobKey}`).not.toMatch(wording)
+        }
+      } else {
+        expect(prompt, `job ${wiring.jobKey}`).toMatch(SEARCH_DUTY_WORDING[0] ?? /^$/u)
+      }
     })
 
     it('never names knowledge_wiki_linked', () => {
       expect(wiring.prompt, `job ${wiring.jobKey}`).not.toContain('knowledge_wiki_linked')
     })
 
-    it('carries the repository wiki duty only in the daily-pass jobs', () => {
-      const block = flat(expansionBlock(wiring.prompt))
-      const isDailyPass = (DAILY_PASS_JOBS as readonly string[]).includes(wiring.jobKey)
-
-      expect(block.includes(REPOSITORY_DUTY), `job ${wiring.jobKey}`).toBe(isDailyPass)
-      if (!isDailyPass) {
-        expect(block).not.toContain('metadata/repos.yaml')
-      }
+    it('names no tracked-repository list in any expansion block', () => {
+      expect(flat(expansionBlock(wiring.prompt)), `job ${wiring.jobKey}`).not.toContain('metadata/repos.yaml')
     })
 
     it('carries the index guidance only in the daily-pass jobs, and the older-checkout sentence only in Remediate', () => {
@@ -219,10 +239,11 @@ describe('fro-bot.yaml agent prompts', () => {
 
     expect([...blocks.keys()].toSorted()).toStrictEqual(['fro-bot', 'fro-bot-observe', 'fro-bot-remediate'])
     expect(content).toBeDefined()
-    expect(without(blocks.get('fro-bot-observe'), [INDEX_GUIDANCE, REPOSITORY_DUTY])).toBe(content)
-    expect(without(blocks.get('fro-bot-remediate'), [INDEX_GUIDANCE, OLDER_CHECKOUT_SENTENCE, REPOSITORY_DUTY])).toBe(
-      content,
-    )
+    const core = without(content, [SOLUTIONS_DUTY])
+
+    expect(content).toContain(SOLUTIONS_DUTY)
+    expect(without(blocks.get('fro-bot-observe'), [INDEX_GUIDANCE])).toBe(core)
+    expect(without(blocks.get('fro-bot-remediate'), [INDEX_GUIDANCE, OLDER_CHECKOUT_SENTENCE])).toBe(core)
   })
 
   it("says in the pull request job's wiki context that none is provided, and hands the daily jobs the wiki context variable", () => {
